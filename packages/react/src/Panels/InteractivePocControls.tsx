@@ -9,6 +9,8 @@ export function InteractivePocControls({
   pausedTeacherTimestampMs,
   learnerDeltaCount,
   learnerDeltaStatus,
+  conflictStatus,
+  conflictedFiles,
   canStartRecording,
   canStopRecording,
   canPlayRecording,
@@ -65,6 +67,8 @@ export function InteractivePocControls({
       <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
       <span>Learner delta count: {learnerDeltaCount}</span>
       <span>Learner delta status: {learnerDeltaStatus}</span>
+      <span>Conflict status: {conflictStatus}</span>
+      <span>Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}</span>
     </div>
   );
 }

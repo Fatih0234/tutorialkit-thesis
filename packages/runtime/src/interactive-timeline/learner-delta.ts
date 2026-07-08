@@ -1,9 +1,20 @@
-import type { FilesSnapshot, LearnerDelta } from './types.js';
+import type { FilesSnapshot, LearnerDelta, TeacherRecording } from './types.js';
 import { normalizeFiles, normalizePath } from './path.js';
 
 export interface FilesDiff {
   addedOrModified: FilesSnapshot;
   removed: string[];
+}
+
+export interface LearnerDeltaConflictEvent {
+  filePath: string;
+  eventId: string;
+  teacherTimestampMs: number;
+}
+
+export interface LearnerDeltaConflicts {
+  filePaths: string[];
+  events: LearnerDeltaConflictEvent[];
 }
 
 export function diffFiles(beforeInput: FilesSnapshot, afterInput: FilesSnapshot): FilesDiff {
@@ -41,6 +52,45 @@ export function applyLearnerDelta(baseInput: FilesSnapshot, delta: LearnerDelta)
   }
 
   return result;
+}
+
+export function getLearnerDeltaConflicts(recording: TeacherRecording, delta: LearnerDelta): LearnerDeltaConflicts {
+  const learnerChangedFiles = new Set([
+    ...Object.keys(delta.addedOrModified).map((filePath) => normalizePath(filePath)),
+    ...delta.removed.map((filePath) => normalizePath(filePath)),
+  ]);
+  const conflictedFiles = new Set<string>();
+  const events: LearnerDeltaConflictEvent[] = [];
+
+  if (learnerChangedFiles.size === 0) {
+    return { filePaths: [], events: [] };
+  }
+
+  for (const event of recording.events) {
+    if (event.type !== 'file.changed' || event.tMs <= delta.teacherTimestampMs || !event.filePath) {
+      continue;
+    }
+
+    const filePath = normalizePath(event.filePath);
+
+    if (!learnerChangedFiles.has(filePath)) {
+      continue;
+    }
+
+    conflictedFiles.add(filePath);
+    events.push({ filePath, eventId: event.id, teacherTimestampMs: event.tMs });
+  }
+
+  return {
+    filePaths: [...conflictedFiles].sort((a, b) => a.localeCompare(b)),
+    events: events.sort((a, b) => {
+      if (a.teacherTimestampMs !== b.teacherTimestampMs) {
+        return a.teacherTimestampMs - b.teacherTimestampMs;
+      }
+
+      return a.filePath.localeCompare(b.filePath);
+    }),
+  };
 }
 
 export function simpleHashFiles(filesInput: FilesSnapshot): string {

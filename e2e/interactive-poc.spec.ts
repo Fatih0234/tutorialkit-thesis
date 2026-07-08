@@ -259,6 +259,8 @@ test.describe('interactive timeline POC', () => {
     await saveLearnerDelta.click();
     await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
     await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
+    await expect(page.getByText(/conflicted files:\s*\/example\.js/i)).toBeVisible();
     await expect(restoreLearnerDelta).toBeEnabled();
 
     const deltas = await page.evaluate(() => {
@@ -282,7 +284,96 @@ test.describe('interactive timeline POC', () => {
 
     await restoreLearnerDelta.click();
     await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
+    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
     await expect(editor).toContainText('// learner delta edit');
+
+    const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+
+    expect(rawAfterRestore).toBe(rawBefore);
+  });
+
+  test('does not flag unrelated future teacher changes as learner delta conflicts', async ({ page }) => {
+    const baseContent = "export default 'Lesson file example.js content';\n";
+    const futureHtmlContent = '<h1>Teacher changed unrelated HTML later</h1>\n';
+    const recording = {
+      id: 'teacher-recording-unrelated-conflict-test',
+      lessonId: 'lesson-and-solution',
+      version: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 2000,
+      baseFiles: {
+        '/example.html': '<h1>Teacher unrelated base</h1>\n',
+        '/example.js': baseContent,
+      },
+      events: [
+        { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
+        {
+          id: 'event-opened',
+          seq: 1,
+          tMs: 0,
+          type: 'file.opened',
+          filePath: '/example.js',
+          payload: { filePath: '/example.js' },
+          origin: 'teacher',
+        },
+        {
+          id: 'event-future-html-change',
+          seq: 2,
+          tMs: 2000,
+          type: 'file.changed',
+          filePath: '/example.html',
+          payload: { content: futureHtmlContent },
+          origin: 'teacher',
+        },
+      ],
+    };
+
+    await page.evaluate((teacherRecording) => {
+      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+    }, recording);
+
+    const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    const saveLearnerDelta = page.getByRole('button', { name: /save learner delta/i });
+    const restoreLearnerDelta = page.getByRole('button', { name: /restore learner delta/i });
+
+    await page.getByRole('button', { name: /play recording/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await expect(saveLearnerDelta).toBeEnabled();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// learner unrelated edit');
+    await expect(editor).toContainText('// learner unrelated edit');
+    await page.waitForTimeout(600);
+
+    await saveLearnerDelta.click();
+    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/conflict status:\s*none/i)).toBeVisible();
+    await expect(page.getByText(/conflicted files:\s*none/i)).toBeVisible();
+    await expect(restoreLearnerDelta).toBeEnabled();
+
+    const deltas = await page.evaluate(() => {
+      const raw = localStorage.getItem('interactive-poc.learnerDeltas');
+      return raw ? JSON.parse(raw) : [];
+    });
+    const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+
+    expect(Array.isArray(deltas)).toBeTruthy();
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0].addedOrModified['/example.js']).toContain('// learner unrelated edit');
+    expect(rawAfter).toBe(rawBefore);
+
+    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+
+    await restoreLearnerDelta.click();
+    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
+    await expect(page.getByText(/conflict status:\s*none/i)).toBeVisible();
+    await expect(editor).toContainText('// learner unrelated edit');
 
     const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 

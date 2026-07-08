@@ -2,6 +2,7 @@ import {
   TimelineRecorder,
   applyLearnerDelta,
   diffFiles,
+  getLearnerDeltaConflicts,
   loadLatestLearnerDelta,
   loadLearnerDeltas,
   loadTeacherRecording,
@@ -44,6 +45,8 @@ export interface InteractivePocControlsModel {
   pausedTeacherTimestampMs: number;
   learnerDeltaCount: number;
   learnerDeltaStatus: string;
+  conflictStatus: 'none' | 'conflict';
+  conflictedFiles: string[];
   canStartRecording: boolean;
   canStopRecording: boolean;
   canPlayRecording: boolean;
@@ -106,6 +109,7 @@ export function useInteractivePoc({
   const [hasRestorableLearnerDelta, setHasRestorableLearnerDelta] = useState(false);
   const [learnerDeltaCount, setLearnerDeltaCount] = useState(0);
   const [learnerDeltaStatus, setLearnerDeltaStatus] = useState('idle');
+  const [conflictedFiles, setConflictedFiles] = useState<string[]>([]);
 
   function getCurrentFilePath() {
     return selectedFile ?? tutorialStore.currentDocument.get()?.filePath;
@@ -133,12 +137,13 @@ export function useInteractivePoc({
     return delta;
   }
 
-  function syncLearnerDeltaCount() {
-    const recording = loadTeacherRecording();
+  function syncLearnerDeltaState(recording = loadTeacherRecording()) {
+    const matchingDelta = getLatestMatchingLearnerDelta(recording);
 
     setHasTeacherRecording(Boolean(recording));
     setLearnerDeltaCount(loadLearnerDeltas().length);
-    setHasRestorableLearnerDelta(Boolean(getLatestMatchingLearnerDelta(recording)));
+    setHasRestorableLearnerDelta(Boolean(matchingDelta));
+    setConflictedFiles(recording && matchingDelta ? getLearnerDeltaConflicts(recording, matchingDelta).filePaths : []);
   }
 
   function createLearnerDeltaId() {
@@ -341,7 +346,7 @@ export function useInteractivePoc({
     const recording = loadTeacherRecording() ?? null;
 
     playbackRecordingRef.current = recording;
-    setHasTeacherRecording(Boolean(recording));
+    syncLearnerDeltaState(recording ?? undefined);
     setHasPausedTeacherTimestamp(false);
     setPausedTimestampMs(0);
     playRecordingFrom(-1, { resetToBase: true });
@@ -391,10 +396,9 @@ export function useInteractivePoc({
     }
 
     saveTeacherRecording(stopped);
-    setHasTeacherRecording(true);
     setIsRecording(false);
     setEventCount(stopped.events.length);
-    syncLearnerDeltaCount();
+    syncLearnerDeltaState(stopped);
   }
 
   function onSaveLearnerDelta() {
@@ -431,7 +435,7 @@ export function useInteractivePoc({
 
     saveLearnerDelta(delta);
     setLearnerDeltaStatus('saved');
-    syncLearnerDeltaCount();
+    syncLearnerDeltaState(recording);
   }
 
   function onRestoreLearnerDelta() {
@@ -440,7 +444,7 @@ export function useInteractivePoc({
 
     if (!recording || !delta) {
       setLearnerDeltaStatus('missing matching delta');
-      syncLearnerDeltaCount();
+      syncLearnerDeltaState(recording);
       return;
     }
 
@@ -470,7 +474,7 @@ export function useInteractivePoc({
       setLearnerDeltaStatus('restored');
     } finally {
       releasePlaybackGuardSoon();
-      syncLearnerDeltaCount();
+      syncLearnerDeltaState(recording);
     }
   }
 
@@ -519,7 +523,7 @@ export function useInteractivePoc({
   }
 
   useEffect(() => {
-    syncLearnerDeltaCount();
+    syncLearnerDeltaState();
   }, [storeRef]);
 
   useEffect(() => {
@@ -544,6 +548,8 @@ export function useInteractivePoc({
       pausedTeacherTimestampMs,
       learnerDeltaCount,
       learnerDeltaStatus,
+      conflictStatus: conflictedFiles.length > 0 ? 'conflict' : 'none',
+      conflictedFiles,
       canStartRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
       canStopRecording: isRecording,
       canPlayRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
