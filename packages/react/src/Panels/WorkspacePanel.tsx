@@ -1,5 +1,11 @@
 import { useStore } from '@nanostores/react';
-import type { TutorialStore } from '@tutorialkit/runtime';
+import {
+  TimelineRecorder,
+  normalizeFiles,
+  saveTeacherRecording,
+  type FilesSnapshot,
+  type TutorialStore,
+} from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
@@ -14,6 +20,8 @@ import { TerminalPanel } from './TerminalPanel.js';
 const DEFAULT_TERMINAL_SIZE = 25;
 
 type FileTreeChangeEvent = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onFileTreeChange']>>[0];
+type EditorChangeUpdate = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorChange']>>[0];
+type EditorScrollPosition = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorScroll']>>[0];
 
 interface Props {
   tutorialStore: TutorialStore;
@@ -105,8 +113,90 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const editorConfig = useStore(tutorialStore.editorConfig);
   const storeRef = useStore(tutorialStore.ref);
   const files = useStore(tutorialStore.files);
+  const recorderRef = useRef<TimelineRecorder | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [eventCount, setEventCount] = useState(0);
 
   const lesson = tutorialStore.lesson!;
+
+  function getCurrentFilePath() {
+    return selectedFile ?? tutorialStore.currentDocument.get()?.filePath;
+  }
+
+  function syncEventCount() {
+    setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
+  }
+
+  function onStartRecording() {
+    if (!lessonFullyLoaded) {
+      return;
+    }
+
+    const baseFiles: FilesSnapshot = normalizeFiles(tutorialStore.takeSnapshot().files);
+    const recorder = new TimelineRecorder();
+    const recording = recorder.start({ lessonId: lesson.id, version: 1, baseFiles });
+
+    recorderRef.current = recorder;
+    setIsRecording(true);
+    setEventCount(recording.events.length);
+  }
+
+  function onStopRecording() {
+    const stopped = recorderRef.current?.stop();
+
+    if (!stopped) {
+      setIsRecording(false);
+      return;
+    }
+
+    saveTeacherRecording(stopped);
+    setIsRecording(false);
+    setEventCount(stopped.events.length);
+  }
+
+  function onFileSelect(filePath: string | undefined) {
+    tutorialStore.setSelectedFile(filePath);
+
+    if (!filePath || !recorderRef.current?.isRecording()) {
+      return;
+    }
+
+    recorderRef.current.recordFileOpened(filePath);
+    syncEventCount();
+  }
+
+  function onEditorScroll(position: EditorScrollPosition) {
+    tutorialStore.setCurrentDocumentScrollPosition(position);
+
+    const filePath = getCurrentFilePath();
+
+    if (!filePath || !recorderRef.current?.isRecording()) {
+      return;
+    }
+
+    recorderRef.current.append('editor.scrolled', {
+      filePath,
+      payload: { top: position.top, left: position.left },
+    });
+    syncEventCount();
+  }
+
+  function onEditorChange(update: EditorChangeUpdate) {
+    if (typeof update.content !== 'string') {
+      return;
+    }
+
+    tutorialStore.setCurrentDocumentContent(update.content);
+
+    const filePath = getCurrentFilePath();
+
+    if (!filePath || !recorderRef.current?.isRecording()) {
+      return;
+    }
+
+    recorderRef.current.recordFileChanged(filePath, { content: update.content, selection: update.selection });
+    syncEventCount();
+  }
 
   function onHelpClick() {
     if (tutorialStore.hasSolution()) {
@@ -153,6 +243,26 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       collapsible={!hasEditor}
       className="transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
+      <div
+        aria-label="Interactive recording debug controls"
+        style={{
+          alignItems: 'center',
+          borderBottom: '1px solid var(--tk-elements-panel-borderColor)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+          padding: '0.5rem',
+        }}
+      >
+        <button type="button" onClick={onStartRecording} disabled={isRecording || !lessonFullyLoaded}>
+          Start Recording
+        </button>
+        <button type="button" onClick={onStopRecording} disabled={!isRecording}>
+          Stop Recording
+        </button>
+        <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
+        <span>Event count: {eventCount}</span>
+      </div>
       <EditorPanel
         id={storeRef}
         theme={theme}
@@ -163,12 +273,12 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
         hideRoot={lesson.data.hideRoot}
         helpAction={helpAction}
         onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
-        onFileSelect={(filePath) => tutorialStore.setSelectedFile(filePath)}
+        onFileSelect={onFileSelect}
         onFileTreeChange={onFileTreeChange}
         allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
         selectedFile={selectedFile}
-        onEditorScroll={(position) => tutorialStore.setCurrentDocumentScrollPosition(position)}
-        onEditorChange={(update) => tutorialStore.setCurrentDocumentContent(update.content)}
+        onEditorScroll={onEditorScroll}
+        onEditorChange={onEditorChange}
       />
     </Panel>
   );
