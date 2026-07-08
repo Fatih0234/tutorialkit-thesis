@@ -1,7 +1,9 @@
 import { useStore } from '@nanostores/react';
 import {
   TimelineRecorder,
+  applyLearnerDelta,
   diffFiles,
+  loadLatestLearnerDelta,
   loadLearnerDeltas,
   loadTeacherRecording,
   materializeTeacherState,
@@ -148,7 +150,9 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const [pausedTeacherTimestampMs, setPausedTeacherTimestampMs] = useState(0);
   const [hasPausedTeacherTimestamp, setHasPausedTeacherTimestamp] = useState(false);
   const [hasTeacherRecording, setHasTeacherRecording] = useState(false);
+  const [hasRestorableLearnerDelta, setHasRestorableLearnerDelta] = useState(false);
   const [learnerDeltaCount, setLearnerDeltaCount] = useState(0);
+  const [learnerDeltaStatus, setLearnerDeltaStatus] = useState('idle');
 
   const lesson = tutorialStore.lesson!;
 
@@ -160,8 +164,30 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
   }
 
+  function getLatestMatchingLearnerDelta(recording = loadTeacherRecording()) {
+    const delta = loadLatestLearnerDelta();
+
+    if (!recording || !delta) {
+      return undefined;
+    }
+
+    if (
+      delta.teacherRecordingId !== recording.id ||
+      delta.teacherRecordingVersion !== recording.version ||
+      simpleHashFiles(materializeTeacherState(recording, delta.teacherTimestampMs)) !== delta.baseTeacherFilesHash
+    ) {
+      return undefined;
+    }
+
+    return delta;
+  }
+
   function syncLearnerDeltaCount() {
+    const recording = loadTeacherRecording();
+
+    setHasTeacherRecording(Boolean(recording));
     setLearnerDeltaCount(loadLearnerDeltas().length);
+    setHasRestorableLearnerDelta(Boolean(getLatestMatchingLearnerDelta(recording)));
   }
 
   function createLearnerDeltaId() {
@@ -417,6 +443,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     setHasTeacherRecording(true);
     setIsRecording(false);
     setEventCount(stopped.events.length);
+    syncLearnerDeltaCount();
   }
 
   function onSaveLearnerDelta() {
@@ -452,7 +479,48 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     };
 
     saveLearnerDelta(delta);
+    setLearnerDeltaStatus('saved');
     syncLearnerDeltaCount();
+  }
+
+  function onRestoreLearnerDelta() {
+    const recording = loadTeacherRecording();
+    const delta = getLatestMatchingLearnerDelta(recording);
+
+    if (!recording || !delta) {
+      setLearnerDeltaStatus('missing matching delta');
+      syncLearnerDeltaCount();
+      return;
+    }
+
+    const baseTeacherFiles = normalizeFiles(materializeTeacherState(recording, delta.teacherTimestampMs));
+    const restoredFiles = applyLearnerDelta(baseTeacherFiles, delta);
+    const existingFilePaths = new Set(tutorialStore.files.get().map((file) => normalizePath(file.path)));
+
+    startPlaybackGuard();
+
+    try {
+      for (const [filePath, content] of Object.entries(restoredFiles)) {
+        const normalizedFilePath = normalizePath(filePath);
+
+        if (existingFilePaths.has(normalizedFilePath)) {
+          tutorialStore.updateFile(normalizedFilePath, content);
+        }
+      }
+
+      if (delta.selectedFile) {
+        const selectedFilePath = normalizePath(delta.selectedFile);
+
+        if (existingFilePaths.has(selectedFilePath)) {
+          tutorialStore.setSelectedFile(selectedFilePath);
+        }
+      }
+
+      setLearnerDeltaStatus('restored');
+    } finally {
+      releasePlaybackGuardSoon();
+      syncLearnerDeltaCount();
+    }
   }
 
   function onFileSelect(filePath: string | undefined) {
@@ -547,6 +615,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   }, []);
 
   const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp;
+  const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback';
 
   return (
     <Panel
@@ -594,6 +663,9 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
         <button type="button" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
           Save Learner Delta
         </button>
+        <button type="button" onClick={onRestoreLearnerDelta} disabled={!canRestoreLearnerDelta}>
+          Restore Learner Delta
+        </button>
         <span>Mode: {mode}</span>
         <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
         <span>Event count: {eventCount}</span>
@@ -601,6 +673,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
         <span>Playhead ms: {playheadMs}</span>
         <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
         <span>Learner delta count: {learnerDeltaCount}</span>
+        <span>Learner delta status: {learnerDeltaStatus}</span>
       </div>
       <EditorPanel
         id={storeRef}

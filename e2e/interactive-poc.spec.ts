@@ -194,14 +194,15 @@ test.describe('interactive timeline POC', () => {
     expect(learnerDeltasAfterResume).toBeNull();
   });
 
-  test('saves learner delta after pause and edit', async ({ page }) => {
+  test('saves and restores learner delta after pause and edit', async ({ page }) => {
     const baseContent = "export default 'Lesson file example.js content';\n";
+    const teacherReplayContent = `${baseContent}// teacher replay overwrite\n`;
     const recording = {
       id: 'teacher-recording-delta-test',
       lessonId: 'lesson-and-solution',
       version: 1,
       startedAt: '2026-01-01T00:00:00.000Z',
-      durationMs: 10000,
+      durationMs: 2000,
       baseFiles: {
         '/example.html': '<h1>Teacher delta base</h1>\n',
         '/example.js': baseContent,
@@ -220,10 +221,10 @@ test.describe('interactive timeline POC', () => {
         {
           id: 'event-future-change',
           seq: 2,
-          tMs: 10000,
+          tMs: 2000,
           type: 'file.changed',
           filePath: '/example.js',
-          payload: { content: `${baseContent}// teacher future edit\n` },
+          payload: { content: teacherReplayContent },
           origin: 'teacher',
         },
       ],
@@ -235,9 +236,12 @@ test.describe('interactive timeline POC', () => {
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     const saveLearnerDelta = page.getByRole('button', { name: /save learner delta/i });
+    const restoreLearnerDelta = page.getByRole('button', { name: /restore learner delta/i });
 
     await expect(saveLearnerDelta).toBeVisible();
     await expect(saveLearnerDelta).toBeDisabled();
+    await expect(restoreLearnerDelta).toBeVisible();
+    await expect(restoreLearnerDelta).toBeDisabled();
 
     await page.getByRole('button', { name: /play recording/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
@@ -254,6 +258,8 @@ test.describe('interactive timeline POC', () => {
 
     await saveLearnerDelta.click();
     await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+    await expect(restoreLearnerDelta).toBeEnabled();
 
     const deltas = await page.evaluate(() => {
       const raw = localStorage.getItem('interactive-poc.learnerDeltas');
@@ -267,5 +273,19 @@ test.describe('interactive timeline POC', () => {
     expect(deltas[0].addedOrModified['/example.js']).toContain('// learner delta edit');
     expect(Array.isArray(deltas[0].removed)).toBeTruthy();
     expect(rawAfter).toBe(rawBefore);
+
+    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await expect(editor).toContainText('// teacher replay overwrite', { timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
+    await expect(editor).not.toContainText('// learner delta edit');
+    await expect(restoreLearnerDelta).toBeEnabled();
+
+    await restoreLearnerDelta.click();
+    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
+    await expect(editor).toContainText('// learner delta edit');
+
+    const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+
+    expect(rawAfterRestore).toBe(rawBefore);
   });
 });
