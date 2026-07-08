@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the local architecture checkpoint for the interactive tutorial POC as of Phase 6. It covers the browser-only recorder, playback, learner delta save/restore, and conflict detection behavior.
+This document is the local architecture checkpoint for the interactive tutorial POC as of Phase 7. It covers the browser-only recorder, timeline-clock playback, learner delta save/restore, and conflict detection behavior.
 
 ## Scope and invariants
 
@@ -60,7 +60,7 @@ Behavior:
 - loads `interactive-poc.teacherRecording`;
 - resets the workspace to the recording base files for a fresh playback;
 - sorts events by `tMs`, then `seq`;
-- applies supported events with `setTimeout` offsets;
+- advances one `requestAnimationFrame` timeline clock and applies due events in order;
 - updates playback status and playhead debug text;
 - uses a playback guard so programmatic changes are not recorded.
 
@@ -72,7 +72,7 @@ Currently applied event types:
 
 ### Pause & Try It
 
-Stops scheduled playback timers and switches to learner edit mode.
+Stops the playback clock and switches to learner edit mode.
 
 Behavior:
 
@@ -89,7 +89,8 @@ Continues teacher playback from the paused teacher timestamp.
 Behavior:
 
 - resumes only while mode is `learner-editing`;
-- schedules teacher events with `tMs > pausedTeacherTimestampMs`;
+- advances the playback clock from `pausedTeacherTimestampMs`;
+- applies teacher events with `tMs > pausedTeacherTimestampMs` as they become due;
 - does **not** reset the workspace to base files on resume;
 - later teacher `file.changed` events can overwrite the visible workspace;
 - saved learner deltas remain recoverable from localStorage.
@@ -381,6 +382,15 @@ Owns file-level learner delta helpers:
 - `simpleHashFiles(files)`: creates the POC base-state hash;
 - `getLearnerDeltaConflicts(recording, delta)`: reports later teacher `file.changed` events that touch learner-changed files.
 
+### `playback-clock.ts`
+
+Owns the minimal timeline playback clock:
+
+- uses `requestAnimationFrame` in the browser to advance one playhead;
+- exposes `playFrom(startMs)`, `pause()`, `stop()`, and `currentTimeMs`;
+- calls `onTick(currentTimeMs)` so React can apply all due timeline events;
+- calls `onFinish()` when the playhead reaches the current playback end.
+
 ### `storage.ts`
 
 Owns localStorage persistence:
@@ -461,7 +471,7 @@ Known limitations are intentional for the POC:
 - no analytics;
 - restore only updates existing TutorialKit files in the current UI;
 - file add/remove restore UI is not implemented;
-- playback is `setTimeout`-based rather than driven by a robust clock;
+- playback clock is minimal and does not yet support seeking, speed changes, drift correction, or audio sync;
 - editor selection is stored opaquely and not restored as a first-class feature;
 - localStorage parsing assumes valid POC JSON.
 
@@ -469,7 +479,7 @@ Known limitations are intentional for the POC:
 
 Candidate future phases:
 
-1. **Better playback clock**
+1. **Richer playback clock controls**
    - support seeking, speed, drift correction, cancellation, and deterministic replay state.
 
 2. **Backend persistence API shape**

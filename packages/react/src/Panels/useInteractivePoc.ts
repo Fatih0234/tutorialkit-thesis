@@ -1,4 +1,5 @@
 import {
+  TimelinePlaybackClock,
   TimelineRecorder,
   applyLearnerDelta,
   diffFiles,
@@ -88,15 +89,15 @@ export function useInteractivePoc({
   storeRef,
 }: UseInteractivePocOptions): UseInteractivePocResult {
   const recorderRef = useRef<TimelineRecorder | null>(null);
-  const playbackTimersRef = useRef<number[]>([]);
+  const playbackClockRef = useRef<TimelinePlaybackClock | null>(null);
   const playbackRecordingRef = useRef<TeacherRecording | null>(null);
+  const playbackEventsRef = useRef<TimelineEvent[]>([]);
+  const nextPlaybackEventIndexRef = useRef(0);
   const isApplyingPlaybackRef = useRef(false);
   const playbackGuardTokenRef = useRef(0);
   const modeRef = useRef<InteractiveMode>('idle');
   const playheadMsRef = useRef(0);
   const pausedTeacherTimestampMsRef = useRef(0);
-  const playbackStartedAtRef = useRef(0);
-  const playbackStartTimestampMsRef = useRef(0);
   const [isRecording, setIsRecording] = useState(false);
   const [eventCount, setEventCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -162,10 +163,6 @@ export function useInteractivePoc({
     return snapshotFiles;
   }
 
-  function getClockNowMs() {
-    return globalThis.performance?.now?.() ?? Date.now();
-  }
-
   function setInteractiveMode(nextMode: InteractiveMode) {
     modeRef.current = nextMode;
     setMode(nextMode);
@@ -185,12 +182,11 @@ export function useInteractivePoc({
     setPausedTeacherTimestampMs(normalizedMs);
   }
 
-  function clearPlaybackTimers() {
-    for (const timer of playbackTimersRef.current) {
-      window.clearTimeout(timer);
-    }
-
-    playbackTimersRef.current = [];
+  function stopPlaybackClock() {
+    playbackClockRef.current?.stop();
+    playbackClockRef.current = null;
+    playbackEventsRef.current = [];
+    nextPlaybackEventIndexRef.current = 0;
   }
 
   function startPlaybackGuard() {
@@ -209,9 +205,7 @@ export function useInteractivePoc({
   }
 
   function stopPlayback(status: PlaybackStatus, nextMode: InteractiveMode = 'idle') {
-    clearPlaybackTimers();
-    playbackStartedAtRef.current = 0;
-    playbackStartTimestampMsRef.current = playheadMsRef.current;
+    stopPlaybackClock();
     setIsPlaying(false);
     setPlaybackStatus(status);
     setInteractiveMode(nextMode);
@@ -219,14 +213,7 @@ export function useInteractivePoc({
   }
 
   function getCurrentPlaybackTimestampMs() {
-    if (modeRef.current !== 'teacher-playback' || playbackStartedAtRef.current === 0) {
-      return playheadMsRef.current;
-    }
-
-    return Math.max(
-      playheadMsRef.current,
-      playbackStartTimestampMsRef.current + getClockNowMs() - playbackStartedAtRef.current,
-    );
+    return playbackClockRef.current?.currentTimeMs ?? playheadMsRef.current;
   }
 
   function getSortedPlaybackEvents(recording: TeacherRecording): TimelineEvent[] {
@@ -253,8 +240,6 @@ export function useInteractivePoc({
   }
 
   function applyPlaybackEvent(event: TimelineEvent) {
-    setPlaybackTimestampMs(event.tMs);
-
     if (event.type === 'file.opened') {
       const payload = event.payload as { filePath?: string } | undefined;
       const filePath = event.filePath ?? payload?.filePath;
@@ -289,10 +274,38 @@ export function useInteractivePoc({
     }
   }
 
+  function applyDuePlaybackEvents(currentTimeMs: number) {
+    setPlaybackTimestampMs(currentTimeMs);
+
+    const events = playbackEventsRef.current;
+
+    while (nextPlaybackEventIndexRef.current < events.length) {
+      const event = events[nextPlaybackEventIndexRef.current];
+
+      if (!event || event.tMs > currentTimeMs) {
+        break;
+      }
+
+      if (modeRef.current !== 'teacher-playback') {
+        return;
+      }
+
+      isApplyingPlaybackRef.current = true;
+      applyPlaybackEvent(event);
+      nextPlaybackEventIndexRef.current += 1;
+    }
+
+    setPlaybackTimestampMs(currentTimeMs);
+  }
+
+  function getPlaybackEndMs(events: TimelineEvent[]) {
+    return events.at(-1)?.tMs ?? 0;
+  }
+
   function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }) {
     const recording = playbackRecordingRef.current ?? loadTeacherRecording();
 
-    clearPlaybackTimers();
+    stopPlaybackClock();
 
     if (!recording) {
       playbackRecordingRef.current = null;
@@ -304,42 +317,38 @@ export function useInteractivePoc({
     }
 
     playbackRecordingRef.current = recording;
+    playbackEventsRef.current = getSortedPlaybackEvents(recording);
+    nextPlaybackEventIndexRef.current = playbackEventsRef.current.findIndex((event) => event.tMs > startMs);
+
+    if (nextPlaybackEventIndexRef.current === -1) {
+      nextPlaybackEventIndexRef.current = playbackEventsRef.current.length;
+    }
+
     startPlaybackGuard();
     setIsPlaying(true);
     setInteractiveMode('teacher-playback');
     setPlaybackStatus('playing');
     setPlaybackTimestampMs(startMs);
-    playbackStartTimestampMsRef.current = Math.max(0, Math.round(startMs));
-    playbackStartedAtRef.current = getClockNowMs();
 
     if (resetToBase) {
       applyRecordingBaseFiles(recording);
     }
 
-    const events = getSortedPlaybackEvents(recording).filter((event) => event.tMs > startMs);
+    const playbackEndMs = getPlaybackEndMs(playbackEventsRef.current);
 
-    if (events.length === 0) {
+    if (nextPlaybackEventIndexRef.current >= playbackEventsRef.current.length || startMs >= playbackEndMs) {
       stopPlayback('finished');
       return;
     }
 
-    playbackTimersRef.current = events.map((event, index) =>
-      window.setTimeout(
-        () => {
-          if (modeRef.current !== 'teacher-playback') {
-            return;
-          }
+    const clock = new TimelinePlaybackClock({
+      endTimeMs: playbackEndMs,
+      onTick: applyDuePlaybackEvents,
+      onFinish: () => stopPlayback('finished'),
+    });
 
-          isApplyingPlaybackRef.current = true;
-          applyPlaybackEvent(event);
-
-          if (index === events.length - 1) {
-            stopPlayback('finished');
-          }
-        },
-        Math.max(0, event.tMs - startMs),
-      ),
-    );
+    playbackClockRef.current = clock;
+    clock.playFrom(startMs);
   }
 
   function onPlayRecording() {
@@ -356,6 +365,8 @@ export function useInteractivePoc({
     if (!isPlaying) {
       return;
     }
+
+    playbackClockRef.current?.pause();
 
     const pausedMs = getCurrentPlaybackTimestampMs();
 
@@ -528,7 +539,7 @@ export function useInteractivePoc({
 
   useEffect(() => {
     return () => {
-      clearPlaybackTimers();
+      stopPlaybackClock();
       isApplyingPlaybackRef.current = false;
       modeRef.current = 'idle';
     };

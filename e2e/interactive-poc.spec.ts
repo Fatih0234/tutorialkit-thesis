@@ -163,6 +163,12 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /play recording/i }).click();
     await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await expect
+      .poll(async () => {
+        const playheadText = await page.getByText(/playhead ms:\s*\d+/i).textContent();
+        return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
+      })
+      .toBeGreaterThan(0);
 
     await page.getByRole('button', { name: /pause & try it/i }).click();
     await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
