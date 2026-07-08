@@ -195,23 +195,77 @@ test.describe('interactive timeline POC', () => {
   });
 
   test('saves learner delta after pause and edit', async ({ page }) => {
-    test.skip(true, 'Enable after Phase 4 debug UI exists.');
+    const baseContent = "export default 'Lesson file example.js content';\n";
+    const recording = {
+      id: 'teacher-recording-delta-test',
+      lessonId: 'lesson-and-solution',
+      version: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 10000,
+      baseFiles: {
+        '/example.html': '<h1>Teacher delta base</h1>\n',
+        '/example.js': baseContent,
+      },
+      events: [
+        { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
+        {
+          id: 'event-opened',
+          seq: 1,
+          tMs: 0,
+          type: 'file.opened',
+          filePath: '/example.js',
+          payload: { filePath: '/example.js' },
+          origin: 'teacher',
+        },
+        {
+          id: 'event-future-change',
+          seq: 2,
+          tMs: 10000,
+          type: 'file.changed',
+          filePath: '/example.js',
+          payload: { content: `${baseContent}// teacher future edit\n` },
+          origin: 'teacher',
+        },
+      ],
+    };
+
+    await page.evaluate((teacherRecording) => {
+      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+    }, recording);
+
+    const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    const saveLearnerDelta = page.getByRole('button', { name: /save learner delta/i });
+
+    await expect(saveLearnerDelta).toBeVisible();
+    await expect(saveLearnerDelta).toBeDisabled();
 
     await page.getByRole('button', { name: /play recording/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await page.getByRole('button', { name: /pause & try it/i }).click();
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await expect(saveLearnerDelta).toBeEnabled();
 
-    const editor = page.locator('.cm-content').first();
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
     await editor.click();
     await page.keyboard.type('\n// learner delta edit');
+    await expect(editor).toContainText('// learner delta edit');
+    await page.waitForTimeout(600);
 
-    await page.getByRole('button', { name: /save learner delta/i }).click();
+    await saveLearnerDelta.click();
+    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
 
     const deltas = await page.evaluate(() => {
       const raw = localStorage.getItem('interactive-poc.learnerDeltas');
       return raw ? JSON.parse(raw) : [];
     });
+    const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
-    expect(deltas.length).toBeGreaterThan(0);
-    expect(Object.keys(deltas.at(-1).addedOrModified).length).toBeGreaterThan(0);
+    expect(Array.isArray(deltas)).toBeTruthy();
+    expect(deltas).toHaveLength(1);
+    expect(typeof deltas[0].teacherTimestampMs).toBe('number');
+    expect(deltas[0].addedOrModified['/example.js']).toContain('// learner delta edit');
+    expect(Array.isArray(deltas[0].removed)).toBeTruthy();
+    expect(rawAfter).toBe(rawBefore);
   });
 });

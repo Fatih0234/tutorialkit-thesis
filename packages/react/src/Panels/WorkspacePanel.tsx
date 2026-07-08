@@ -1,13 +1,19 @@
 import { useStore } from '@nanostores/react';
 import {
   TimelineRecorder,
+  diffFiles,
+  loadLearnerDeltas,
   loadTeacherRecording,
+  materializeTeacherState,
   normalizeFiles,
   normalizePath,
+  saveLearnerDelta,
   saveTeacherRecording,
+  simpleHashFiles,
   type EditorScrolledPayload,
   type FileChangedPayload,
   type FilesSnapshot,
+  type LearnerDelta,
   type TeacherRecording,
   type TimelineEvent,
   type TutorialStore,
@@ -140,6 +146,9 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
   const [playheadMs, setPlayheadMs] = useState(0);
   const [pausedTeacherTimestampMs, setPausedTeacherTimestampMs] = useState(0);
+  const [hasPausedTeacherTimestamp, setHasPausedTeacherTimestamp] = useState(false);
+  const [hasTeacherRecording, setHasTeacherRecording] = useState(false);
+  const [learnerDeltaCount, setLearnerDeltaCount] = useState(0);
 
   const lesson = tutorialStore.lesson!;
 
@@ -149,6 +158,26 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
   function syncEventCount() {
     setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
+  }
+
+  function syncLearnerDeltaCount() {
+    setLearnerDeltaCount(loadLearnerDeltas().length);
+  }
+
+  function createLearnerDeltaId() {
+    return `learner-delta-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function getCurrentLearnerFiles() {
+    const snapshotFiles = normalizeFiles(tutorialStore.takeSnapshot().files);
+
+    for (const [filePath, document] of Object.entries(tutorialStore.documents.get())) {
+      if (document && !document.loading && document.type === 'file' && typeof document.value === 'string') {
+        snapshotFiles[normalizePath(filePath)] = document.value;
+      }
+    }
+
+    return snapshotFiles;
   }
 
   function getClockNowMs() {
@@ -332,7 +361,11 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   }
 
   function onPlayRecording() {
-    playbackRecordingRef.current = loadTeacherRecording() ?? null;
+    const recording = loadTeacherRecording() ?? null;
+
+    playbackRecordingRef.current = recording;
+    setHasTeacherRecording(Boolean(recording));
+    setHasPausedTeacherTimestamp(false);
     setPausedTimestampMs(0);
     playRecordingFrom(-1, { resetToBase: true });
   }
@@ -346,6 +379,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
     setPlaybackTimestampMs(pausedMs);
     setPausedTimestampMs(pausedMs);
+    setHasPausedTeacherTimestamp(true);
     stopPlayback('paused', 'learner-editing');
   }
 
@@ -380,8 +414,45 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
 
     saveTeacherRecording(stopped);
+    setHasTeacherRecording(true);
     setIsRecording(false);
     setEventCount(stopped.events.length);
+  }
+
+  function onSaveLearnerDelta() {
+    if (modeRef.current !== 'learner-editing' || !hasPausedTeacherTimestamp) {
+      return;
+    }
+
+    const recording = loadTeacherRecording();
+
+    setHasTeacherRecording(Boolean(recording));
+
+    if (!recording) {
+      return;
+    }
+
+    const teacherTimestampMs = pausedTeacherTimestampMsRef.current;
+    const baseTeacherFiles = normalizeFiles(materializeTeacherState(recording, teacherTimestampMs));
+    const learnerFiles = getCurrentLearnerFiles();
+    const { addedOrModified, removed } = diffFiles(baseTeacherFiles, learnerFiles);
+    const selectedFilePath = getCurrentFilePath();
+    const delta: LearnerDelta = {
+      id: createLearnerDeltaId(),
+      userId: 'local-poc-user',
+      lessonId: recording.lessonId || lesson.id,
+      teacherRecordingId: recording.id,
+      teacherRecordingVersion: recording.version,
+      teacherTimestampMs,
+      baseTeacherFilesHash: simpleHashFiles(baseTeacherFiles),
+      addedOrModified,
+      removed,
+      selectedFile: selectedFilePath ? normalizePath(selectedFilePath) : undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    saveLearnerDelta(delta);
+    syncLearnerDeltaCount();
   }
 
   function onFileSelect(filePath: string | undefined) {
@@ -462,6 +533,9 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     } else {
       setHelpAction('reset');
     }
+
+    setHasTeacherRecording(Boolean(loadTeacherRecording()));
+    syncLearnerDeltaCount();
   }, [storeRef]);
 
   useEffect(() => {
@@ -471,6 +545,8 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       modeRef.current = 'idle';
     };
   }, []);
+
+  const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp;
 
   return (
     <Panel
@@ -515,12 +591,16 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
         <button type="button" onClick={onResumeTeacher} disabled={mode !== 'learner-editing'}>
           Resume Teacher
         </button>
+        <button type="button" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
+          Save Learner Delta
+        </button>
         <span>Mode: {mode}</span>
         <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
         <span>Event count: {eventCount}</span>
         <span>Playback status: {playbackStatus}</span>
         <span>Playhead ms: {playheadMs}</span>
         <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
+        <span>Learner delta count: {learnerDeltaCount}</span>
       </div>
       <EditorPanel
         id={storeRef}
