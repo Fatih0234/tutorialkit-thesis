@@ -1,6 +1,26 @@
-# Local Findings (Phase 0)
+# Local Findings (Phase 0 Baseline)
 
-Phase 0 only: no feature code was written.
+Phase 0 only: no Phase 1 feature code was written.
+
+## Repository foundation status
+
+This checkout now contains the full TutorialKit source tree.
+
+The full source was imported from the existing local clone:
+
+```text
+/home/fatihkarahan/Projects/tutorialkit-interactive/tutorialkit
+```
+
+Preserved starter assets:
+
+- `AGENTS.md`
+- `agent-tasks/`
+- `docs/00-context.md` through `docs/05-acceptance-criteria.md`
+- `docs/local-findings.md`
+- `e2e/interactive-poc.spec.ts`
+- `scripts/phase0-grep.sh`
+- `packages/runtime/src/interactive-timeline/`
 
 ## Command run
 
@@ -8,106 +28,187 @@ Phase 0 only: no feature code was written.
 bash scripts/phase0-grep.sh
 ```
 
-Result: the probe ran, but this checkout does not contain the expected TutorialKit source files. `rg` reported `No such file or directory` for every probed TutorialKit path:
-
-- `packages/react/src/Panels/WorkspacePanel.tsx`
-- `packages/runtime/src/store/index.ts`
-- `packages/runtime/src/store/editor.ts`
-- `packages/react/src/core/CodeMirrorEditor/index.tsx`
-- `packages/runtime/src/store/tutorial-runner.ts`
-- `packages/runtime/src/webcontainer/utils/files.ts`
-
-## Repository shape found locally
-
-This checkout is a POC starter, not a full TutorialKit app checkout.
-
-Existing implementation files are limited to:
-
-- `packages/runtime/src/interactive-timeline/index.ts`
-- `packages/runtime/src/interactive-timeline/types.ts`
-- `packages/runtime/src/interactive-timeline/path.ts`
-- `packages/runtime/src/interactive-timeline/recorder.ts`
-- `packages/runtime/src/interactive-timeline/materialize.ts`
-- `packages/runtime/src/interactive-timeline/learner-delta.ts`
-- `packages/runtime/src/interactive-timeline/storage.ts`
-
-There is no local `package.json`, no Playwright config, and no local `packages/react/` tree.
+The probe now finds the real TutorialKit integration points.
 
 ## Exact editor callback locations
 
-Not confirmable in this checkout because the expected editor/UI files are absent.
+### Workspace orchestration
 
-Expected future integration points, from the Phase 0 probe and project instructions, are:
+`packages/react/src/Panels/WorkspacePanel.tsx`
 
-- `packages/react/src/Panels/WorkspacePanel.tsx`
-  - candidate callback/API names to inspect when the file exists: `onEditorChange`, `onEditorScroll`, `onFileSelect`, `setCurrentDocumentContent`, `setSelectedFile`
-  - preferred first interception point for recording file edits and file selections
-- `packages/react/src/core/CodeMirrorEditor/index.tsx`
-  - candidate callback names to inspect when the file exists: `OnChangeCallback`, `OnScrollCallback`, `dispatchTransactions`, `onChange`, `onScroll`
-  - avoid editing this unless `WorkspacePanel` callbacks are insufficient
-- `packages/runtime/src/store/editor.ts`
-  - candidate APIs to inspect when the file exists: `selectedFile`, `documents`, `updateFile`, `updateScrollPosition`, `onDocumentChanged`
+- `EditorSection` is the best first integration point because it has access to `tutorialStore`, the selected/current document state, lesson metadata, and the existing editor/file callbacks.
+- Existing callback wiring:
+  - line 166: `onFileSelect={(filePath) => tutorialStore.setSelectedFile(filePath)}`
+  - line 170: `onEditorScroll={(position) => tutorialStore.setCurrentDocumentScrollPosition(position)}`
+  - line 171: `onEditorChange={(update) => tutorialStore.setCurrentDocumentContent(update.content)}`
+- Existing file-tree mutation callback:
+  - line 129: `onFileTreeChange({ method, type, value })`
+  - lines 130-137: currently handles adding files/folders with `tutorialStore.addFile(value)` and `tutorialStore.addFolder(value)`.
+
+### EditorPanel forwarding layer
+
+`packages/react/src/Panels/EditorPanel.tsx`
+
+- Props:
+  - line 29: `onEditorChange?: OnEditorChange`
+  - line 30: `onEditorScroll?: OnEditorScroll`
+  - line 32: `onFileSelect?: (value?: string) => void`
+  - line 33: `onFileTreeChange?: ComponentProps<typeof FileTree>['onFileChange']`
+- File tree forwarding:
+  - line 89: `onFileSelect={onFileSelect}`
+  - line 90: `onFileChange={onFileTreeChange}`
+- CodeMirror forwarding:
+  - line 107: `onScroll={onEditorScroll}`
+  - line 108: `onChange={onEditorChange}`
+
+### File tree selection source
+
+`packages/react/src/core/FileTree.tsx`
+
+- line 101: file click calls `onFileSelect?.(fileOrFolder.fullPath)`.
+
+### CodeMirror callback source
+
+`packages/react/src/core/CodeMirrorEditor/index.tsx`
+
+- Callback types:
+  - line 46: `EditorUpdate { selection: EditorSelection; content: string }`
+  - line 51: `OnChangeCallback = (update: EditorUpdate) => void`
+  - line 52: `OnScrollCallback = (position: ScrollPosition) => void`
+- Props:
+  - line 61: `onChange?: OnChangeCallback`
+  - line 62: `onScroll?: OnScrollCallback`
+- Change emission:
+  - line 101: debounced `onChangeRef.current?.(update)`
+  - line 106: custom `dispatchTransactions(transactions)`
+  - lines 120-124: emits when the document changed or selection changed, passing `{ selection, content }`
+- Scroll emission:
+  - line 214: emits `{ left: view.scrollDOM.scrollLeft, top: view.scrollDOM.scrollTop }`
+
+Avoid editing CodeMirror for the POC unless wrapping callbacks in `WorkspacePanel.tsx` proves insufficient.
+
+## Exact TutorialStore/editor APIs
+
+`packages/runtime/src/store/index.ts`
+
+- Reset/solution:
+  - line 304: `reset()` resets editor documents to `_lessonFiles` and calls `_runner.updateFiles(this._lessonFiles)`.
+  - line 316: `solve()` overlays `_lessonSolution`, sets documents, and calls `_runner.updateFiles(files)`.
+- File selection:
+  - line 330: `setSelectedFile(filePath: string | undefined)` delegates to `_editorStore.setSelectedFile(filePath)`.
+- File creation:
+  - line 335: `addFile(filePath: string)` selects the file, updates editor store, then `_runner.updateFile(filePath, '')`.
+  - line 353: `addFolder(folderPath: string)` updates editor store, then `_runner.createFolder(folderPath)`.
+- File content changes:
+  - line 368: `updateFile(filePath: string, content: string)` calls `_editorStore.updateFile`.
+  - line 372: if changed, calls `_runner.updateFile(filePath, content)`.
+  - line 377: `setCurrentDocumentContent(newContent: string)` reads `currentDocument.get()?.filePath`.
+  - line 384: active-file edits flow through `this.updateFile(filePath, newContent)`.
+- Scroll:
+  - line 388: `setCurrentDocumentScrollPosition(position)`
+  - line 397: delegates to `_editorStore.updateScrollPosition(filePath, position)`.
+- Observability/snapshot:
+  - line 414: `onDocumentChanged(filePath, callback)` delegates to `EditorStore`.
+  - line 419: `takeSnapshot()` delegates to `this._runner.takeSnapshot()`.
+
+`packages/runtime/src/store/editor.ts`
+
+- State:
+  - line 22: `selectedFile = atom<string | undefined>()`
+  - line 23: `documents = map<EditorDocuments>({})`
+  - line 28: `currentDocument` is computed from `documents` and `selectedFile`.
+- Document loading:
+  - line 44: `setDocuments(files: FilesRefList | Files)`
+  - lines 51-63: `FilesRefList` creates loading docs with leading-slash file paths.
+  - lines 68-80: `Files` creates loaded docs and preserves previous scroll.
+- Mutations:
+  - line 87: `updateScrollPosition(filePath, position)` stores `scroll` on the document.
+  - line 100: `addFileOrFolder(file)` adds file/folder records.
+  - line 116: `updateFile(filePath, content)` updates document value and returns `boolean` changed.
+  - line 136: `deleteFile(filePath)` exists on `EditorStore`, but `TutorialStore`/`WorkspacePanel` do not currently expose delete in the inspected add-file callback path.
 
 ## Exact snapshot API shape
 
-The TutorialKit store snapshot API is not confirmable locally because these files are absent:
+`packages/runtime/src/store/index.ts`
 
-- `packages/runtime/src/store/index.ts`
-- `packages/runtime/src/store/tutorial-runner.ts`
+```ts
+takeSnapshot() {
+  return this._runner.takeSnapshot();
+}
+```
 
-The local POC helper shape is confirmed:
+`packages/runtime/src/store/tutorial-runner.ts`
 
-- `packages/runtime/src/interactive-timeline/types.ts:1`
-  - `FilesSnapshot = Record<string, string>`
-- `packages/runtime/src/interactive-timeline/types.ts:36`
-  - `TeacherRecording.baseFiles: FilesSnapshot`
-- `packages/runtime/src/interactive-timeline/types.ts:46`
-  - `LearnerDelta.addedOrModified: FilesSnapshot`
-  - `LearnerDelta.removed: string[]`
-- `packages/runtime/src/interactive-timeline/recorder.ts:25`
-  - `TimelineRecorder.start({ lessonId, version = 1, baseFiles })`
-- `packages/runtime/src/interactive-timeline/materialize.ts:4`
-  - `materializeTeacherState(recording, untilMs): FilesSnapshot`
-- `packages/runtime/src/interactive-timeline/materialize.ts:32`
-  - `getFinalTeacherState(recording): FilesSnapshot`
-- `packages/runtime/src/interactive-timeline/learner-delta.ts:9`
-  - `diffFiles(beforeInput, afterInput): { addedOrModified: FilesSnapshot; removed: string[] }`
-- `packages/runtime/src/interactive-timeline/learner-delta.ts:32`
-  - `applyLearnerDelta(baseInput, delta): FilesSnapshot`
-- `packages/runtime/src/interactive-timeline/learner-delta.ts:46`
-  - `simpleHashFiles(filesInput): string`
+- line 400: `takeSnapshot()`
+- Return shape:
 
-Future feature code should adapt the real TutorialKit `takeSnapshot()` result into `FilesSnapshot` before calling these helpers.
+```ts
+{
+  files: Record<string, string>
+}
+```
 
-## Exact path convention used locally
+- It includes string files only. `Uint8Array` files are skipped.
+- It first adds template files from `_currentTemplate`, then overwrites with editor/lesson files from `_currentFiles`.
+- It may synthesize/update `package.json` with `stackblitz.startCommand` if runner commands are available and the package JSON lacks that field.
+- Important path behavior:
+  - lines 406 and 413 use `filePath.slice(1)`.
+  - The comment above `takeSnapshot()` says: `file paths do not contain the leading /`.
 
-Confirmed local convention: internal file paths are normalized to leading-slash form.
-
-- `packages/runtime/src/interactive-timeline/path.ts:1`
-  - `normalizePath(path)` returns the path unchanged when it already starts with `/`; otherwise it prefixes `/`.
-- `packages/runtime/src/interactive-timeline/path.ts:9`
-  - `normalizeFiles(files)` normalizes every object key with `normalizePath`.
-- `packages/runtime/src/interactive-timeline/recorder.ts:35`
-  - recording `baseFiles` are normalized at recording start.
-- `packages/runtime/src/interactive-timeline/recorder.ts:72`
-  - event `filePath` values are normalized when appended.
-
-Example normalized paths:
+Therefore, `tutorialStore.takeSnapshot().files` returns paths like:
 
 ```text
-/src/App.jsx
+src/index.js
+package.json
+```
+
+The interactive POC helpers require leading-slash paths, so feature code must normalize snapshots before diffing/saving:
+
+```text
+/src/index.js
 /package.json
 ```
 
+## Exact path convention used locally
+
+Two conventions are present:
+
+1. TutorialKit internal editor/runner paths use leading slashes.
+2. `takeSnapshot()` output strips the leading slash.
+
+Confirmed locations:
+
+- `packages/types/src/entities/index.ts:8`
+  - `Files = Record<string, string | Uint8Array>`
+- `packages/astro/src/default/utils/content/files-ref.ts:18`
+  - generated lesson file paths are `/${relativePath}`.
+- `packages/runtime/src/store/editor.ts:51-63`
+  - `FilesRefList` entries are used directly as document `filePath` values.
+- `packages/runtime/src/store/tutorial-runner.ts:406` and `:413`
+  - snapshot output strips the leading slash via `slice(1)`.
+- `packages/runtime/src/interactive-timeline/path.ts:1`
+  - POC `normalizePath(path)` enforces leading-slash form.
+- `packages/runtime/src/interactive-timeline/path.ts:9`
+  - POC `normalizeFiles(files)` normalizes all file keys.
+
+POC storage should use leading-slash normalized paths internally.
+
 ## Where debug controls will be placed
 
-When the full TutorialKit UI files are present, place the POC debug controls in:
+Place the crude POC debug controls in:
 
 ```text
 packages/react/src/Panels/WorkspacePanel.tsx
 ```
 
-Place them near the workspace/editor UI where editor change and file selection callbacks are already wired, so recording/playback can wrap existing callbacks instead of modifying CodeMirror internals.
+Recommended exact area: inside `EditorSection`, in the returned editor `<Panel>`, immediately before the existing `<EditorPanel ... />` render. This location has direct access to:
+
+- `tutorialStore`
+- `selectedFile`
+- `currentDocument`
+- `lesson`
+- `storeRef`
+- existing `onFileSelect`, `onEditorScroll`, and `onEditorChange` callback wiring
 
 Required accessible button names for Playwright:
 
@@ -118,50 +219,60 @@ Required accessible button names for Playwright:
 - `Save Learner Delta`
 - `Restore Learner Delta`
 
-## localStorage shape to inspect
+## Existing localStorage helper shape
 
-Confirmed keys:
+`packages/runtime/src/interactive-timeline/storage.ts`
 
-- `packages/runtime/src/interactive-timeline/storage.ts:3`
-  - `interactive-poc.teacherRecording`
-- `packages/runtime/src/interactive-timeline/storage.ts:4`
-  - `interactive-poc.learnerDeltas`
-
-Confirmed storage functions:
-
-- `saveTeacherRecording(recording)` writes one JSON `TeacherRecording`.
-- `loadTeacherRecording()` returns `TeacherRecording | undefined`.
-- `saveLearnerDelta(delta)` appends one `LearnerDelta` to the JSON array.
-- `loadLearnerDeltas()` returns `LearnerDelta[]`.
-- `loadLatestLearnerDelta()` returns the last delta.
+- line 3: `interactive-poc.teacherRecording`
+- line 4: `interactive-poc.learnerDeltas`
+- line 14: `saveTeacherRecording(recording)` writes one JSON `TeacherRecording`.
+- line 18: `loadTeacherRecording()` returns `TeacherRecording | undefined`.
+- line 28: `saveLearnerDelta(delta)` appends to the JSON array.
+- line 35: `loadLearnerDeltas()` returns `LearnerDelta[]`.
+- line 45: `loadLatestLearnerDelta()` returns the last delta.
 
 ## How to run the app
 
-Not runnable in this checkout: there is no local `package.json`, app source, or dev-server config.
+Install dependencies first if needed:
 
-The existing Playwright test defaults to:
+```bash
+pnpm install --frozen-lockfile
+```
+
+Common TutorialKit commands from root `package.json`:
+
+```bash
+pnpm run dev          # package development/watch mode
+pnpm run demo         # run docs/demo app
+pnpm run docs         # run tutorialkit.dev docs app
+pnpm run template:dev # build packages, then run tutorialkit-starter
+```
+
+For the POC Playwright spec, run a host app and point `TK_POC_URL` at it. The existing POC spec defaults to:
 
 ```text
 http://localhost:4321
 ```
 
-When this starter is inside a full TutorialKit project, start that host app with its normal dev script and keep it available at the URL used by `TK_POC_URL`.
-
 ## How to run Playwright
 
-No local Playwright dependency/config is present in this checkout. Once dependencies exist and the host app is running:
+Built-in TutorialKit e2e suite:
 
 ```bash
-TK_POC_URL=http://localhost:4321 pnpm exec playwright test e2e/interactive-poc.spec.ts
+pnpm run test:e2e
 ```
 
-Optional setup snippets already documented in `package-snippets.md`:
+POC spec, once debug controls exist:
 
 ```bash
-pnpm add -D @playwright/test
-pnpm exec playwright install
+TK_POC_URL=http://localhost:4321 pnpm --dir e2e exec playwright test interactive-poc.spec.ts
 ```
 
-## Phase 0 conclusion
+Notes:
 
-Phase 0 local inspection is complete. The main blocker before feature work is that this checkout lacks the full TutorialKit integration files that the POC is intended to wrap.
+- `e2e/interactive-poc.spec.ts` is a starter POC test and is not part of the upstream `e2e/test/*.test.ts` pattern unless run explicitly.
+- The POC test is expected to fail until the Phase 1+ debug controls and recording behavior are implemented.
+
+## Phase 0 baseline conclusion
+
+The repository now has the full TutorialKit source plus the preserved interactive POC starter files. Actual editor, store, snapshot, and path integration points are identified above. Phase 1 has not been implemented.

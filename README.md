@@ -1,22 +1,47 @@
-# Interactive Programming Tutorial POC Starter
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/logo-white.svg">
+    <img src="media/logo.svg" alt="tutorialkit-logo" width="440px" height="120px" />
+  </picture>
+  <br>
+  TutorialKit by <a href="https://stackblitz.com">StackBlitz</a> enables you to create interactive coding tutorials effortlessly, boosting the adoption of
+  your framework, UI library or design system.
+</p>
 
-This starter kit is meant to be dropped into the root of a TutorialKit-based project or a fresh project folder that will later vendor/fork TutorialKit.
+<p align="center">
+  <a href="https://tutorialkit.dev/"><strong>tutorialkit.dev</strong></a>
+  <br>
+</p>
 
-The goal is a minimal, testable interactivity spike:
+<p align="center">
+  <a href="https://tutorialkit.dev/guides/about/#getting-started">Get Started</a>
+  ·
+  <a href="https://demo.tutorialkit.dev/">Try Demo</a>
+  <br>
+  <br>
+</p>
 
-- Teacher records timestamped editor/file actions.
-- Teacher timeline can be replayed.
-- Learner can pause and edit.
-- Learner changes are saved as deltas/snapshots.
-- Teacher timeline remains immutable.
+<hr>
 
-This starter does **not** implement backend persistence, AI tutor behavior, Flue integration, terminal recording, or production UI.
-Start with localStorage and Playwright-verifiable behavior.
+## Documentation
 
-Recommended first command after dropping into a repo:
+Read our documentation on [tutorialkit.dev](https://tutorialkit.dev/guides/about)
 
-```bash
-bash scripts/phase0-grep.sh
-```
+## Development Setup
 
-Then give the coding agent the tasks in `agent-tasks/` in order.
+### Prerequisites
+
+- Install [Node.js](https://nodejs.org/en) v18.18 or above.
+- Install [pnpm](https://pnpm.io/).
+
+### Contribution
+
+See [Contributing Guide](./CONTRIBUTING.md).
+
+## Community
+
+Come and say hi :wave:!
+
+- [X](https://x.com/stackblitz)
+- [Discord](https://discord.gg/stackblitz)
+- [GitHub](https://github.com/stackblitz)
