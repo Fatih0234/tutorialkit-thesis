@@ -1,9 +1,15 @@
 import { useStore } from '@nanostores/react';
 import {
   TimelineRecorder,
+  loadTeacherRecording,
   normalizeFiles,
+  normalizePath,
   saveTeacherRecording,
+  type EditorScrolledPayload,
+  type FileChangedPayload,
   type FilesSnapshot,
+  type TeacherRecording,
+  type TimelineEvent,
   type TutorialStore,
 } from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
@@ -22,6 +28,9 @@ const DEFAULT_TERMINAL_SIZE = 25;
 type FileTreeChangeEvent = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onFileTreeChange']>>[0];
 type EditorChangeUpdate = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorChange']>>[0];
 type EditorScrollPosition = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorScroll']>>[0];
+type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
+
+const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
 
 interface Props {
   tutorialStore: TutorialStore;
@@ -114,8 +123,14 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const storeRef = useStore(tutorialStore.ref);
   const files = useStore(tutorialStore.files);
   const recorderRef = useRef<TimelineRecorder | null>(null);
+  const playbackTimersRef = useRef<number[]>([]);
+  const isApplyingPlaybackRef = useRef(false);
+  const playbackGuardTokenRef = useRef(0);
   const [isRecording, setIsRecording] = useState(false);
   const [eventCount, setEventCount] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
+  const [playheadMs, setPlayheadMs] = useState(0);
 
   const lesson = tutorialStore.lesson!;
 
@@ -125,6 +140,141 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
   function syncEventCount() {
     setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
+  }
+
+  function clearPlaybackTimers() {
+    for (const timer of playbackTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+
+    playbackTimersRef.current = [];
+  }
+
+  function startPlaybackGuard() {
+    playbackGuardTokenRef.current += 1;
+    isApplyingPlaybackRef.current = true;
+  }
+
+  function releasePlaybackGuardSoon() {
+    const token = playbackGuardTokenRef.current;
+
+    window.setTimeout(() => {
+      if (playbackGuardTokenRef.current === token) {
+        isApplyingPlaybackRef.current = false;
+      }
+    }, PLAYBACK_GUARD_RELEASE_DELAY_MS);
+  }
+
+  function stopPlayback(status: PlaybackStatus) {
+    clearPlaybackTimers();
+    setIsPlaying(false);
+    setPlaybackStatus(status);
+    releasePlaybackGuardSoon();
+  }
+
+  function getSortedPlaybackEvents(recording: TeacherRecording): TimelineEvent[] {
+    return [...recording.events].sort((a, b) => {
+      if (a.tMs !== b.tMs) {
+        return a.tMs - b.tMs;
+      }
+
+      return a.seq - b.seq;
+    });
+  }
+
+  function applyRecordingBaseFiles(recording: TeacherRecording) {
+    tutorialStore.reset();
+
+    const existingFilePaths = new Set(tutorialStore.files.get().map((file) => normalizePath(file.path)));
+    const baseFiles: FilesSnapshot = normalizeFiles(recording.baseFiles);
+
+    for (const [filePath, content] of Object.entries(baseFiles)) {
+      if (existingFilePaths.has(filePath)) {
+        tutorialStore.updateFile(filePath, content);
+      }
+    }
+  }
+
+  function applyPlaybackEvent(event: TimelineEvent) {
+    setPlayheadMs(event.tMs);
+
+    if (event.type === 'file.opened') {
+      const payload = event.payload as { filePath?: string } | undefined;
+      const filePath = event.filePath ?? payload?.filePath;
+
+      if (filePath) {
+        tutorialStore.setSelectedFile(normalizePath(filePath));
+      }
+
+      return;
+    }
+
+    if (event.type === 'file.changed') {
+      const payload = event.payload as FileChangedPayload | undefined;
+
+      if (event.filePath && typeof payload?.content === 'string') {
+        tutorialStore.updateFile(normalizePath(event.filePath), payload.content);
+      }
+
+      return;
+    }
+
+    if (event.type === 'editor.scrolled') {
+      const payload = event.payload as EditorScrolledPayload | undefined;
+
+      if (event.filePath) {
+        tutorialStore.setSelectedFile(normalizePath(event.filePath));
+      }
+
+      if (typeof payload?.top === 'number' && typeof payload?.left === 'number') {
+        tutorialStore.setCurrentDocumentScrollPosition({ top: payload.top, left: payload.left });
+      }
+    }
+  }
+
+  function onPlayRecording() {
+    const recording = loadTeacherRecording();
+
+    clearPlaybackTimers();
+
+    if (!recording) {
+      setIsPlaying(false);
+      setPlaybackStatus('missing-recording');
+      setPlayheadMs(0);
+      return;
+    }
+
+    startPlaybackGuard();
+    setIsPlaying(true);
+    setPlaybackStatus('playing');
+    setPlayheadMs(0);
+    applyRecordingBaseFiles(recording);
+
+    const events = getSortedPlaybackEvents(recording);
+
+    if (events.length === 0) {
+      stopPlayback('finished');
+      return;
+    }
+
+    playbackTimersRef.current = events.map((event, index) =>
+      window.setTimeout(() => {
+        isApplyingPlaybackRef.current = true;
+        applyPlaybackEvent(event);
+
+        if (index === events.length - 1) {
+          stopPlayback('finished');
+        }
+      }, Math.max(0, event.tMs)),
+    );
+  }
+
+  function onPausePlayback() {
+    if (!isPlaying) {
+      return;
+    }
+
+    stopPlayback('paused');
   }
 
   function onStartRecording() {
@@ -157,7 +307,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   function onFileSelect(filePath: string | undefined) {
     tutorialStore.setSelectedFile(filePath);
 
-    if (!filePath || !recorderRef.current?.isRecording()) {
+    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -170,7 +320,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
     const filePath = getCurrentFilePath();
 
-    if (!filePath || !recorderRef.current?.isRecording()) {
+    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -190,7 +340,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
     const filePath = getCurrentFilePath();
 
-    if (!filePath || !recorderRef.current?.isRecording()) {
+    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -234,6 +384,13 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
   }, [storeRef]);
 
+  useEffect(() => {
+    return () => {
+      clearPlaybackTimers();
+      isApplyingPlaybackRef.current = false;
+    };
+  }, []);
+
   return (
     <Panel
       id={hasEditor ? 'editor-opened' : 'editor-closed'}
@@ -254,14 +411,22 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
           padding: '0.5rem',
         }}
       >
-        <button type="button" onClick={onStartRecording} disabled={isRecording || !lessonFullyLoaded}>
+        <button type="button" onClick={onStartRecording} disabled={isRecording || isPlaying || !lessonFullyLoaded}>
           Start Recording
         </button>
         <button type="button" onClick={onStopRecording} disabled={!isRecording}>
           Stop Recording
         </button>
+        <button type="button" onClick={onPlayRecording} disabled={isRecording || isPlaying || !lessonFullyLoaded}>
+          Play Recording
+        </button>
+        <button type="button" onClick={onPausePlayback} disabled={!isPlaying}>
+          Pause
+        </button>
         <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
         <span>Event count: {eventCount}</span>
+        <span>Playback status: {playbackStatus}</span>
+        <span>Playhead ms: {playheadMs}</span>
       </div>
       <EditorPanel
         id={storeRef}
