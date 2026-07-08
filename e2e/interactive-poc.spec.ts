@@ -97,7 +97,7 @@ test.describe('interactive timeline POC', () => {
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     const playRecording = page.getByRole('button', { name: /play recording/i });
-    const pausePlayback = page.getByRole('button', { name: /^pause$/i });
+    const pausePlayback = page.getByRole('button', { name: /pause & try it/i });
 
     await expect(playRecording).toBeVisible();
     await expect(pausePlayback).toBeVisible();
@@ -118,11 +118,87 @@ test.describe('interactive timeline POC', () => {
     expect(rawAfter).toBe(rawBefore);
   });
 
+  test('allows learner editing while paused and resumes teacher playback', async ({ page }) => {
+    const baseContent = 'console.log("teacher pause base");\n';
+    const finalContent = `${baseContent}// teacher resumed final edit\n`;
+    const recording = {
+      id: 'teacher-recording-pause-resume-test',
+      lessonId: 'lesson-and-solution',
+      version: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 2000,
+      baseFiles: {
+        '/example.html': '<h1>Teacher pause base</h1>\n',
+        '/example.js': baseContent,
+      },
+      events: [
+        { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
+        {
+          id: 'event-opened',
+          seq: 1,
+          tMs: 0,
+          type: 'file.opened',
+          filePath: '/example.js',
+          payload: { filePath: '/example.js' },
+          origin: 'teacher',
+        },
+        {
+          id: 'event-final-change',
+          seq: 2,
+          tMs: 2000,
+          type: 'file.changed',
+          filePath: '/example.js',
+          payload: { content: finalContent },
+          origin: 'teacher',
+        },
+      ],
+    };
+
+    await page.evaluate((teacherRecording) => {
+      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+    }, recording);
+
+    const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+
+    await page.getByRole('button', { name: /play recording/i }).click();
+    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+
+    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*paused/i)).toBeVisible();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// learner temporary edit');
+    await expect(editor).toContainText('// learner temporary edit');
+    await page.waitForTimeout(300);
+
+    const rawDuringLearnerEdit = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    const learnerDeltasDuringLearnerEdit = await page.evaluate(() => localStorage.getItem('interactive-poc.learnerDeltas'));
+
+    expect(rawDuringLearnerEdit).toBe(rawBefore);
+    expect(learnerDeltasDuringLearnerEdit).toBeNull();
+
+    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
+    await expect(editor).toContainText('// teacher resumed final edit', { timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
+
+    const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    const learnerDeltasAfterResume = await page.evaluate(() => localStorage.getItem('interactive-poc.learnerDeltas'));
+
+    expect(rawAfter).toBe(rawBefore);
+    expect(learnerDeltasAfterResume).toBeNull();
+  });
+
   test('saves learner delta after pause and edit', async ({ page }) => {
     test.skip(true, 'Enable after Phase 4 debug UI exists.');
 
     await page.getByRole('button', { name: /play recording/i }).click();
-    await page.getByRole('button', { name: /^pause$/i }).click();
+    await page.getByRole('button', { name: /pause & try it/i }).click();
 
     const editor = page.locator('.cm-content').first();
     await editor.click();

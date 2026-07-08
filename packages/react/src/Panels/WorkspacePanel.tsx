@@ -28,6 +28,7 @@ const DEFAULT_TERMINAL_SIZE = 25;
 type FileTreeChangeEvent = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onFileTreeChange']>>[0];
 type EditorChangeUpdate = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorChange']>>[0];
 type EditorScrollPosition = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onEditorScroll']>>[0];
+type InteractiveMode = 'teacher-playback' | 'learner-editing' | 'idle';
 type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
@@ -124,13 +125,21 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const files = useStore(tutorialStore.files);
   const recorderRef = useRef<TimelineRecorder | null>(null);
   const playbackTimersRef = useRef<number[]>([]);
+  const playbackRecordingRef = useRef<TeacherRecording | null>(null);
   const isApplyingPlaybackRef = useRef(false);
   const playbackGuardTokenRef = useRef(0);
+  const modeRef = useRef<InteractiveMode>('idle');
+  const playheadMsRef = useRef(0);
+  const pausedTeacherTimestampMsRef = useRef(0);
+  const playbackStartedAtRef = useRef(0);
+  const playbackStartTimestampMsRef = useRef(0);
   const [isRecording, setIsRecording] = useState(false);
   const [eventCount, setEventCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mode, setMode] = useState<InteractiveMode>('idle');
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
   const [playheadMs, setPlayheadMs] = useState(0);
+  const [pausedTeacherTimestampMs, setPausedTeacherTimestampMs] = useState(0);
 
   const lesson = tutorialStore.lesson!;
 
@@ -140,6 +149,29 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
   function syncEventCount() {
     setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
+  }
+
+  function getClockNowMs() {
+    return globalThis.performance?.now?.() ?? Date.now();
+  }
+
+  function setInteractiveMode(nextMode: InteractiveMode) {
+    modeRef.current = nextMode;
+    setMode(nextMode);
+  }
+
+  function setPlaybackTimestampMs(nextPlayheadMs: number) {
+    const normalizedMs = Math.max(0, Math.round(nextPlayheadMs));
+
+    playheadMsRef.current = normalizedMs;
+    setPlayheadMs(normalizedMs);
+  }
+
+  function setPausedTimestampMs(nextPausedTimestampMs: number) {
+    const normalizedMs = Math.max(0, Math.round(nextPausedTimestampMs));
+
+    pausedTeacherTimestampMsRef.current = normalizedMs;
+    setPausedTeacherTimestampMs(normalizedMs);
   }
 
   function clearPlaybackTimers() {
@@ -165,11 +197,25 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }, PLAYBACK_GUARD_RELEASE_DELAY_MS);
   }
 
-  function stopPlayback(status: PlaybackStatus) {
+  function stopPlayback(status: PlaybackStatus, nextMode: InteractiveMode = 'idle') {
     clearPlaybackTimers();
+    playbackStartedAtRef.current = 0;
+    playbackStartTimestampMsRef.current = playheadMsRef.current;
     setIsPlaying(false);
     setPlaybackStatus(status);
+    setInteractiveMode(nextMode);
     releasePlaybackGuardSoon();
+  }
+
+  function getCurrentPlaybackTimestampMs() {
+    if (modeRef.current !== 'teacher-playback' || playbackStartedAtRef.current === 0) {
+      return playheadMsRef.current;
+    }
+
+    return Math.max(
+      playheadMsRef.current,
+      playbackStartTimestampMsRef.current + getClockNowMs() - playbackStartedAtRef.current,
+    );
   }
 
   function getSortedPlaybackEvents(recording: TeacherRecording): TimelineEvent[] {
@@ -196,7 +242,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   }
 
   function applyPlaybackEvent(event: TimelineEvent) {
-    setPlayheadMs(event.tMs);
+    setPlaybackTimestampMs(event.tMs);
 
     if (event.type === 'file.opened') {
       const payload = event.payload as { filePath?: string } | undefined;
@@ -232,25 +278,34 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
   }
 
-  function onPlayRecording() {
-    const recording = loadTeacherRecording();
+  function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }) {
+    const recording = playbackRecordingRef.current ?? loadTeacherRecording();
 
     clearPlaybackTimers();
 
     if (!recording) {
+      playbackRecordingRef.current = null;
       setIsPlaying(false);
+      setInteractiveMode('idle');
       setPlaybackStatus('missing-recording');
-      setPlayheadMs(0);
+      setPlaybackTimestampMs(0);
       return;
     }
 
+    playbackRecordingRef.current = recording;
     startPlaybackGuard();
     setIsPlaying(true);
+    setInteractiveMode('teacher-playback');
     setPlaybackStatus('playing');
-    setPlayheadMs(0);
-    applyRecordingBaseFiles(recording);
+    setPlaybackTimestampMs(startMs);
+    playbackStartTimestampMsRef.current = Math.max(0, Math.round(startMs));
+    playbackStartedAtRef.current = getClockNowMs();
 
-    const events = getSortedPlaybackEvents(recording);
+    if (resetToBase) {
+      applyRecordingBaseFiles(recording);
+    }
+
+    const events = getSortedPlaybackEvents(recording).filter((event) => event.tMs > startMs);
 
     if (events.length === 0) {
       stopPlayback('finished');
@@ -258,15 +313,28 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
 
     playbackTimersRef.current = events.map((event, index) =>
-      window.setTimeout(() => {
-        isApplyingPlaybackRef.current = true;
-        applyPlaybackEvent(event);
+      window.setTimeout(
+        () => {
+          if (modeRef.current !== 'teacher-playback') {
+            return;
+          }
 
-        if (index === events.length - 1) {
-          stopPlayback('finished');
-        }
-      }, Math.max(0, event.tMs)),
+          isApplyingPlaybackRef.current = true;
+          applyPlaybackEvent(event);
+
+          if (index === events.length - 1) {
+            stopPlayback('finished');
+          }
+        },
+        Math.max(0, event.tMs - startMs),
+      ),
     );
+  }
+
+  function onPlayRecording() {
+    playbackRecordingRef.current = loadTeacherRecording() ?? null;
+    setPausedTimestampMs(0);
+    playRecordingFrom(-1, { resetToBase: true });
   }
 
   function onPausePlayback() {
@@ -274,11 +342,23 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       return;
     }
 
-    stopPlayback('paused');
+    const pausedMs = getCurrentPlaybackTimestampMs();
+
+    setPlaybackTimestampMs(pausedMs);
+    setPausedTimestampMs(pausedMs);
+    stopPlayback('paused', 'learner-editing');
+  }
+
+  function onResumeTeacher() {
+    if (modeRef.current !== 'learner-editing') {
+      return;
+    }
+
+    playRecordingFrom(pausedTeacherTimestampMsRef.current, { resetToBase: false });
   }
 
   function onStartRecording() {
-    if (!lessonFullyLoaded) {
+    if (!lessonFullyLoaded || modeRef.current !== 'idle') {
       return;
     }
 
@@ -307,7 +387,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   function onFileSelect(filePath: string | undefined) {
     tutorialStore.setSelectedFile(filePath);
 
-    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -320,7 +400,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
     const filePath = getCurrentFilePath();
 
-    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -340,7 +420,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
     const filePath = getCurrentFilePath();
 
-    if (!filePath || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -388,6 +468,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     return () => {
       clearPlaybackTimers();
       isApplyingPlaybackRef.current = false;
+      modeRef.current = 'idle';
     };
   }, []);
 
@@ -401,7 +482,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       className="transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
       <div
-        aria-label="Interactive recording debug controls"
+        aria-label="Interactive timeline debug controls"
         style={{
           alignItems: 'center',
           borderBottom: '1px solid var(--tk-elements-panel-borderColor)',
@@ -411,22 +492,35 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
           padding: '0.5rem',
         }}
       >
-        <button type="button" onClick={onStartRecording} disabled={isRecording || isPlaying || !lessonFullyLoaded}>
+        <button
+          type="button"
+          onClick={onStartRecording}
+          disabled={isRecording || mode !== 'idle' || !lessonFullyLoaded}
+        >
           Start Recording
         </button>
         <button type="button" onClick={onStopRecording} disabled={!isRecording}>
           Stop Recording
         </button>
-        <button type="button" onClick={onPlayRecording} disabled={isRecording || isPlaying || !lessonFullyLoaded}>
+        <button
+          type="button"
+          onClick={onPlayRecording}
+          disabled={isRecording || mode !== 'idle' || !lessonFullyLoaded}
+        >
           Play Recording
         </button>
         <button type="button" onClick={onPausePlayback} disabled={!isPlaying}>
-          Pause
+          Pause & Try It
         </button>
+        <button type="button" onClick={onResumeTeacher} disabled={mode !== 'learner-editing'}>
+          Resume Teacher
+        </button>
+        <span>Mode: {mode}</span>
         <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
         <span>Event count: {eventCount}</span>
         <span>Playback status: {playbackStatus}</span>
         <span>Playhead ms: {playheadMs}</span>
+        <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
       </div>
       <EditorPanel
         id={storeRef}
