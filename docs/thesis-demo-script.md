@@ -1,11 +1,11 @@
 # Thesis demo script
 
-Use this script for the final interactive tutorial thesis demonstration on the Milestone H branch.
+Use this script for the final interactive tutorial thesis demonstration on the Milestone I release-candidate branch.
 
 ## 1. Setup
 
 ```bash
-git checkout milestone-h/thesis-demo-polish
+git checkout milestone-i/release-candidate-thesis-pack
 git pull
 pnpm install
 pnpm build
@@ -52,7 +52,7 @@ pnpm build
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium TK_POC_URL=http://localhost:4329 PLAYWRIGHT_HTML_OPEN=never pnpm --dir e2e exec playwright test interactive-poc.spec.ts --project=Default
 ```
 
-Expected result: all `interactive-poc.spec.ts` tests pass.
+Expected Milestone I result: **31 passed** in `interactive-poc.spec.ts`.
 
 ## 4. Reset and seed demo data
 
