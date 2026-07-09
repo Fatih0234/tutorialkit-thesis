@@ -32,7 +32,7 @@ pnpm --dir e2e run dev
 Open:
 
 ```text
-http://localhost:4321/tests/file-tree/lesson-and-solution
+http://localhost:4329/tests/file-tree/lesson-and-solution
 ```
 
 The E2E lesson app mounts the local `/api/interactive/*` middleware required by published lessons, demo identity, and demo seed/reset.

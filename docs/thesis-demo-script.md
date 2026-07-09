@@ -30,7 +30,7 @@ pnpm --dir e2e run dev
 Open:
 
 ```text
-http://localhost:4321/tests/file-tree/lesson-and-solution
+http://localhost:4329/tests/file-tree/lesson-and-solution
 ```
 
 For a production-like static preview with the same local API middleware:

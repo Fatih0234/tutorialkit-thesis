@@ -63,7 +63,7 @@ git status --short --branch
 pnpm --dir e2e run dev
 ```
 
-- [ ] Open `http://localhost:4321/tests/file-tree/lesson-and-solution`.
+- [ ] Open `http://localhost:4329/tests/file-tree/lesson-and-solution` (or the next available port printed by Astro).
 - [ ] Confirm the page shows **Interactive Thesis Demo**, **Demo Identity**, **Teacher Studio**, **Learner Lesson**, and **Thesis demo walkthrough**.
 
 ## 4. Deterministic seed/reset check
