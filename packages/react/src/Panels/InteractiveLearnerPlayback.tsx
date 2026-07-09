@@ -44,9 +44,9 @@ export function InteractiveLearnerPlayback({
     <section aria-labelledby="interactive-learner-heading" style={{ display: 'grid', gap: '1rem' }}>
       <div>
         <h2 id="interactive-learner-heading" style={{ margin: 0 }}>
-          Learner playback
+          Learner Lesson
         </h2>
-        <p style={{ margin: 0 }}>Open a published recording, follow the lesson, then try the code yourself.</p>
+        <p style={{ margin: 0 }}>Open a published lesson, follow the recording, then try the code yourself.</p>
         <p style={{ margin: 0 }}>
           Signed-in learner: {currentUser ? `${currentUser.displayName} (${currentUser.role})` : 'signed out'}
         </p>
@@ -54,9 +54,9 @@ export function InteractiveLearnerPlayback({
 
       <InteractiveRecordingLibrary
         title="Published lessons"
-        description="Only published recordings are available to learners."
+        description="Only published lessons are available to learners."
         emptyText="No published lessons available yet."
-        selectLabel="Select learner recording"
+        selectLabel="Select published lesson"
         recordings={publishedRecordings}
         selectedRecordingId={selectedPublishedRecordingId}
         onSelectRecording={onSelectPublishedRecording}
@@ -68,7 +68,7 @@ export function InteractiveLearnerPlayback({
           onClick={() => onLoadPublishedRecording(selectedPublishedRecordingId)}
           disabled={!canLoadPublishedRecording}
         >
-          Open Recording
+          Open Published Lesson
         </button>
         <button type="button" onClick={onPlayRecording} disabled={!canPlayRecording}>
           Play Lesson
@@ -97,14 +97,14 @@ export function InteractiveLearnerPlayback({
         <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
         <span>Saved work count: {learnerDeltaCount}</span>
         <span>Work status: {learnerDeltaStatus}</span>
-        <span>Conflict warning: {conflictStatus}</span>
+        <span>Conflict Warning: {conflictStatus}</span>
         <span>Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}</span>
         <span>Work identity: {canUseLearnerWork ? 'learner allowed' : 'learner sign-in required'}</span>
       </div>
 
       {hasConflicts ? (
-        <section aria-label="Conflict warning" role="alert" style={{ border: '1px solid #f59e0b', padding: '0.75rem' }}>
-          <p style={{ marginTop: 0 }}>Conflict warning: your saved work touches files the teacher changed later.</p>
+        <section aria-label="Conflict Warning" role="alert" style={{ border: '1px solid #f59e0b', padding: '0.75rem' }}>
+          <p style={{ marginTop: 0 }}>Conflict Warning: your saved work touches files the teacher changed later.</p>
           <ul aria-label="Conflicted files">
             {conflictedFiles.map((filePath) => (
               <li key={filePath}>{filePath}</li>
@@ -115,7 +115,7 @@ export function InteractiveLearnerPlayback({
 
       {isConflictResolutionVisible ? (
         <section aria-label="Conflict resolution" style={{ border: '1px solid #f59e0b', padding: '0.75rem' }}>
-          <h3 style={{ marginTop: 0 }}>Conflict resolution</h3>
+          <h3 style={{ marginTop: 0 }}>Conflict Resolution</h3>
           <p>Choose how to handle saved work that touches teacher-updated files. No automatic merge will run.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button type="button" onClick={onRestoreLearnerDeltaAnyway}>

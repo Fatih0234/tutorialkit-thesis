@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the architecture checkpoint for the interactive tutorial POC as of Milestone G. It covers the dev identity/session model, ownership boundaries, role-separated product UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, portable export/import packages, deterministic demo seed/reset controls, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, and explicit conflict resolution UX.
+This document is the architecture checkpoint for the interactive tutorial thesis demo as of Milestone H. It covers the demo identity/session model, ownership boundaries, role-separated Teacher Studio and Learner Lesson UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, portable export/import packages, deterministic demo seed/reset controls, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, explicit conflict resolution UX, demo walkthrough guidance, destructive-action confirmation, and final thesis-demo copy cleanup.
 
 ## Scope and invariants
 
@@ -27,27 +27,29 @@ Important invariants:
 - **Learner work is separate and user-scoped.** Learner changes are stored as learner-owned deltas in the active adapter: IndexedDB for local drafts and remote backend/dev storage for published recordings. Remote learner delta writes derive `userId` from the session, and both paths mirror scoped deltas to `interactive-poc.learnerDeltas` for debugging.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
-- **Media is an attachment, not a replacement.** Milestone G still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
+- **Media is an attachment, not a replacement.** Milestone H still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **File-level deltas only.** The POC does not compute text patches, merge hunks, or run automatic merges.
 - **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
-- **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing, import-as-published, demo seed, and demo reset require a dev teacher/both session.
-- **Export packages are POC/demo artifacts.** The package format is JSON-first for thesis portability. It is not a stable public API and does not replace the structured replay or storage adapter contracts.
+- **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing, import-as-published, demo seed, and demo reset require a demo teacher/both session.
+- **Export packages are thesis-demo artifacts.** The package format is JSON-first for thesis portability. It is not a stable public API and does not replace the structured replay or storage adapter contracts.
 
 ## 1. Current user flow
 
-Milestone G keeps the Milestone D product shell, Milestone E dev identity panel, and Milestone F conflict UX, then adds teacher-facing export/import and demo hardening controls. Milestone D replaced the single raw control strip with a product-facing shell rendered by `packages/react/src/Panels/InteractivePocControls.tsx`. The shell has two role views:
+Milestone H keeps the Milestone D product shell, Milestone E demo identity panel, Milestone F conflict UX, and Milestone G export/import/demo controls, then polishes the visible copy for thesis presentation. `packages/react/src/Panels/InteractivePocControls.tsx` now presents a small demo walkthrough plus two role views:
 
-- **Teacher dashboard** for recording, draft management, publishing, and preview.
-- **Learner playback** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
+- **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
+- **Learner Lesson** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
 
-A small `Debug details` disclosure remains for development notes, but primary tests and user flows use visible product controls.
+A small `Debug details` disclosure remains for generated ids, compatibility localStorage keys, and raw validation notes, but primary tests and user flows use visible product controls.
 
+### Thesis demo walkthrough panel
 
+`InteractivePocControls.tsx` renders a visible guide for the live thesis demo. It lists the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save/restore work, and resolve conflicts). The panel is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
 
-### Dev identity panel
+### Demo Identity panel
 
-`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders demo-only sign-in controls:
+`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders demo sign-in controls:
 
 - Sign in as Teacher Demo;
 - Sign in as Learner Demo;
@@ -78,7 +80,7 @@ interface Session {
 
 The browser only receives the current user. Session ids are random, meaningless cookie values and session meaning lives server-side under `.interactive-data/sessions/`.
 
-### Teacher dashboard
+### Teacher Studio
 
 `packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders the teacher product flow.
 
@@ -92,29 +94,29 @@ Visible controls:
 - Save Draft;
 - Load Draft;
 - Preview Draft;
-- Publish Recording (requires teacher/both dev identity);
-- Load Published Recording;
-- Preview Published Recording;
+- Publish Recording (requires teacher/both demo identity);
+- Load Published Lesson;
+- Preview Published Lesson;
 - Discard Draft;
 - Delete Draft;
 - Refresh Recordings;
-- Export Recording;
+- Export Package;
 - Include My Learner Work;
-- Import Recording Package;
+- Import Package;
 - Import as Draft;
-- Import as Published (requires teacher/both dev identity);
-- Demo Seed (requires teacher/both dev identity);
-- Reset Demo Data (requires teacher/both dev identity).
+- Import as Published (requires teacher/both demo identity);
+- Demo Seed (requires teacher/both demo identity);
+- Reset Demo Data (requires teacher/both demo identity).
 
-Visible status fields use native text and `role="status"` for important async state:
+Visible status fields use native text and `role="status"` for important async state. Raw ids/timestamps remain visible for thesis validation and are also described as debug details where appropriate:
 
 - Draft status;
 - Current draft id;
 - Published status;
 - Published recording id;
 - Recording library status;
-- Export status;
-- Import status;
+- Export Package status;
+- Import Package status;
 - Import package file;
 - Demo data status;
 - Recording storage source;
@@ -127,10 +129,10 @@ Visible status fields use native text and `role="status"` for important async st
 
 ### Recording libraries
 
-`packages/react/src/Panels/InteractiveRecordingLibrary.tsx` renders simple accessible recording selectors and list cards. The teacher dashboard shows two lists:
+`packages/react/src/Panels/InteractiveRecordingLibrary.tsx` renders simple accessible recording selectors and list cards. The Teacher Studio shows two lists:
 
 - **Local drafts** from `IndexedDBInteractiveTimelineStorage`;
-- **Published recordings** from `RemoteInteractiveTimelineStorage` and `.interactive-data/`.
+- **Published Lessons** from `RemoteInteractiveTimelineStorage` and `.interactive-data/`.
 
 Each list item shows:
 
@@ -145,19 +147,19 @@ Each list item shows:
 
 Actions remain intentionally simple: select a recording, then use the nearby load/preview/delete buttons.
 
-### Learner playback
+### Learner Lesson
 
 `packages/react/src/Panels/InteractiveLearnerPlayback.tsx` renders the learner product flow.
 
 Visible controls:
 
 - Published lessons selector;
-- Open Recording;
+- Open Published Lesson;
 - Play Lesson;
 - Try It Yourself;
 - Resume Teacher;
-- Save My Work (requires learner/both dev identity);
-- Restore My Work (requires learner/both dev identity).
+- Save My Work (requires learner/both demo identity);
+- Restore My Work (requires learner/both demo identity).
 
 Learner-facing labels replace the older debug wording:
 
@@ -219,7 +221,11 @@ Previews the currently loaded/saved draft using the same timeline playback engin
 
 ### Discard Draft
 
-Clears the current in-memory draft/media selection and marks the teacher dashboard as discarded. Normal discard keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets. The separate **Reset Demo Data** control is the only Milestone G action that explicitly clears demo compatibility keys.
+Clears the current in-memory draft/media selection and marks the Teacher Studio as discarded. Milestone H requires an inline confirmation before discarding. Normal discard keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets. The separate **Reset Demo Data** control is the only action that explicitly clears demo compatibility keys.
+
+### Delete Draft
+
+Deletes the selected local IndexedDB draft and associated local media assets after an inline confirmation. It does not delete published recordings, learner deltas, non-selected drafts, or `.interactive-data` server records.
 
 ### Publish Recording
 
@@ -236,7 +242,7 @@ Behavior:
 
 Published teacher recordings are treated as immutable and owner-scoped. Re-publishing the same id with different JSON is rejected by the dev backend, and a different teacher cannot claim an existing recording id.
 
-### Load Published Recording
+### Load Published Lesson
 
 Loads the selected published recording from the backend/dev storage through `RemoteInteractiveTimelineStorage`, falling back to the latest published recording when no selector value exists.
 
@@ -248,33 +254,33 @@ Behavior:
 - sets the current recording source to `published`;
 - recomputes remote saved work count, restore availability, and conflict warning state.
 
-### Preview Published Recording
+### Preview Published Lesson
 
 Previews the currently loaded published recording using the same playback engine as local draft preview. If media exists, `HTMLMediaElement.currentTime * 1000` drives the structured timeline. If no media exists, `TimelinePlaybackClock` remains the fallback. Preview does not mutate the published recording.
 
-### Export Recording
+### Export Package
 
-Milestone G adds a teacher/dashboard export action. Export resolves the selected published recording first, then the selected/current local draft as a fallback. The export helper loads the immutable `TeacherRecording`, associated media metadata, and associated media Blob data through the active storage adapter.
+The Teacher Studio export action resolves the selected published recording first, then the selected/current local draft as a fallback. The export helper loads the immutable `TeacherRecording`, associated media metadata, and associated media Blob data through the active storage adapter.
 
 The downloaded package is JSON-first. Media blobs are serialized to base64 inside the package for portability between thesis demo machines. The helper creates a temporary object URL for the JSON Blob download and revokes that URL after triggering the download. Export does not mutate the teacher recording, does not expose dev session ids, and includes learner deltas only when **Include My Learner Work** is selected. That optional learner export is scoped to the current signed-in user.
 
-### Import Recording Package
+### Import Package
 
-Milestone G adds teacher/dashboard package import. The file input accepts the JSON package format, validates it, normalizes paths to leading-slash form, and imports as a copy by generating a new recording id and new media asset ids.
+The Teacher Studio package import flow accepts the JSON package format, validates it, normalizes paths to leading-slash form, and imports as a copy by generating a new recording id and new media asset ids.
 
 Import targets:
 
 - **Import as Draft** writes the copied recording and media blobs to IndexedDB through `IndexedDBInteractiveTimelineStorage`, then selects the imported local draft for preview.
-- **Import as Published** writes the copied recording and media blobs through `RemoteInteractiveTimelineStorage`. This requires a teacher/both dev session. The dev backend continues to enforce published recording immutability after import.
+- **Import as Published** writes the copied recording and media blobs through `RemoteInteractiveTimelineStorage`. This requires a teacher/both demo session. The dev backend continues to enforce published recording immutability after import.
 
-Import does not run automatic merge, does not apply learner deltas by default, and does not remove existing recordings. Imported published recordings appear in the learner published lesson list after refresh/load.
+Import does not run automatic merge, does not apply learner deltas by default, and does not remove existing recordings. Imported published recordings appear in the learner published lesson list after refresh/load. Unsupported package versions and malformed JSON show friendly import status messages. Packages that reference media without including media data still import the structured recording copy; missing media is skipped with an import warning and playback falls back to the deterministic timeline clock.
 
 ### Demo Seed and Reset Demo Data
 
-Milestone G adds deterministic thesis demo controls:
+Milestone H keeps deterministic thesis demo controls and adds inline confirmation for reset:
 
 - **Demo Seed** calls `/api/interactive/demo/seed` as a signed-in teacher/both user. It recreates `demo-interactive-conflict-flow` with deterministic base files, timeline events, a future teacher change on `/example.js`, and a fake silent `audio/wav` media asset. The recording is designed for the conflict walkthrough: learner pauses before the future teacher edit, saves work, resumes teacher playback, then chooses an explicit conflict restore option.
-- **Reset Demo Data** calls `/api/interactive/demo/reset` as a signed-in teacher/both user. It deletes only server-side records whose ids or linked recording ids use the `demo-` prefix. The client also deletes local IndexedDB draft/media records with the same prefix and clears the localStorage compatibility keys because the button is explicitly labeled as a demo reset.
+- **Reset Demo Data** asks for confirmation, then calls `/api/interactive/demo/reset` as a signed-in teacher/both user. It deletes only server-side records whose ids or linked recording ids use the `demo-` prefix. The client also deletes local IndexedDB draft/media records with the same prefix and clears the localStorage compatibility keys because the button is explicitly labeled as a demo reset.
 
 Reset is intentionally not a destructive “delete everything” action. Non-demo recordings, non-demo media, non-demo learner deltas, and dev sessions are left in place.
 
@@ -377,7 +383,7 @@ Conflict warning: none | conflict
 Conflicted files: /example.js, ...
 ```
 
-When conflicts exist, Learner playback also shows:
+When conflicts exist, Learner Lesson also shows:
 
 ```text
 Conflict warning: your saved work touches files the teacher changed later.
@@ -640,7 +646,7 @@ The React hook displays `filePaths` as `Conflict warning` and `Conflicted files`
 
 ## 3. Storage
 
-Milestone G uses the same async storage adapter seam with two concrete browser-facing storage paths plus package import/export helpers layered on top:
+Milestone H uses the same async storage adapter seam with two concrete browser-facing storage paths plus package import/export helpers layered on top:
 
 - `IndexedDBInteractiveTimelineStorage` for local drafts/offline browser data;
 - `RemoteInteractiveTimelineStorage` for published/backend demo data.
@@ -675,7 +681,7 @@ Loading returns `undefined` when no recording exists.
 
 ### Backend/dev `.interactive-data` storage
 
-Milestone C introduced, and Milestone G continues to use, local server-side persistence under the gitignored repository directory:
+Milestone C introduced, and Milestone H continues to use, local server-side persistence under the gitignored repository directory:
 
 ```text
 .interactive-data/
@@ -801,7 +807,7 @@ Defines the media contracts:
 
 ### `export-package.ts`
 
-Defines the Milestone G portable package helpers:
+Defines the portable package helpers:
 
 - `InteractiveRecordingPackage` and media package entry types;
 - `exportRecordingPackage(recordingId, options)` to load a teacher recording, scoped optional learner deltas, media metadata, and media blobs through a storage adapter;
@@ -812,7 +818,7 @@ Defines the Milestone G portable package helpers:
 
 ### `identity.ts`
 
-Defines the Milestone E dev identity contracts, seeded non-sequential dev users, legacy fallback ids, and small role helpers used by React and the dev server.
+Defines the Milestone E demo identity contracts, seeded non-sequential dev users, legacy fallback ids, and small role helpers used by React and the dev server.
 
 ### `auth-client.ts`
 
@@ -857,7 +863,7 @@ Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts, lear
 
 ### `remote-storage-adapter.ts`
 
-Implements `RemoteInteractiveTimelineStorage`. It is the only interactivity module that uses `fetch`, and Milestone G sends `credentials: 'same-origin'` so the dev session cookie is included. It maps the async storage interface to `/api/interactive/*` endpoints, uploads media with `FormData`, and exposes dev demo seed/reset calls. It mirrors loaded/saved published teacher recordings and remote learner deltas to the legacy localStorage keys for inspection, but it does not store media blobs in localStorage.
+Implements `RemoteInteractiveTimelineStorage`. It is the only interactivity module that uses `fetch`, and it sends `credentials: 'same-origin'` so the demo session cookie is included. It maps the async storage interface to `/api/interactive/*` endpoints, uploads media with `FormData`, and exposes dev demo seed/reset calls. It mirrors loaded/saved published teacher recordings and remote learner deltas to the legacy localStorage keys for inspection, but it does not store media blobs in localStorage.
 
 ### `packages/astro/src/vite-plugins/interactive-persistence.ts`
 
@@ -893,7 +899,7 @@ Responsibilities:
 - published recording publish/load/preview lifecycle;
 - export/import package lifecycle;
 - deterministic demo seed/reset lifecycle;
-- dev identity load/login/logout lifecycle;
+- demo identity load/login/logout lifecycle;
 - storage selection between local draft and remote published adapters;
 - async storage calls and compatibility state sync;
 - media-synced playback and fallback clock playback lifecycle;
@@ -918,7 +924,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone G role shell with dev identity plus Teacher and Learner views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, package, or workspace logic.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone H role shell with Demo Identity, the demo walkthrough, Teacher Studio, and Learner Lesson views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, package, or workspace logic.
 
 ### `InteractiveTeacherDashboard.tsx`
 
@@ -926,7 +932,7 @@ Renders the teacher product dashboard, local draft controls, published recording
 
 ### `InteractiveLearnerPlayback.tsx`
 
-Renders the learner product playback view with published lessons, Open Recording, Play Lesson, Try It Yourself, Save My Work, Restore My Work, conflict warning status, and the conflict resolution panel/actions.
+Renders the learner product playback view with published lessons, Open Published Lesson, Play Lesson, Try It Yourself, Save My Work, Restore My Work, Conflict Warning status, and the conflict resolution panel/actions.
 
 ### `InteractiveRecordingLibrary.tsx`
 
@@ -987,7 +993,7 @@ Candidate future phases:
    - keep detection separate from any future resolution records.
 
 6. **Production UI polish**
-   - improve layout, history drawers, empty states, and workspace mode affordances beyond the Milestone G POC shell.
+   - improve layout, history drawers, empty states, and workspace mode affordances beyond the Milestone H thesis-demo shell.
 
 7. **Optional transcript/captions**
    - attach transcript metadata to teacher timeline events without changing the learner delta model.

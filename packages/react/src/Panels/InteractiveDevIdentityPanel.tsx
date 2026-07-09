@@ -13,7 +13,7 @@ export function InteractiveDevIdentityPanel({
 >) {
   return (
     <section
-      aria-labelledby="interactive-dev-identity-heading"
+      aria-labelledby="interactive-demo-identity-heading"
       style={{
         border: '1px solid var(--tk-elements-panel-borderColor)',
         borderRadius: '0.375rem',
@@ -23,10 +23,10 @@ export function InteractiveDevIdentityPanel({
       }}
     >
       <div>
-        <h2 id="interactive-dev-identity-heading" style={{ fontSize: '0.95rem', margin: 0 }}>
-          Dev identity
+        <h2 id="interactive-demo-identity-heading" style={{ fontSize: '0.95rem', margin: 0 }}>
+          Demo Identity
         </h2>
-        <p style={{ margin: 0 }}>Demo-only sign-in for ownership tests. Not production authentication.</p>
+        <p style={{ margin: 0 }}>Demo sign-in for Teacher Studio and Learner Lesson ownership. Not production authentication.</p>
       </div>
 
       <div aria-live="polite" role="status" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>

@@ -1404,7 +1404,7 @@ export function useInteractivePoc({
       const source = await getExportPackageSource();
 
       if (!source) {
-        setExportStatus('missing recording');
+        setExportStatus('error: choose a recording before exporting');
         return;
       }
 
@@ -1415,15 +1415,15 @@ export function useInteractivePoc({
         learnerDeltaQuery: includeLearnerDeltasInExport && user ? { userId: user.id } : undefined,
         packageMetadata: {
           title: 'Interactive recording export',
-          description: 'POC export package for thesis demos.',
+          description: 'Portable export package for thesis demos.',
           exportedByUserId: user?.id,
         },
       });
       const filename = await downloadRecordingPackage(recordingPackage);
 
-      setExportStatus(`exported ${recordingPackage.teacherRecording.id} to ${filename}`);
+      setExportStatus(`exported package ${recordingPackage.teacherRecording.id} to ${filename}`);
     } catch (error) {
-      setExportStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+      setExportStatus(error instanceof Error ? `error: export failed: ${error.message}` : 'error: export failed');
     }
   }
 
@@ -1431,16 +1431,32 @@ export function useInteractivePoc({
     void exportSelectedRecording();
   }
 
+  function formatImportPackageError(error: unknown) {
+    if (error instanceof SyntaxError) {
+      return 'error: import package could not be read. Choose a valid Export Package JSON file.';
+    }
+
+    if (error instanceof Error) {
+      if (error.message.toLowerCase().includes('unsupported recording package formatversion')) {
+        return 'error: unsupported package version. Export the package again with this app.';
+      }
+
+      return `error: import package failed: ${error.message}`;
+    }
+
+    return 'error: import package failed';
+  }
+
   async function importSelectedPackage(modeToImport: 'local-draft' | 'published') {
     const file = importPackageFileRef.current;
 
     if (!file) {
-      setImportStatus('missing package');
+      setImportStatus('error: choose an Export Package before importing');
       return;
     }
 
     if (modeToImport === 'published' && !canPublishInteractiveRecording(currentUserRef.current)) {
-      setImportStatus('teacher sign-in required');
+      setImportStatus('error: teacher sign-in required');
       return;
     }
 
@@ -1472,19 +1488,23 @@ export function useInteractivePoc({
         setPublishedStatus('published');
         setPublishedRecordingId(recording.id);
         setSelectedPublishedRecordingId(recording.id);
-        setImportStatus(`imported published ${recording.id}`);
+        const warningText = result.warnings.length > 0 ? ` (${result.warnings.join(' ')})` : '';
+
+        setImportStatus(`imported published copy ${recording.id}${warningText}`);
         await syncLearnerDeltaState(recording, remoteTimelineStorage);
       } else {
         setCurrentRecordingSource('local-draft');
         setCurrentDraftRecording(recording, 'loaded');
         setSelectedDraftId(recording.id);
-        setImportStatus(`imported draft ${recording.id}`);
+        const warningText = result.warnings.length > 0 ? ` (${result.warnings.join(' ')})` : '';
+
+        setImportStatus(`imported draft copy ${recording.id}${warningText}`);
         await syncLearnerDeltaState(recording, localTimelineStorage);
       }
 
       await refreshRecordingLibrary();
     } catch (error) {
-      setImportStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+      setImportStatus(formatImportPackageError(error));
     }
   }
 
@@ -1951,7 +1971,7 @@ export function useInteractivePoc({
         canPublishAsTeacher,
       canSeedDemoData: !isRecording && mode === 'idle' && canPublishAsTeacher && demoDataStatus !== 'seeding',
       canResetDemoData: !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
-      canPlayRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
+      canPlayRecording: !isRecording && mode === 'idle',
       canPausePlayback: isPlaying,
       canResumeTeacher: mode === 'learner-editing',
       canSaveLearnerDelta,

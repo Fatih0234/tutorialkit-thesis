@@ -1,7 +1,60 @@
+import { useState, type ReactNode } from 'react';
 import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
+type DestructiveActionId = 'discard-draft' | 'delete-draft' | 'delete-selected-draft' | 'reset-demo-data';
+
+interface ConfirmActionButtonProps {
+  id: DestructiveActionId;
+  pendingId: DestructiveActionId | null;
+  setPendingId: (id: DestructiveActionId | null) => void;
+  disabled?: boolean;
+  children: ReactNode;
+  confirmLabel: string;
+  confirmationText: string;
+  onConfirm: () => void | Promise<void>;
+}
+
+function ConfirmActionButton({
+  id,
+  pendingId,
+  setPendingId,
+  disabled,
+  children,
+  confirmLabel,
+  confirmationText,
+  onConfirm,
+}: ConfirmActionButtonProps) {
+  const isPending = pendingId === id;
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+      <button
+        type="button"
+        onClick={() => {
+          if (!isPending) {
+            setPendingId(id);
+            return;
+          }
+
+          setPendingId(null);
+          void Promise.resolve(onConfirm()).finally(() => setPendingId(null));
+        }}
+        disabled={disabled}
+      >
+        {isPending ? confirmLabel : children}
+      </button>
+      {isPending ? (
+        <span role="status" aria-live="polite">
+          {confirmationText}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) {
+  const [pendingConfirmation, setPendingConfirmation] = useState<DestructiveActionId | null>(null);
   const {
     isRecording,
     eventCount,
@@ -77,9 +130,9 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     <section aria-labelledby="interactive-teacher-heading" style={{ display: 'grid', gap: '1rem' }}>
       <div>
         <h2 id="interactive-teacher-heading" style={{ margin: 0 }}>
-          Teacher dashboard
+          Teacher Studio
         </h2>
-        <p style={{ margin: 0 }}>Record, save, preview, and publish an interactive lesson timeline.</p>
+        <p style={{ margin: 0 }}>Record, save, preview, publish, export, and import interactive lesson recordings.</p>
         <p style={{ margin: 0 }}>
           Signed-in teacher: {currentUser ? `${currentUser.displayName} (${currentUser.role})` : 'signed out'}
         </p>
@@ -114,17 +167,33 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
           Publish Recording
         </button>
         <button type="button" onClick={() => onLoadPublishedRecording()} disabled={!canLoadPublishedRecording}>
-          Load Published Recording
+          Load Published Lesson
         </button>
         <button type="button" onClick={() => onPreviewPublishedRecording()} disabled={!canPreviewPublishedRecording}>
-          Preview Published Recording
+          Preview Published Lesson
         </button>
-        <button type="button" onClick={onDiscardDraft} disabled={!canDiscardDraft}>
+        <ConfirmActionButton
+          id="discard-draft"
+          pendingId={pendingConfirmation}
+          setPendingId={setPendingConfirmation}
+          disabled={!canDiscardDraft}
+          confirmLabel="Confirm Discard Draft"
+          confirmationText="Are you sure? This clears the current draft from the workspace."
+          onConfirm={onDiscardDraft}
+        >
           Discard Draft
-        </button>
-        <button type="button" onClick={onDeleteSelectedDraft} disabled={!canDeleteSelectedDraft}>
+        </ConfirmActionButton>
+        <ConfirmActionButton
+          id="delete-draft"
+          pendingId={pendingConfirmation}
+          setPendingId={setPendingConfirmation}
+          disabled={!canDeleteSelectedDraft}
+          confirmLabel="Confirm Delete Draft"
+          confirmationText="Are you sure? This deletes the selected local draft from this browser."
+          onConfirm={onDeleteSelectedDraft}
+        >
           Delete Draft
-        </button>
+        </ConfirmActionButton>
         <button type="button" onClick={onRefreshRecordingLibrary}>
           Refresh Recordings
         </button>
@@ -132,7 +201,7 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
 
       <div aria-label="Recording package and demo controls" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
         <button type="button" onClick={onExportRecording} disabled={!canExportRecording}>
-          Export Recording
+          Export Package
         </button>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
           <input
@@ -143,11 +212,11 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
           Include My Learner Work
         </label>
         <label htmlFor="interactive-recording-package-input" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-          Import Recording Package
+          Import Package
         </label>
         <input
           id="interactive-recording-package-input"
-          aria-label="Import Recording Package"
+          aria-label="Import Package"
           type="file"
           accept="application/json,.json"
           onChange={(event) => onSelectImportPackageFile(event.currentTarget.files?.[0] ?? null)}
@@ -162,9 +231,17 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         <button type="button" onClick={onDemoSeed} disabled={!canSeedDemoData}>
           Demo Seed
         </button>
-        <button type="button" onClick={onResetDemoData} disabled={!canResetDemoData}>
+        <ConfirmActionButton
+          id="reset-demo-data"
+          pendingId={pendingConfirmation}
+          setPendingId={setPendingConfirmation}
+          disabled={!canResetDemoData}
+          confirmLabel="Confirm Reset Demo Data"
+          confirmationText="Are you sure? This removes only demo-prefixed records."
+          onConfirm={onResetDemoData}
+        >
           Reset Demo Data
-        </button>
+        </ConfirmActionButton>
       </div>
 
       <div aria-live="polite" role="status" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -174,8 +251,8 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         <span>Published recording id: {publishedRecordingId}</span>
         <span>Published error: {publishedError}</span>
         <span>Recording library status: {recordingLibraryStatus}</span>
-        <span>Export status: {exportStatus}</span>
-        <span>Import status: {importStatus}</span>
+        <span>Export Package status: {exportStatus}</span>
+        <span>Import Package status: {importStatus}</span>
         <span>Import package file: {importPackageFileName}</span>
         <span>Demo data status: {demoDataStatus}</span>
         <span>Recording storage source: {recordingStorageSource}</span>
@@ -225,18 +302,26 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
             <button type="button" onClick={() => onPreviewDraft(selectedDraftId)} disabled={!canPreviewDraft}>
               Preview Selected Draft
             </button>
-            <button type="button" onClick={onDeleteSelectedDraft} disabled={!canDeleteSelectedDraft}>
+            <ConfirmActionButton
+              id="delete-selected-draft"
+              pendingId={pendingConfirmation}
+              setPendingId={setPendingConfirmation}
+              disabled={!canDeleteSelectedDraft}
+              confirmLabel="Confirm Delete Selected Draft"
+              confirmationText="Are you sure? This deletes the selected local draft from this browser."
+              onConfirm={onDeleteSelectedDraft}
+            >
               Delete Selected Draft
-            </button>
+            </ConfirmActionButton>
           </div>
         </div>
 
         <div style={{ display: 'grid', gap: '0.5rem' }}>
           <InteractiveRecordingLibrary
-            title="Published recordings"
-            description="Published recordings are loaded from the local dev backend."
-            emptyText="No published recordings available yet."
-            selectLabel="Select published recording"
+            title="Published Lessons"
+            description="Published lessons are loaded from the local demo backend."
+            emptyText="No published lessons available yet."
+            selectLabel="Select Published Lesson"
             recordings={publishedRecordings}
             selectedRecordingId={selectedPublishedRecordingId}
             onSelectRecording={onSelectPublishedRecording}
@@ -247,14 +332,14 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
               onClick={() => onLoadPublishedRecording(selectedPublishedRecordingId)}
               disabled={!canLoadPublishedRecording}
             >
-              Load Selected Published
+              Load Selected Published Lesson
             </button>
             <button
               type="button"
               onClick={() => onPreviewPublishedRecording(selectedPublishedRecordingId)}
               disabled={!canPreviewPublishedRecording}
             >
-              Preview Selected Published
+              Preview Selected Published Lesson
             </button>
           </div>
         </div>

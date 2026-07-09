@@ -77,10 +77,10 @@ export function InteractiveAuthoringPanel({
         Publish Recording
       </button>
       <button type="button" onClick={() => onLoadPublishedRecording()} disabled={!canLoadPublishedRecording}>
-        Load Published Recording
+        Load Published Lesson
       </button>
       <button type="button" onClick={() => onPreviewPublishedRecording()} disabled={!canPreviewPublishedRecording}>
-        Preview Published Recording
+        Preview Published Lesson
       </button>
       <span>Draft status: {draftStatus}</span>
       <span>Current draft id: {currentDraftId}</span>

@@ -48,6 +48,7 @@ export interface ImportedRecordingPackageResult {
   teacherRecording: TeacherRecording;
   mediaAssets: RecordingMediaAsset[];
   learnerDeltas: LearnerDelta[];
+  warnings: string[];
 }
 
 const SUPPORTED_FORMAT_VERSION = 1;
@@ -409,13 +410,16 @@ export async function downloadRecordingPackage(
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
-  link.href = objectUrl;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  try {
+    link.href = objectUrl;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
 
   return filename;
 }
@@ -439,27 +443,10 @@ export function validateRecordingPackage(value: unknown): InteractiveRecordingPa
 
   const teacherRecording = normalizeTeacherRecording(candidate.teacherRecording);
   const rawMediaAssets = Array.isArray(candidate.mediaAssets) ? candidate.mediaAssets : [];
-  const mediaAssets = rawMediaAssets.map((asset) => validateMediaPackageEntry(asset, teacherRecording.id));
-  const mediaMetadataById = new Map(mediaAssets.map((asset) => [asset.metadata.id, asset]));
+  const mediaAssets = rawMediaAssets
+    .map((asset) => validateMediaPackageEntry(asset, teacherRecording.id))
+    .filter((asset) => Boolean(asset.blob || asset.dataBase64));
   const teacherMediaAssets = teacherRecording.mediaAssets ?? mediaAssets.map((asset) => asset.metadata);
-
-  for (const asset of mediaAssets) {
-    if (!asset.blob && !asset.dataBase64) {
-      throw new Error(`Recording package media asset ${asset.metadata.id} has no blob or base64 data.`);
-    }
-  }
-
-  for (const metadata of teacherMediaAssets) {
-    const mediaPackageAsset = mediaMetadataById.get(metadata.id);
-
-    if (!mediaPackageAsset) {
-      throw new Error(`Recording package is missing media data for ${metadata.id}.`);
-    }
-
-    if (!mediaPackageAsset.blob && !mediaPackageAsset.dataBase64) {
-      throw new Error(`Recording package media asset ${metadata.id} has no blob or base64 data.`);
-    }
-  }
 
   const learnerDeltas = Array.isArray(candidate.learnerDeltas) ? candidate.learnerDeltas.map(normalizeLearnerDelta) : undefined;
 
@@ -487,6 +474,11 @@ export async function importRecordingPackage(
   const recordingId = shouldImportAsCopy ? createCopyId(sourceRecording.id) : sourceRecording.id;
   const mediaIdMap = new Map<string, string>();
 
+  const availableMediaIds = new Set(validatedPackage.mediaAssets.map((asset) => asset.metadata.id));
+  const sourceMediaReferences = sourceRecording.mediaAssets ?? [];
+  const missingMediaCount = sourceMediaReferences.filter((metadata) => !availableMediaIds.has(metadata.id)).length;
+  const warnings = missingMediaCount > 0 ? [`${missingMediaCount} media asset(s) were skipped because package data was missing.`] : [];
+
   for (const asset of validatedPackage.mediaAssets) {
     mediaIdMap.set(asset.metadata.id, shouldImportAsCopy ? createCopyId(asset.metadata.id) : asset.metadata.id);
   }
@@ -505,12 +497,17 @@ export async function importRecordingPackage(
   const importedRecording: TeacherRecording = {
     ...sourceRecording,
     id: recordingId,
-    mediaAssets: sourceRecording.mediaAssets?.map((metadata) => ({
-      ...metadata,
-      id: mediaIdMap.get(metadata.id) ?? metadata.id,
-      recordingId,
-      ownerUserId: target.importedByUserId ?? metadata.ownerUserId,
-    })),
+    mediaAssets:
+      sourceMediaReferences.length > 0
+        ? sourceMediaReferences
+            .filter((metadata) => availableMediaIds.has(metadata.id))
+            .map((metadata) => ({
+              ...metadata,
+              id: mediaIdMap.get(metadata.id) ?? metadata.id,
+              recordingId,
+              ownerUserId: target.importedByUserId ?? metadata.ownerUserId,
+            }))
+        : undefined,
     createdByUserId: target.importedByUserId ?? sourceRecording.createdByUserId,
     ownerUserId: target.importedByUserId ?? sourceRecording.ownerUserId,
     publishedByUserId: target.mode === 'published' ? target.importedByUserId ?? sourceRecording.publishedByUserId : undefined,
@@ -544,5 +541,6 @@ export async function importRecordingPackage(
     teacherRecording: importedRecording,
     mediaAssets,
     learnerDeltas,
+    warnings,
   };
 }

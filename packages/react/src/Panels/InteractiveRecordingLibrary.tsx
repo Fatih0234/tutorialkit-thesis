@@ -95,13 +95,7 @@ export function InteractiveRecordingLibrary({
                   <dt>Events</dt>
                   <dd style={{ margin: 0 }}>{recording.eventCount}</dd>
                   <dt>Source</dt>
-                  <dd style={{ margin: 0 }}>{recording.source}</dd>
-                  <dt>Owner</dt>
-                  <dd style={{ margin: 0 }}>{recording.ownerUserId ?? 'unknown'}</dd>
-                  <dt>Created by</dt>
-                  <dd style={{ margin: 0 }}>{recording.createdByUserId ?? 'unknown'}</dd>
-                  <dt>Published by</dt>
-                  <dd style={{ margin: 0 }}>{recording.publishedByUserId ?? 'none'}</dd>
+                  <dd style={{ margin: 0 }}>{recording.source === 'draft' ? 'Local draft' : 'Published Lesson'}</dd>
                   <dt>Published</dt>
                   <dd style={{ margin: 0 }}>{recording.publishedAt ? formatDate(recording.publishedAt) : 'none'}</dd>
                   <dt>Created</dt>
@@ -113,6 +107,24 @@ export function InteractiveRecordingLibrary({
                     </>
                   ) : null}
                 </dl>
+                <details style={{ marginTop: '0.5rem' }}>
+                  <summary>Debug details</summary>
+                  <dl
+                    style={{
+                      display: 'grid',
+                      gap: '0.25rem 0.75rem',
+                      gridTemplateColumns: 'max-content minmax(0, 1fr)',
+                      margin: '0.5rem 0 0',
+                    }}
+                  >
+                    <dt>Owner</dt>
+                    <dd style={{ margin: 0 }}>{recording.ownerUserId ?? 'unknown'}</dd>
+                    <dt>Created by</dt>
+                    <dd style={{ margin: 0 }}>{recording.createdByUserId ?? 'unknown'}</dd>
+                    <dt>Published by</dt>
+                    <dd style={{ margin: 0 }}>{recording.publishedByUserId ?? 'none'}</dd>
+                  </dl>
+                </details>
               </li>
             ))}
           </ul>
