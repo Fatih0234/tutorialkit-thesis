@@ -15,6 +15,7 @@ interface StartRecordingOptions {
   lessonId: string;
   version?: number;
   baseFiles: FilesSnapshot;
+  startedAtMs?: number;
 }
 
 export class TimelineRecorder {
@@ -22,15 +23,15 @@ export class TimelineRecorder {
   private startTime = 0;
   private seq = 0;
 
-  start({ lessonId, version = 1, baseFiles }: StartRecordingOptions): TeacherRecording {
-    this.startTime = Date.now();
+  start({ lessonId, version = 1, baseFiles, startedAtMs = Date.now() }: StartRecordingOptions): TeacherRecording {
+    this.startTime = startedAtMs;
     this.seq = 0;
 
     this.recording = {
       id: createId('teacher-recording'),
       lessonId,
       version,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(startedAtMs).toISOString(),
       durationMs: 0,
       baseFiles: normalizeFiles(baseFiles),
       events: [],

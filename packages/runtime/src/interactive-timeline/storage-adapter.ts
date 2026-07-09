@@ -6,6 +6,7 @@ import {
   saveLearnerDeltas,
   saveTeacherRecording,
 } from './storage.js';
+import type { RecordingMediaAsset } from './media.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
 
 export interface TeacherRecordingDraftSummary {
@@ -27,6 +28,10 @@ export interface InteractiveTimelineStorage {
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void>;
   deleteTeacherRecordingDraft(id: string): Promise<void>;
+  saveMediaAsset(asset: RecordingMediaAsset): Promise<void>;
+  loadMediaAsset(assetId: string): Promise<RecordingMediaAsset | undefined>;
+  deleteMediaAsset(assetId: string): Promise<void>;
+  listMediaAssetsForRecording(recordingId: string): Promise<RecordingMediaAsset[]>;
 }
 
 export function getTeacherRecordingDraftSummary(recording: TeacherRecording): TeacherRecordingDraftSummary {
@@ -80,6 +85,22 @@ export class LocalStorageInteractiveTimelineStorage implements InteractiveTimeli
   async deleteTeacherRecordingDraft(_id: string): Promise<void> {
     // The localStorage compatibility layer intentionally keeps the legacy keys
     // in place until a later cleanup/migration phase removes them explicitly.
+  }
+
+  async saveMediaAsset(_asset: RecordingMediaAsset): Promise<void> {
+    throw new Error('Media asset persistence requires IndexedDB.');
+  }
+
+  async loadMediaAsset(_assetId: string): Promise<RecordingMediaAsset | undefined> {
+    return undefined;
+  }
+
+  async deleteMediaAsset(_assetId: string): Promise<void> {
+    // Media blobs are not mirrored into localStorage.
+  }
+
+  async listMediaAssetsForRecording(_recordingId: string): Promise<RecordingMediaAsset[]> {
+    return [];
   }
 
   async mirrorLearnerDeltas(deltas: LearnerDelta[]): Promise<void> {

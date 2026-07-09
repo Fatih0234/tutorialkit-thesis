@@ -1,12 +1,13 @@
 # Interactive POC architecture
 
-This document is the local architecture checkpoint for the interactive tutorial POC as of Milestone A. It covers the browser-only recorder, local authoring draft lifecycle, async IndexedDB-backed storage adapter, timeline-clock playback, learner delta save/restore, and conflict detection behavior.
+This document is the local architecture checkpoint for the interactive tutorial POC as of Milestone B. It covers the browser-only structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, async IndexedDB-backed storage adapter, media-synced playback, fallback timeline-clock playback, learner delta save/restore, and conflict detection behavior.
 
 ## Scope and invariants
 
 The POC implements only the interactivity layer:
 
-- teacher editor/file actions are recorded into a timeline;
+- teacher editor/file actions are recorded into a structured timeline;
+- teachers can optionally attach microphone narration or webcam media to the same timeline;
 - teachers can save, load, discard, and preview local recording drafts;
 - learners can replay that timeline;
 - learners can pause, edit their own workspace, and save a file-level delta;
@@ -19,22 +20,26 @@ Important invariants:
 - **Learner work is separate.** Learner changes are stored as learner-owned deltas in IndexedDB and mirrored to `interactive-poc.learnerDeltas`.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
+- **Media is an attachment, not a replacement.** Milestone B records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
+- **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **File-level deltas only.** The POC does not compute text patches or merge hunks.
 
 ## 1. Current user flow
 
-The visible local authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle is now explicit.
+The visible local authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle and optional media capture lifecycle are explicit.
 
-### Start Recording
+### Record Timeline Only / Record With Mic / Record With Camera
 
-Starts a local `TimelineRecorder` while the lesson is fully loaded and the mode is `idle`.
+Starts a local `TimelineRecorder` while the lesson is fully loaded and the mode is `idle`. `Record Timeline Only` keeps the Milestone A behavior. `Record With Mic` prepares an audio `MediaStream` through `getUserMedia({ audio: true })`; `Record With Camera` prepares a webcam stream through `getUserMedia({ audio: true, video: true })`.
 
 Behavior:
 
 - captures the current workspace snapshot as `TeacherRecording.baseFiles`;
 - creates a new `TeacherRecording` with `version: 1`;
+- starts media and timeline recording from the same local start timestamp when media preparation succeeds;
 - appends an initial `recording.started` event;
-- begins wrapping editor/file callbacks to record teacher actions.
+- begins wrapping editor/file callbacks to record teacher actions;
+- falls back to timeline-only recording with a visible media error/unavailable status when media APIs or permissions fail.
 
 Recorded callback events currently include:
 
@@ -44,31 +49,33 @@ Recorded callback events currently include:
 
 ### Stop Recording
 
-Stops the active `TimelineRecorder` and keeps the resulting teacher recording in memory as the current unsaved draft. Stopping does not require a backend or immediate publish step. The draft can then be saved, previewed, or discarded.
+Stops the active `TimelineRecorder` and keeps the resulting teacher recording in memory as the current unsaved draft. If an `InteractiveMediaRecorder` is active, it is stopped too, all `MediaStream` tracks are stopped, and the resulting `RecordingMediaAsset` blob is kept in memory until the draft is saved.
 
-Stopping also updates debug state such as draft status, current draft id, recording duration, and event count.
+The teacher recording stores only media metadata (`mediaAssets`), not the Blob itself. Stopping does not require a backend or immediate publish step. The draft can then be saved, previewed, or discarded.
+
+Stopping also updates debug state such as draft status, current draft id, recording duration, event count, media kind, media status, and media duration.
 
 ### Save Draft
 
-Saves the current stopped teacher recording draft through the async storage adapter. The default browser adapter writes the draft to IndexedDB and mirrors the latest teacher recording to the compatibility key:
+Saves the current stopped teacher recording draft through the async storage adapter. The default browser adapter writes the draft metadata to IndexedDB, stores media blobs in the IndexedDB `mediaAssets` store, and mirrors the latest teacher recording metadata to the compatibility key:
 
 ```text
 interactive-poc.teacherRecording
 ```
 
-Saving a draft does not mutate learner deltas and does not contact a backend.
+Saving a draft does not mutate learner deltas and does not contact a backend. Media blobs are not mirrored to localStorage.
 
 ### Load Draft
 
-Loads the latest local teacher recording draft from IndexedDB through the async storage adapter. If IndexedDB is unavailable, the adapter falls back to the localStorage compatibility adapter. Loading also refreshes the `interactive-poc.teacherRecording` mirror so existing POC debugging/tests can inspect the latest recording shape.
+Loads the latest local teacher recording draft from IndexedDB through the async storage adapter. Associated media assets are loaded from the IndexedDB `mediaAssets` store using the recording's media asset ids/metadata. If IndexedDB is unavailable, the adapter falls back to the localStorage compatibility adapter for timeline data only. Loading also refreshes the `interactive-poc.teacherRecording` mirror so existing POC debugging/tests can inspect the latest recording shape.
 
 ### Preview Draft
 
-Previews the currently loaded/saved draft using the same timeline playback engine as learner playback. Preview does not start recording and does not mutate the saved draft.
+Previews the currently loaded/saved draft using the same timeline playback engine as learner playback. If a media asset is loaded, the media element drives timeline time via `media.currentTime * 1000`; otherwise the fallback `TimelinePlaybackClock` drives replay. Preview does not start recording and does not mutate the saved draft.
 
 ### Discard Draft
 
-Clears the current in-memory draft and marks the authoring panel as discarded. Milestone A keeps persisted localStorage compatibility keys in place and does not delete learner deltas.
+Clears the current in-memory draft/media selection and marks the authoring panel as discarded. Milestone B keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets.
 
 ### Play Recording
 
@@ -77,9 +84,11 @@ Loads the latest teacher recording through the async storage adapter and replays
 Behavior:
 
 - loads the latest recording from IndexedDB or the `interactive-poc.teacherRecording` compatibility key;
+- loads associated media assets from IndexedDB when the recording references them;
 - resets the workspace to the recording base files for a fresh playback;
 - sorts events by `tMs`, then `seq`;
-- advances one `requestAnimationFrame` timeline clock and applies due events in order;
+- when media is loaded, uses the media element's `currentTime` in seconds as the source of truth and applies due events where `event.tMs <= currentTime * 1000`;
+- when media is absent, advances one `requestAnimationFrame` timeline clock and applies due events in order;
 - updates playback status and playhead debug text;
 - uses a playback guard so programmatic changes are not recorded.
 
@@ -91,7 +100,7 @@ Currently applied event types:
 
 ### Pause & Try It
 
-Stops the playback clock and switches to learner edit mode.
+Stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
 
 Behavior:
 
@@ -108,7 +117,8 @@ Continues teacher playback from the paused teacher timestamp.
 Behavior:
 
 - resumes only while mode is `learner-editing`;
-- advances the playback clock from `pausedTeacherTimestampMs`;
+- resumes media from `pausedTeacherTimestampMs / 1000` when media is loaded;
+- otherwise advances the fallback playback clock from `pausedTeacherTimestampMs`;
 - applies teacher events with `tMs > pausedTeacherTimestampMs` as they become due;
 - does **not** reset the workspace to base files on resume;
 - later teacher `file.changed` events can overwrite the visible workspace;
@@ -213,6 +223,7 @@ interface TeacherRecording {
   durationMs: number;
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
+  mediaAssets?: RecordingMediaAssetMetadata[];
 }
 ```
 
@@ -224,7 +235,37 @@ Meaning:
 - `startedAt`: ISO timestamp for recording start;
 - `durationMs`: elapsed recording duration when stopped;
 - `baseFiles`: normalized file snapshot at recording start;
-- `events`: ordered teacher/system timeline events.
+- `events`: ordered teacher/system timeline events;
+- `mediaAssets`: optional media asset metadata references. Blob data is stored separately in IndexedDB and is not embedded in the teacher recording JSON.
+
+### RecordingMediaAsset
+
+Source types live in `packages/runtime/src/interactive-timeline/media.ts`.
+
+```ts
+type RecordingMediaKind = 'audio' | 'webcam';
+
+interface RecordingMediaAssetMetadata {
+  id: string;
+  recordingId: string;
+  kind: RecordingMediaKind;
+  mimeType: string;
+  durationMs: number;
+  createdAt: string;
+}
+
+interface RecordingMediaAsset extends RecordingMediaAssetMetadata {
+  blob?: Blob;
+}
+```
+
+Meaning:
+
+- `audio` assets are produced by `getUserMedia({ audio: true })` and recorded with `MediaRecorder`;
+- `webcam` assets are produced by `getUserMedia({ audio: true, video: true })` when browser/device support is available;
+- `TeacherRecording.mediaAssets` stores only `RecordingMediaAssetMetadata`;
+- IndexedDB stores `RecordingMediaAsset` records including the `Blob`;
+- localStorage mirrors never store media blobs.
 
 ### TimelineEvent
 
@@ -330,7 +371,7 @@ The React hook currently displays only `filePaths` as `Conflict status` and `Con
 
 ## 3. Browser storage
 
-Milestone A uses an async storage adapter. The default browser implementation writes structured data to IndexedDB and mirrors the legacy localStorage keys for compatibility with existing tests and manual debugging.
+Milestone B uses an async storage adapter. The default browser implementation writes structured timeline data and media blobs to IndexedDB while mirroring the legacy localStorage keys for compatibility with existing tests and manual debugging.
 
 ### IndexedDB
 
@@ -343,9 +384,10 @@ interactive-timeline-poc
 Current object stores:
 
 - `teacherRecordings`, keyed by `TeacherRecording.id`;
-- `learnerDeltas`, keyed by `LearnerDelta.id`.
+- `learnerDeltas`, keyed by `LearnerDelta.id`;
+- `mediaAssets`, keyed by `RecordingMediaAsset.id`, including Blob data and indexed by `recordingId`.
 
-The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. It migrates existing localStorage values into IndexedDB without deleting the old keys.
+The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. It migrates existing localStorage values into IndexedDB without deleting the old keys. Media persistence requires IndexedDB; when IndexedDB is unavailable, recording can continue as timeline-only and media save/load reports an error/unavailable state instead of crashing.
 
 ### `interactive-poc.teacherRecording` compatibility mirror
 
@@ -365,7 +407,7 @@ Stores a serialized array of `LearnerDelta` objects:
 localStorage.setItem('interactive-poc.learnerDeltas', JSON.stringify(deltas));
 ```
 
-The IndexedDB adapter mirrors the full learner-delta array to this key after saves. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta.
+The IndexedDB adapter mirrors the full learner-delta array to this key after saves. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta. Media blobs are intentionally excluded from localStorage.
 
 ## 4. Runtime modules
 
@@ -379,6 +421,7 @@ Defines the shared data contracts:
 - `TimelineEvent`
 - `TeacherRecording`
 - `LearnerDelta`
+- optional `TeacherRecording.mediaAssets` metadata references
 - event payload interfaces
 
 ### `path.ts`
@@ -394,6 +437,7 @@ Owns teacher timeline recording:
 
 - creates `TeacherRecording` objects;
 - captures `baseFiles`;
+- accepts an optional shared local start timestamp for media/timeline alignment;
 - appends timestamped events;
 - records file open and file changed helpers;
 - finalizes `durationMs` on stop.
@@ -418,12 +462,32 @@ Owns file-level learner delta helpers:
 
 ### `playback-clock.ts`
 
-Owns the minimal timeline playback clock:
+Owns the fallback timeline playback clock for recordings without media:
 
 - uses `requestAnimationFrame` in the browser to advance one playhead;
 - exposes `playFrom(startMs)`, `pause()`, `stop()`, and `currentTimeMs`;
 - calls `onTick(currentTimeMs)` so React can apply all due timeline events;
 - calls `onFinish()` when the playhead reaches the current playback end.
+
+### `media.ts`
+
+Defines the media contracts:
+
+- `RecordingMediaKind`;
+- `RecordingMediaAssetMetadata`;
+- `RecordingMediaAsset`;
+- `getRecordingMediaAssetMetadata(asset)`.
+
+### `media-recorder.ts`
+
+Wraps browser media capture:
+
+- guards `navigator.mediaDevices.getUserMedia` and `MediaRecorder`;
+- supports `audio` and `webcam` modes;
+- chooses a supported MIME type when possible;
+- collects `dataavailable` Blob chunks;
+- stops all `MediaStream` tracks after recording;
+- exposes a fake audio mode for Playwright/hardware-free tests through `interactive-poc.fakeMediaRecorder`.
 
 ### `storage.ts`
 
@@ -440,11 +504,11 @@ This module intentionally has no backend/API implementation.
 
 ### `storage-adapter.ts`
 
-Defines the async `InteractiveTimelineStorage` boundary used by React. It includes teacher recording, learner delta, and teacher draft methods. `LocalStorageInteractiveTimelineStorage` remains as the compatibility/fallback adapter.
+Defines the async `InteractiveTimelineStorage` boundary used by React. It includes teacher recording, learner delta, teacher draft, and media asset methods. `LocalStorageInteractiveTimelineStorage` remains as the compatibility/fallback adapter for timeline data and intentionally does not mirror media blobs.
 
 ### `indexeddb-storage-adapter.ts`
 
-Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts and learner deltas to IndexedDB, migrates existing localStorage values when possible, mirrors latest teacher/learner data back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable.
+Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts, learner deltas, and media assets to IndexedDB, migrates existing localStorage values when possible, mirrors latest teacher/learner metadata back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable. Media blobs are stored only in the `mediaAssets` object store.
 
 ## 5. React integration
 
@@ -471,9 +535,10 @@ It should not contain the recorder/playback/delta implementation details.
 Responsibilities:
 
 - recording lifecycle;
+- optional mic/webcam media recording lifecycle;
 - local teacher draft save/load/preview/discard lifecycle;
 - async storage calls and compatibility state sync;
-- playback lifecycle;
+- media-synced playback and fallback clock playback lifecycle;
 - pause/resume mode transitions;
 - playback guard;
 - learner delta save/restore;
@@ -497,14 +562,16 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 `packages/react/src/Panels/InteractiveAuthoringPanel.tsx` renders the teacher-facing local authoring controls:
 
-- Start Recording;
+- Record Timeline Only;
+- Record With Mic;
+- Record With Camera;
 - Stop Recording;
 - Save Draft;
 - Load Draft;
 - Preview Draft;
 - Discard Draft.
 
-It also displays draft status, current draft id, recording duration, recording status, and event count.
+It also displays draft status, current draft id, recording duration, recording status, event count, media status, media kind, media duration, MIME type, media errors, and a simple audio/video preview element when media is loaded.
 
 ### `InteractivePocControls.tsx`
 
@@ -526,10 +593,12 @@ Known limitations are intentional for the POC:
 - no production UI;
 - no terminal recording;
 - no preview iframe/internal app recording;
+- no screen recording;
+- no transcript generation;
 - no analytics;
 - restore only updates existing TutorialKit files in the current UI;
 - file add/remove restore UI is not implemented;
-- playback clock is minimal and does not yet support seeking, speed changes, drift correction, or audio sync;
+- media-synced playback supports basic media seeking by resetting/replaying structured events, but does not yet expose production seeking/speed/drift controls;
 - editor selection is stored opaquely and not restored as a first-class feature;
 - localStorage parsing assumes valid POC JSON;
 - draft listing loads the latest local draft and does not yet provide a full draft picker/history drawer.
@@ -552,8 +621,8 @@ Candidate future phases:
 4. **Production UI**
    - replace the debug control strip with tutorial-appropriate controls and workspace mode affordances.
 
-5. **Optional transcript/audio**
-   - attach narration/transcript metadata to teacher timeline events without changing the learner delta model.
+5. **Optional transcript/captions**
+   - attach transcript metadata to teacher timeline events without changing the learner delta model.
 
 6. **Optional richer capture**
-   - terminal and preview capture should remain out of scope until the editor/file timeline is stable.
+   - screen, terminal, and preview capture should remain out of scope until the editor/file timeline plus media narration path is stable.

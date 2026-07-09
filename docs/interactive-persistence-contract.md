@@ -1,8 +1,8 @@
 # Interactive persistence contract
 
-This document defines the proposed backend persistence contract for the interactive tutorial POC. It remains a contract document for backend work: Milestone A adds local IndexedDB draft storage and an async adapter boundary, but it does not add backend APIs, database code, network calls, auth, or production persistence infrastructure.
+This document defines the proposed backend persistence contract for the interactive tutorial POC. It remains a contract document for backend work: Milestone B adds local media assets in IndexedDB and media-synced playback, but it does not add backend APIs, database code, network calls, auth, object storage, or production persistence infrastructure.
 
-The contract preserves the Milestone A browser-only model described in `docs/interactive-poc-architecture.md` and prepares a future replacement for local IndexedDB/localStorage compatibility persistence.
+The contract preserves the Milestone B browser-only model described in `docs/interactive-poc-architecture.md` and prepares a future replacement for local IndexedDB/localStorage compatibility persistence.
 
 ## Non-goals
 
@@ -11,24 +11,26 @@ This document does not specify or implement:
 - authentication/session middleware;
 - database migrations;
 - production storage infrastructure;
+- object storage for media blobs;
 - merge algorithms;
 - conflict resolution UI;
 - terminal recording persistence;
 - preview iframe recording persistence;
+- screen recording persistence;
 - analytics or telemetry.
 
-## Milestone A local-first status
+## Milestone B local-first status
 
-Milestone A introduces `InteractiveTimelineStorage` as an async client-side adapter boundary. The default browser adapter is `IndexedDBInteractiveTimelineStorage`, which stores local teacher recording drafts and learner deltas in IndexedDB and mirrors the legacy POC localStorage keys:
+Milestone B keeps `InteractiveTimelineStorage` as an async client-side adapter boundary and extends it with media asset methods. The default browser adapter is `IndexedDBInteractiveTimelineStorage`, which stores local teacher recording drafts, learner deltas, and media assets in IndexedDB and mirrors the legacy POC localStorage keys:
 
 ```text
 interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable.
+The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in the IndexedDB `mediaAssets` object store and are not mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
 
-No backend routes or fetch calls are introduced by Milestone A. Future backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+No backend routes, fetch calls, auth, or object-storage uploads are introduced by Milestone B. Future backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 ## 1. Persistence goals
 
@@ -39,7 +41,8 @@ A saved teacher recording is an append-complete artifact. After creation, learne
 - teacher recording metadata;
 - teacher base files;
 - teacher timeline events;
-- teacher recording version.
+- teacher recording version;
+- teacher media asset metadata references.
 
 Corrections or re-recordings should create a new `TeacherRecording` id or a new explicit version, not edit learner-linked history in place.
 
@@ -78,7 +81,7 @@ For the first backend phase, prefer append-only learner delta creation over in-p
 
 ## 2. Proposed resources
 
-These resource shapes mirror the runtime POC types in `packages/runtime/src/interactive-timeline/types.ts` and `packages/runtime/src/interactive-timeline/learner-delta.ts`.
+These resource shapes mirror the runtime POC types in `packages/runtime/src/interactive-timeline/types.ts`, `packages/runtime/src/interactive-timeline/media.ts`, and `packages/runtime/src/interactive-timeline/learner-delta.ts`.
 
 ### `TeacherRecording`
 
@@ -93,6 +96,7 @@ interface TeacherRecording {
   durationMs: number;
   baseFiles: Record<string, string>;
   events: TimelineEvent[];
+  mediaAssets?: RecordingMediaAssetMetadata[];
   createdAt: string;
   createdBy?: string;
 }
@@ -102,7 +106,36 @@ Notes:
 
 - `baseFiles` keys must be normalized leading-slash paths.
 - `events` may be stored inline as a JSON blob or separately as event rows; see open decisions.
+- `mediaAssets` stores metadata references only; media Blobs/binary data must be stored separately.
 - `createdBy` is optional until an auth/user ownership model is selected.
+
+### `RecordingMediaAsset`
+
+A teacher-owned media attachment for a structured teacher recording.
+
+```ts
+type RecordingMediaKind = 'audio' | 'webcam';
+
+interface RecordingMediaAssetMetadata {
+  id: string;
+  recordingId: string;
+  kind: RecordingMediaKind;
+  mimeType: string;
+  durationMs: number;
+  createdAt: string;
+}
+
+interface RecordingMediaAsset extends RecordingMediaAssetMetadata {
+  blob?: Blob;
+}
+```
+
+Notes:
+
+- `TeacherRecording.mediaAssets` should embed only `RecordingMediaAssetMetadata`.
+- Local Milestone B stores `Blob` values in IndexedDB object store `mediaAssets`.
+- A future backend should store the binary body in object storage or a media table/blob store and keep metadata in a durable media asset record.
+- Media is synchronized to the structured timeline by playback time, not by replacing the timeline with a screen recording.
 
 ### `TimelineEvent`
 
@@ -509,6 +542,25 @@ Recommended indexes:
 - `(teacher_recording_id, teacher_recording_version)`;
 - `(user_id, created_at)`.
 
+### `media_assets`
+
+Stores teacher recording media metadata and, for local/browser storage, Blob data. A production backend may split metadata and binary/object storage.
+
+Suggested fields:
+
+- `id` primary key;
+- `teacher_recording_id` foreign key;
+- `kind` (`audio` or `webcam`);
+- `mime_type`;
+- `duration_ms`;
+- `created_at`;
+- `blob` or `object_storage_key` depending on storage implementation.
+
+Recommended indexes:
+
+- `(teacher_recording_id, created_at)`;
+- `(kind, created_at)`.
+
 ### Optional conflict cache
 
 A cache may store computed `ConflictSummary` values.
@@ -539,9 +591,22 @@ Validate that:
 - `events` is an array;
 - every event has `id`, numeric `seq`, numeric `tMs`, `type`, and `origin`;
 - event paths normalize to leading-slash form when present;
-- event ordering is either already deterministic or can be sorted by `tMs`/`seq`.
+- event ordering is either already deterministic or can be sorted by `tMs`/`seq`;
+- media asset metadata references, when present, include `id`, `recordingId`, `kind`, `mimeType`, `durationMs`, and `createdAt`.
 
 After persistence, do not allow mutable updates to the recording body.
+
+### Media asset creation
+
+Validate that:
+
+- linked teacher recording exists;
+- `recordingId` matches the linked teacher recording id;
+- `kind` is `audio` or `webcam`;
+- `mimeType` is present and allowed for the target media pipeline;
+- `durationMs` is non-negative and within configured media limits;
+- Blob/binary payload is present for local IndexedDB or replaced by an object-storage key in a backend implementation;
+- storing a media asset does not mutate learner deltas.
 
 ### Learner delta creation
 
@@ -590,7 +655,7 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
-Milestone A also stores the same resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings` and `learnerDeltas`.
+Milestone B also stores the same resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Media blobs are stored only in IndexedDB and are not mirrored to localStorage.
 
 ### Equivalent backend records
 
@@ -599,6 +664,7 @@ Migration mapping:
 | Local browser value | Backend resource |
 | --- | --- |
 | IndexedDB `teacherRecordings` item or `interactive-poc.teacherRecording` mirror | one `TeacherRecording` record plus optional event rows |
+| IndexedDB `mediaAssets` item | one `RecordingMediaAsset` metadata row plus Blob/object-storage body |
 | IndexedDB `learnerDeltas` item or each item in `interactive-poc.learnerDeltas` mirror | one `LearnerDelta` record |
 | Phase 6 conflict result | computed `ConflictSummary`, optional cache |
 
@@ -628,16 +694,21 @@ interface InteractiveTimelineStorage {
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void>;
   deleteTeacherRecordingDraft(id: string): Promise<void>;
+  saveMediaAsset(asset: RecordingMediaAsset): Promise<void>;
+  loadMediaAsset(assetId: string): Promise<RecordingMediaAsset | undefined>;
+  deleteMediaAsset(assetId: string): Promise<void>;
+  listMediaAssetsForRecording(recordingId: string): Promise<RecordingMediaAsset[]>;
 }
 ```
 
 Backend implementation path:
 
-1. keep `IndexedDBInteractiveTimelineStorage` as the default local authoring adapter;
-2. keep `LocalStorageInteractiveTimelineStorage` as a compatibility/fallback adapter;
+1. keep `IndexedDBInteractiveTimelineStorage` as the default local authoring/media adapter;
+2. keep `LocalStorageInteractiveTimelineStorage` as a compatibility/fallback adapter for timeline-only data;
 3. add backend-backed adapter behind the same async interface;
-4. keep Playwright tests asserting teacher immutability, draft load/preview, and learner delta recoverability;
-5. only remove localStorage mirror assumptions after backend behavior matches the local POC.
+4. choose a backend media binary strategy before production media uploads (object storage, database Blob, or local file store);
+5. keep Playwright tests asserting teacher immutability, media draft load/preview, fallback no-media playback, and learner delta recoverability;
+6. only remove localStorage mirror assumptions after backend behavior matches the local POC.
 
 ## 7. Open decisions
 
@@ -662,6 +733,16 @@ Open questions:
 
 Default recommendation: backend should derive `userId` from auth, not trust client-provided `userId`, once auth exists.
 
+### Media binary storage
+
+Open questions:
+
+- Should media blobs live in object storage, database Blob columns, or a local file store for a first backend prototype?
+- Should uploads be direct-to-storage or proxied through the application server?
+- What retention policy applies when a teacher recording draft is discarded or superseded?
+
+Default recommendation: keep teacher recording JSON immutable and store media binary bodies separately behind the same `RecordingMediaAsset` metadata ids.
+
 ### File size limits
 
 Open questions:
@@ -669,7 +750,8 @@ Open questions:
 - Maximum file size in `baseFiles` and `addedOrModified`?
 - Maximum total recording payload size?
 - Maximum event count per recording?
-- Should large files be rejected, compressed, or stored separately?
+- Maximum media duration and Blob size?
+- Should large files/media be rejected, compressed, transcoded, or stored separately?
 
 Default recommendation: define conservative limits before production backend work.
 

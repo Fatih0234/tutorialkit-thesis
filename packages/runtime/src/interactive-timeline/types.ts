@@ -1,3 +1,5 @@
+import type { RecordingMediaAssetMetadata } from './media.js';
+
 export type FilesSnapshot = Record<string, string>;
 
 export type TimelineEventType =
@@ -41,6 +43,7 @@ export interface TeacherRecording {
   durationMs: number;
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
+  mediaAssets?: RecordingMediaAssetMetadata[];
 }
 
 export interface LearnerDelta {

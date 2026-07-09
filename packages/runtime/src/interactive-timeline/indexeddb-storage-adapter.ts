@@ -5,14 +5,16 @@ import {
   type InteractiveTimelineStorage,
   type TeacherRecordingDraftSummary,
 } from './storage-adapter.js';
+import type { RecordingMediaAsset } from './media.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
 
 const DB_NAME = 'interactive-timeline-poc';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const TEACHER_RECORDINGS_STORE = 'teacherRecordings';
 const LEARNER_DELTAS_STORE = 'learnerDeltas';
+const MEDIA_ASSETS_STORE = 'mediaAssets';
 
-type StoreName = typeof TEACHER_RECORDINGS_STORE | typeof LEARNER_DELTAS_STORE;
+type StoreName = typeof TEACHER_RECORDINGS_STORE | typeof LEARNER_DELTAS_STORE | typeof MEDIA_ASSETS_STORE;
 
 function canUseIndexedDB(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
@@ -196,6 +198,48 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
     await this.deleteTeacherRecordingFromIndexedDB(id);
   }
 
+  async saveMediaAsset(asset: RecordingMediaAsset): Promise<void> {
+    const wroteToIndexedDB = await this.writeMediaAssetToIndexedDB(asset);
+
+    if (!wroteToIndexedDB) {
+      await this.fallbackStorage.saveMediaAsset(asset);
+    }
+  }
+
+  async loadMediaAsset(assetId: string): Promise<RecordingMediaAsset | undefined> {
+    const indexedDbAsset = await this.readMediaAssetFromIndexedDB(assetId);
+
+    if (indexedDbAsset) {
+      return indexedDbAsset;
+    }
+
+    return this.fallbackStorage.loadMediaAsset(assetId);
+  }
+
+  async deleteMediaAsset(assetId: string): Promise<void> {
+    await this.deleteMediaAssetFromIndexedDB(assetId);
+  }
+
+  async listMediaAssetsForRecording(recordingId: string): Promise<RecordingMediaAsset[]> {
+    const indexedDbAssets = await this.readAllMediaAssetsFromIndexedDB();
+
+    if (!indexedDbAssets) {
+      return this.fallbackStorage.listMediaAssetsForRecording(recordingId);
+    }
+
+    return indexedDbAssets
+      .filter((asset) => asset.recordingId === recordingId)
+      .sort((a, b) => {
+        const createdAtOrder = a.createdAt.localeCompare(b.createdAt);
+
+        if (createdAtOrder !== 0) {
+          return createdAtOrder;
+        }
+
+        return a.id.localeCompare(b.id);
+      });
+  }
+
   private async migrateLocalStorageIfNeeded(): Promise<void> {
     if (!canUseIndexedDB()) {
       return;
@@ -253,6 +297,13 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
           learnerDeltas.createIndex('lessonId', 'lessonId', { unique: false });
           learnerDeltas.createIndex('teacherRecordingId', 'teacherRecordingId', { unique: false });
           learnerDeltas.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(MEDIA_ASSETS_STORE)) {
+          const mediaAssets = db.createObjectStore(MEDIA_ASSETS_STORE, { keyPath: 'id' });
+
+          mediaAssets.createIndex('recordingId', 'recordingId', { unique: false });
+          mediaAssets.createIndex('createdAt', 'createdAt', { unique: false });
         }
       };
       request.onsuccess = () => {
@@ -384,6 +435,70 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async readAllMediaAssetsFromIndexedDB(): Promise<RecordingMediaAsset[] | undefined> {
+    try {
+      const store = await this.getStore(MEDIA_ASSETS_STORE, 'readonly');
+
+      if (!store) {
+        return undefined;
+      }
+
+      return requestToPromise<RecordingMediaAsset[]>(store.getAll());
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readMediaAssetFromIndexedDB(id: string): Promise<RecordingMediaAsset | undefined> {
+    try {
+      const store = await this.getStore(MEDIA_ASSETS_STORE, 'readonly');
+
+      if (!store) {
+        return undefined;
+      }
+
+      return requestToPromise<RecordingMediaAsset | undefined>(store.get(id));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async writeMediaAssetToIndexedDB(asset: RecordingMediaAsset): Promise<boolean> {
+    try {
+      const db = await this.openDatabase();
+
+      if (!db) {
+        return false;
+      }
+
+      const transaction = db.transaction(MEDIA_ASSETS_STORE, 'readwrite');
+
+      transaction.objectStore(MEDIA_ASSETS_STORE).put(asset);
+      await waitForTransaction(transaction);
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async deleteMediaAssetFromIndexedDB(id: string): Promise<void> {
+    try {
+      const db = await this.openDatabase();
+
+      if (!db) {
+        return;
+      }
+
+      const transaction = db.transaction(MEDIA_ASSETS_STORE, 'readwrite');
+
+      transaction.objectStore(MEDIA_ASSETS_STORE).delete(id);
+      await waitForTransaction(transaction);
+    } catch {
+      // Deleting media is best-effort in this browser-only POC.
     }
   }
 }

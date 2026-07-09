@@ -6,18 +6,28 @@ export function InteractiveAuthoringPanel({
   draftStatus,
   currentDraftId,
   recordingDurationMs,
+  mediaStatus,
+  mediaKind,
+  mediaDurationMs,
+  mediaError,
+  mediaPreviewUrl,
+  mediaMimeType,
   canStartRecording,
+  canStartMediaRecording,
   canStopRecording,
   canSaveDraft,
   canLoadDraft,
   canPreviewDraft,
   canDiscardDraft,
   onStartRecording,
+  onStartMicRecording,
+  onStartCameraRecording,
   onStopRecording,
   onSaveDraft,
   onLoadDraft,
   onPreviewDraft,
   onDiscardDraft,
+  onMediaElementRef,
 }: InteractivePocControlsModel) {
   return (
     <div
@@ -30,7 +40,13 @@ export function InteractiveAuthoringPanel({
       }}
     >
       <button type="button" onClick={onStartRecording} disabled={!canStartRecording}>
-        Start Recording
+        Record Timeline Only
+      </button>
+      <button type="button" onClick={onStartMicRecording} disabled={!canStartMediaRecording}>
+        Record With Mic
+      </button>
+      <button type="button" onClick={onStartCameraRecording} disabled={!canStartMediaRecording}>
+        Record With Camera
       </button>
       <button type="button" onClick={onStopRecording} disabled={!canStopRecording}>
         Stop Recording
@@ -52,6 +68,25 @@ export function InteractiveAuthoringPanel({
       <span>Recording duration ms: {recordingDurationMs}</span>
       <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
       <span>Event count: {eventCount}</span>
+      <span>Media status: {mediaStatus}</span>
+      <span>Media kind: {mediaKind}</span>
+      <span>Media duration ms: {mediaDurationMs}</span>
+      <span>Media mime type: {mediaMimeType || 'none'}</span>
+      <span>Media error: {mediaError}</span>
+      {mediaPreviewUrl && mediaKind === 'audio' ? (
+        <audio aria-label="Recorded audio preview" controls preload="auto" src={mediaPreviewUrl} ref={onMediaElementRef} />
+      ) : null}
+      {mediaPreviewUrl && mediaKind === 'webcam' ? (
+        <video
+          aria-label="Recorded webcam preview"
+          controls
+          playsInline
+          preload="auto"
+          src={mediaPreviewUrl}
+          ref={onMediaElementRef}
+          style={{ maxHeight: '6rem', maxWidth: '10rem' }}
+        />
+      ) : null}
     </div>
   );
 }
