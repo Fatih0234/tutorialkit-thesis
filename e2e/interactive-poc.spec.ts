@@ -284,6 +284,42 @@ async function waitForPlayheadToAdvance(page: Page) {
     .toBeGreaterThan(0);
 }
 
+async function seedDemoRecordingFromTeacherDashboard(page: Page) {
+  await openTeacherSection(page);
+  await page.getByRole('button', { name: /reset demo data/i }).click();
+  await expect(page.getByText(/demo data status:\s*reset/i)).toBeVisible();
+  await page.getByRole('button', { name: /demo seed/i }).click();
+  await expect(page.getByText(/demo data status:\s*seeded demo-interactive-conflict-flow/i)).toBeVisible();
+  await expect(page.getByLabel(/select published recording/i)).toHaveValue('demo-interactive-conflict-flow');
+}
+
+async function exportRecordingPackageFromUi(page: Page, outputPath: string) {
+  const downloadPromise = page.waitForEvent('download');
+
+  await page.getByRole('button', { name: /export recording/i }).click();
+
+  const download = await downloadPromise;
+
+  await download.saveAs(outputPath);
+  await expect(page.getByText(/export status:\s*exported/i)).toBeVisible();
+
+  return outputPath;
+}
+
+async function uploadRecordingPackage(page: Page, packagePath: string) {
+  await page.getByLabel(/import recording package/i).setInputFiles(packagePath);
+  await expect(page.getByText(/import status:\s*package selected/i)).toBeVisible();
+}
+
+async function getImportedPublishedId(page: Page) {
+  const importStatusText = await page.getByText(/import status:\s*imported published/i).textContent();
+  const importedId = importStatusText?.match(/imported published\s+([^\s]+)/i)?.[1];
+
+  expect(importedId).toBeTruthy();
+
+  return importedId!;
+}
+
 function createConflictResolutionRecording({
   recordingId,
   futureFilePath = '/example.js',
@@ -743,6 +779,135 @@ test.describe('interactive timeline POC', () => {
       { timeout: 5000 },
     );
     await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+  });
+
+  test('teacher can export and import recording as draft', async ({ page }, testInfo) => {
+    await signInAsTeacher(page);
+    await seedDemoRecordingFromTeacherDashboard(page);
+
+    const packagePath = await exportRecordingPackageFromUi(page, testInfo.outputPath('demo-export-draft.json'));
+    const exportedPackage = JSON.parse(readFileSync(packagePath, 'utf8'));
+
+    expect(exportedPackage.formatVersion).toBe(1);
+    expect(exportedPackage.teacherRecording.id).toBe('demo-interactive-conflict-flow');
+    expect(exportedPackage.teacherRecording.events).toHaveLength(3);
+    expect(exportedPackage.mediaAssets[0].metadata.id).toBe('demo-interactive-conflict-flow-audio');
+    expect(exportedPackage.mediaAssets[0].dataBase64).toBeTruthy();
+
+    await page.getByRole('button', { name: /reset demo data/i }).click();
+    await expect(page.getByText(/demo data status:\s*reset/i)).toBeVisible();
+    await uploadRecordingPackage(page, packagePath);
+    await page.getByRole('button', { name: /import as draft/i }).click();
+    await expect(page.getByText(/import status:\s*imported draft demo-interactive-conflict-flow-import/i)).toBeVisible();
+    await expect(page.getByLabel(/select local draft/i)).toHaveValue(/demo-interactive-conflict-flow-import/);
+
+    await page.getByRole('button', { name: /^preview draft$/i }).click();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText('// teacher demo final edit', {
+      timeout: 6000,
+    });
+  });
+
+  test('teacher can import package as published recording', async ({ page, request }, testInfo) => {
+    await signInAsTeacher(page);
+    await seedDemoRecordingFromTeacherDashboard(page);
+
+    const packagePath = await exportRecordingPackageFromUi(page, testInfo.outputPath('demo-export-published.json'));
+
+    await uploadRecordingPackage(page, packagePath);
+    await page.getByRole('button', { name: /import as published/i }).click();
+    await expect(page.getByText(/import status:\s*imported published demo-interactive-conflict-flow-import/i)).toBeVisible();
+
+    const importedId = await getImportedPublishedId(page);
+
+    await expect(page.getByLabel(/select published recording/i)).toHaveValue(importedId);
+
+    await apiDevLogin(request, DEV_TEACHER_USER_ID);
+    const importedResponse = await request.get(`/api/interactive/teacher-recordings/${importedId}`);
+    const importedRecording = (await importedResponse.json()).teacherRecording;
+    const immutableResponse = await request.post('/api/interactive/teacher-recordings', {
+      data: { ...importedRecording, durationMs: importedRecording.durationMs + 1 },
+    });
+
+    expect(immutableResponse.status()).toBe(409);
+
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByLabel(/select learner recording/i).selectOption(importedId);
+    await page.getByRole('button', { name: /open recording/i }).click();
+    await expect(page.getByText(new RegExp(`published recording id:\\s*${importedId}`, 'i'))).toBeVisible();
+    await page.getByRole('button', { name: /play lesson/i }).click();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText('// teacher demo final edit', {
+      timeout: 6000,
+    });
+  });
+
+  test('imported recording keeps media playback', async ({ page }, testInfo) => {
+    await signInAsTeacher(page);
+    await seedDemoRecordingFromTeacherDashboard(page);
+
+    const packagePath = await exportRecordingPackageFromUi(page, testInfo.outputPath('demo-export-media.json'));
+
+    await uploadRecordingPackage(page, packagePath);
+    await page.getByRole('button', { name: /import as draft/i }).click();
+    await expect(page.getByText(/import status:\s*imported draft demo-interactive-conflict-flow-import/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /^preview draft$/i }).click();
+    await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
+    await waitForPlayheadToAdvance(page);
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText('// teacher demo final edit', {
+      timeout: 6000,
+    });
+  });
+
+  test('demo seed creates predictable lesson', async ({ page }) => {
+    const learnerEdit = '// learner demo seed conflict edit';
+
+    await signInAsTeacher(page);
+    await seedDemoRecordingFromTeacherDashboard(page);
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await expect(page.getByLabel(/select learner recording/i)).toHaveValue('demo-interactive-conflict-flow');
+    await page.getByRole('button', { name: /open recording/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await page.getByRole('button', { name: /play lesson/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type(`\n${learnerEdit}`);
+    await expect(editor).toContainText(learnerEdit);
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /save my work/i }).click();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await expect(editor).toContainText('// teacher demo final edit', { timeout: 6000 });
+    await expect(editor).not.toContainText(learnerEdit);
+    await page.getByRole('button', { name: /restore my work/i }).click();
+    await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
+    await page.getByRole('button', { name: /restore my work anyway/i }).click();
+    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
+    await expect(editor).toContainText(learnerEdit);
+  });
+
+  test('reset demo data does not break app', async ({ page }) => {
+    await signInAsTeacher(page);
+    await openTeacherSection(page);
+    await page.getByRole('button', { name: /reset demo data/i }).click();
+    await expect(page.getByText(/demo data status:\s*reset/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /teacher dashboard/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /record timeline only/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /demo seed/i }).click();
+    await expect(page.getByText(/demo data status:\s*seeded demo-interactive-conflict-flow/i)).toBeVisible();
+    await expect(page.getByLabel(/select published recording/i)).toHaveValue('demo-interactive-conflict-flow');
   });
 
   test('learner can open a published recording and save work remotely', async ({ page, request }) => {

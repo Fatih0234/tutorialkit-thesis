@@ -46,6 +46,14 @@ interface DevUsersResponse {
   users: InteractiveUser[];
 }
 
+interface DemoSeedResponse {
+  teacherRecording: TeacherRecording | null;
+}
+
+interface DemoResetResponse {
+  ok: boolean;
+}
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
@@ -275,6 +283,21 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
     const response = await this.requestJson<DevUsersResponse>('/users/dev');
 
     return response.users ?? [];
+  }
+
+  async seedDemoData(): Promise<TeacherRecording | undefined> {
+    const response = await this.requestJson<DemoSeedResponse>('/demo/seed', { method: 'POST' });
+    const recording = response.teacherRecording ?? undefined;
+
+    if (recording) {
+      saveTeacherRecording(recording);
+    }
+
+    return recording;
+  }
+
+  async resetDemoData(): Promise<void> {
+    await this.requestJson<DemoResetResponse>('/demo/reset', { method: 'POST' });
   }
 
   private toUrl(path: string): string {

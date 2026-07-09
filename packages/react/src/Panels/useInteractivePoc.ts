@@ -12,14 +12,18 @@ import {
   canSaveInteractiveLearnerWork,
   devLogin as devLoginUser,
   diffFiles,
+  downloadRecordingPackage,
+  exportRecordingPackage,
   getLearnerDeltaConflicts,
   getRecordingMediaAssetMetadata,
+  importRecordingPackage,
   listDevUsers,
   loadCurrentUser,
   logout as logoutCurrentUser,
   materializeTeacherState,
   normalizeFiles,
   normalizePath,
+  parseRecordingPackage,
   simpleHashFiles,
   type EditorScrolledPayload,
   type FileChangedPayload,
@@ -101,6 +105,11 @@ export interface InteractivePocControlsModel {
   selectedDraftId: string;
   selectedPublishedRecordingId: string;
   recordingLibraryStatus: string;
+  exportStatus: string;
+  importStatus: string;
+  demoDataStatus: string;
+  importPackageFileName: string;
+  includeLearnerDeltasInExport: boolean;
   currentUser: InteractiveUser | null;
   devUsers: InteractiveUser[];
   authStatus: string;
@@ -118,6 +127,11 @@ export interface InteractivePocControlsModel {
   canLoadPublishedRecording: boolean;
   canPreviewPublishedRecording: boolean;
   canDeleteSelectedDraft: boolean;
+  canExportRecording: boolean;
+  canImportRecordingPackage: boolean;
+  canImportPublishedPackage: boolean;
+  canSeedDemoData: boolean;
+  canResetDemoData: boolean;
   canPlayRecording: boolean;
   canPausePlayback: boolean;
   canResumeTeacher: boolean;
@@ -140,6 +154,13 @@ export interface InteractivePocControlsModel {
   onPublishRecording: () => void;
   onLoadPublishedRecording: (recordingId?: string) => void;
   onPreviewPublishedRecording: (recordingId?: string) => void;
+  onToggleIncludeLearnerDeltasInExport: (checked: boolean) => void;
+  onSelectImportPackageFile: (file: File | null) => void;
+  onExportRecording: () => void;
+  onImportPackageAsDraft: () => void;
+  onImportPackageAsPublished: () => void;
+  onDemoSeed: () => void;
+  onResetDemoData: () => void;
   onPlayRecording: () => void;
   onPausePlayback: () => void;
   onResumeTeacher: () => void;
@@ -169,8 +190,9 @@ export interface UseInteractivePocResult {
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
 const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
+const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
-const remoteTimelineStorage: InteractiveTimelineStorage = new RemoteInteractiveTimelineStorage();
+const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
 
 function isFakeMediaRecorderEnabled(): boolean {
   try {
@@ -223,6 +245,7 @@ export function useInteractivePoc({
   const mediaPlaybackEndMsRef = useRef(0);
   const playbackUsesMediaRef = useRef(false);
   const pendingConflictResolutionRef = useRef<PendingConflictResolution | null>(null);
+  const importPackageFileRef = useRef<File | null>(null);
   const currentUserRef = useRef<InteractiveUser | null>(null);
   const [currentUser, setCurrentUserState] = useState<InteractiveUser | null>(null);
   const [devUsers, setDevUsers] = useState<InteractiveUser[]>(() => [...INTERACTIVE_DEV_USERS]);
@@ -262,6 +285,11 @@ export function useInteractivePoc({
   const [selectedDraftId, setSelectedDraftId] = useState('');
   const [selectedPublishedRecordingId, setSelectedPublishedRecordingId] = useState('');
   const [recordingLibraryStatus, setRecordingLibraryStatus] = useState('idle');
+  const [exportStatus, setExportStatus] = useState('idle');
+  const [importStatus, setImportStatus] = useState('idle');
+  const [demoDataStatus, setDemoDataStatus] = useState('idle');
+  const [importPackageFileName, setImportPackageFileName] = useState('none');
+  const [includeLearnerDeltasInExport, setIncludeLearnerDeltasInExport] = useState(false);
 
   function getCurrentFilePath() {
     return selectedFile ?? tutorialStore.currentDocument.get()?.filePath;
@@ -1340,6 +1368,238 @@ export function useInteractivePoc({
     playRecordingFrom(-1, { resetToBase: true }, recording);
   }
 
+  function onToggleIncludeLearnerDeltasInExport(checked: boolean) {
+    setIncludeLearnerDeltasInExport(checked);
+  }
+
+  function onSelectImportPackageFile(file: File | null) {
+    importPackageFileRef.current = file;
+    setImportPackageFileName(file?.name ?? 'none');
+    setImportStatus(file ? 'package selected' : 'idle');
+  }
+
+  async function getExportPackageSource() {
+    const publishedId =
+      selectedPublishedRecordingId ||
+      (currentRecordingSourceRef.current === 'published' ? playbackRecordingRef.current?.id : undefined) ||
+      (publishedRecordingId !== 'none' ? publishedRecordingId : undefined);
+
+    if (publishedId) {
+      return { recordingId: publishedId, storage: remoteTimelineStorage };
+    }
+
+    const draftId = selectedDraftId || currentDraftRecordingRef.current?.id;
+
+    if (draftId) {
+      return { recordingId: draftId, storage: localTimelineStorage };
+    }
+
+    return undefined;
+  }
+
+  async function exportSelectedRecording() {
+    setExportStatus('exporting');
+
+    try {
+      const source = await getExportPackageSource();
+
+      if (!source) {
+        setExportStatus('missing recording');
+        return;
+      }
+
+      const user = currentUserRef.current;
+      const recordingPackage = await exportRecordingPackage(source.recordingId, {
+        storage: source.storage,
+        includeLearnerDeltas: includeLearnerDeltasInExport,
+        learnerDeltaQuery: includeLearnerDeltasInExport && user ? { userId: user.id } : undefined,
+        packageMetadata: {
+          title: 'Interactive recording export',
+          description: 'POC export package for thesis demos.',
+          exportedByUserId: user?.id,
+        },
+      });
+      const filename = await downloadRecordingPackage(recordingPackage);
+
+      setExportStatus(`exported ${recordingPackage.teacherRecording.id} to ${filename}`);
+    } catch (error) {
+      setExportStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+    }
+  }
+
+  function onExportRecording() {
+    void exportSelectedRecording();
+  }
+
+  async function importSelectedPackage(modeToImport: 'local-draft' | 'published') {
+    const file = importPackageFileRef.current;
+
+    if (!file) {
+      setImportStatus('missing package');
+      return;
+    }
+
+    if (modeToImport === 'published' && !canPublishInteractiveRecording(currentUserRef.current)) {
+      setImportStatus('teacher sign-in required');
+      return;
+    }
+
+    setImportStatus(modeToImport === 'published' ? 'importing published' : 'importing draft');
+
+    try {
+      const recordingPackage = await parseRecordingPackage(file);
+      const storage = modeToImport === 'published' ? remoteTimelineStorage : localTimelineStorage;
+      const result = await importRecordingPackage(recordingPackage, {
+        storage,
+        mode: modeToImport,
+        importAsCopy: true,
+        importedByUserId: currentUserRef.current?.id,
+      });
+      const recording = result.teacherRecording;
+
+      playbackRecordingRef.current = recording;
+      setRecordingDurationMs(recording.durationMs);
+      setEventCount(recording.events.length);
+
+      if (result.mediaAssets.length > 0) {
+        setCurrentMediaAssets(result.mediaAssets, 'loaded');
+      } else {
+        setNoMedia(getInitialMediaStatus());
+      }
+
+      if (modeToImport === 'published') {
+        setCurrentRecordingSource('published');
+        setPublishedStatus('published');
+        setPublishedRecordingId(recording.id);
+        setSelectedPublishedRecordingId(recording.id);
+        setImportStatus(`imported published ${recording.id}`);
+        await syncLearnerDeltaState(recording, remoteTimelineStorage);
+      } else {
+        setCurrentRecordingSource('local-draft');
+        setCurrentDraftRecording(recording, 'loaded');
+        setSelectedDraftId(recording.id);
+        setImportStatus(`imported draft ${recording.id}`);
+        await syncLearnerDeltaState(recording, localTimelineStorage);
+      }
+
+      await refreshRecordingLibrary();
+    } catch (error) {
+      setImportStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+    }
+  }
+
+  function onImportPackageAsDraft() {
+    void importSelectedPackage('local-draft');
+  }
+
+  function onImportPackageAsPublished() {
+    void importSelectedPackage('published');
+  }
+
+  function isDemoRecordingId(recordingId: string | undefined | null): boolean {
+    return Boolean(recordingId?.startsWith(DEMO_RECORDING_ID_PREFIX));
+  }
+
+  async function deleteLocalDemoDrafts() {
+    const drafts = await localTimelineStorage.listTeacherRecordingDrafts();
+
+    for (const draft of drafts) {
+      if (!isDemoRecordingId(draft.id)) {
+        continue;
+      }
+
+      const assets = await localTimelineStorage.listMediaAssetsForRecording(draft.id);
+
+      await Promise.all(assets.map((asset) => localTimelineStorage.deleteMediaAsset(asset.id)));
+      await localTimelineStorage.deleteTeacherRecordingDraft(draft.id);
+    }
+
+    try {
+      window.localStorage.removeItem('interactive-poc.teacherRecording');
+      window.localStorage.removeItem('interactive-poc.learnerDeltas');
+    } catch {
+      // localStorage is best-effort for the explicit demo reset control.
+    }
+  }
+
+  async function resetDemoData() {
+    if (!canPublishInteractiveRecording(currentUserRef.current)) {
+      setDemoDataStatus('teacher sign-in required');
+      return;
+    }
+
+    setDemoDataStatus('resetting');
+
+    try {
+      await remoteTimelineStorage.resetDemoData();
+      await deleteLocalDemoDrafts();
+
+      if (isDemoRecordingId(currentDraftRecordingRef.current?.id)) {
+        currentDraftRecordingRef.current = null;
+        setDraftStatus('discarded');
+        setCurrentDraftId('none');
+      }
+
+      if (isDemoRecordingId(playbackRecordingRef.current?.id)) {
+        playbackRecordingRef.current = null;
+        setCurrentRecordingSource('none');
+        setPublishedStatus('idle');
+        setPublishedRecordingId('none');
+      }
+
+      setSelectedDraftId('');
+      setSelectedPublishedRecordingId('');
+      setRecordingDurationMs(0);
+      setEventCount(0);
+      setNoMedia(getInitialMediaStatus());
+      setDemoDataStatus('reset');
+      await syncLearnerDeltaState(undefined, localTimelineStorage);
+      await refreshRecordingLibrary();
+    } catch (error) {
+      setDemoDataStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+    }
+  }
+
+  function onResetDemoData() {
+    void resetDemoData();
+  }
+
+  async function seedDemoData() {
+    if (!canPublishInteractiveRecording(currentUserRef.current)) {
+      setDemoDataStatus('teacher sign-in required');
+      return;
+    }
+
+    setDemoDataStatus('seeding');
+
+    try {
+      const recording = await remoteTimelineStorage.seedDemoData();
+
+      if (!recording) {
+        setDemoDataStatus('missing seeded recording');
+        return;
+      }
+
+      playbackRecordingRef.current = recording;
+      setCurrentRecordingSource('published');
+      setPublishedStatus('published');
+      setPublishedRecordingId(recording.id);
+      setSelectedPublishedRecordingId(recording.id);
+      setRecordingDurationMs(recording.durationMs);
+      setEventCount(recording.events.length);
+      await syncMediaAssetsForRecording(recording, 'loaded', remoteTimelineStorage);
+      await syncLearnerDeltaState(recording, remoteTimelineStorage);
+      setDemoDataStatus(`seeded ${recording.id}`);
+      await refreshRecordingLibrary();
+    } catch (error) {
+      setDemoDataStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+    }
+  }
+
+  function onDemoSeed() {
+    void seedDemoData();
+  }
+
   async function onDiscardDraft() {
     currentDraftRecordingRef.current = null;
     playbackRecordingRef.current = null;
@@ -1613,6 +1873,13 @@ export function useInteractivePoc({
   const canUseLearnerWork = canSaveInteractiveLearnerWork(currentUser);
   const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp && canUseLearnerWork;
   const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback' && canUseLearnerWork;
+  const hasExportableRecording = Boolean(
+    selectedPublishedRecordingId ||
+      selectedDraftId ||
+      currentDraftRecordingRef.current?.id ||
+      (currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current?.id),
+  );
+  const hasSelectedImportPackage = importPackageFileName !== 'none';
 
   return {
     controls: {
@@ -1648,6 +1915,11 @@ export function useInteractivePoc({
       selectedDraftId,
       selectedPublishedRecordingId,
       recordingLibraryStatus,
+      exportStatus,
+      importStatus,
+      demoDataStatus,
+      importPackageFileName,
+      includeLearnerDeltasInExport,
       currentUser,
       devUsers,
       authStatus,
@@ -1669,6 +1941,16 @@ export function useInteractivePoc({
         !isRecording &&
         mode === 'idle',
       canDeleteSelectedDraft: hasDraftSelection && !isRecording && mode !== 'teacher-playback',
+      canExportRecording: hasExportableRecording && !isRecording && mode === 'idle' && exportStatus !== 'exporting',
+      canImportRecordingPackage: hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
+      canImportPublishedPackage:
+        hasSelectedImportPackage &&
+        !isRecording &&
+        mode === 'idle' &&
+        !importStatus.startsWith('importing') &&
+        canPublishAsTeacher,
+      canSeedDemoData: !isRecording && mode === 'idle' && canPublishAsTeacher && demoDataStatus !== 'seeding',
+      canResetDemoData: !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
       canPlayRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
       canPausePlayback: isPlaying,
       canResumeTeacher: mode === 'learner-editing',
@@ -1691,6 +1973,13 @@ export function useInteractivePoc({
       onPublishRecording,
       onLoadPublishedRecording,
       onPreviewPublishedRecording,
+      onToggleIncludeLearnerDeltasInExport,
+      onSelectImportPackageFile,
+      onExportRecording,
+      onImportPackageAsDraft,
+      onImportPackageAsPublished,
+      onDemoSeed,
+      onResetDemoData,
       onPlayRecording,
       onPausePlayback,
       onResumeTeacher,

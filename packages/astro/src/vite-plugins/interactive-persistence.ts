@@ -29,6 +29,9 @@ const ALLOWED_MEDIA_MIME_TYPES = new Map([
 ]);
 const SESSION_COOKIE_NAME = 'interactive_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEMO_ID_PREFIX = 'demo-';
+const DEMO_RECORDING_ID = 'demo-interactive-conflict-flow';
+const DEMO_MEDIA_ASSET_ID = 'demo-interactive-conflict-flow-audio';
 const DEV_USERS: readonly InteractiveUser[] = [
   {
     id: INTERACTIVE_DEV_TEACHER_USER_ID,
@@ -771,6 +774,154 @@ function hasExpectedMediaSignature(buffer: Buffer, mimeType: string): boolean {
   return false;
 }
 
+function isDemoId(id: string | undefined): boolean {
+  return Boolean(id?.startsWith(DEMO_ID_PREFIX));
+}
+
+function writeAscii(buffer: Buffer, offset: number, value: string) {
+  buffer.write(value, offset, value.length, 'ascii');
+}
+
+function createSilentWavBuffer(durationMs: number): Buffer {
+  const sampleRate = 8000;
+  const channelCount = 1;
+  const bytesPerSample = 2;
+  const sampleCount = Math.ceil((sampleRate * durationMs) / 1000);
+  const dataSize = sampleCount * channelCount * bytesPerSample;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  writeAscii(buffer, 0, 'RIFF');
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  writeAscii(buffer, 8, 'WAVE');
+  writeAscii(buffer, 12, 'fmt ');
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channelCount, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * channelCount * bytesPerSample, 28);
+  buffer.writeUInt16LE(channelCount * bytesPerSample, 32);
+  buffer.writeUInt16LE(bytesPerSample * 8, 34);
+  writeAscii(buffer, 36, 'data');
+  buffer.writeUInt32LE(dataSize, 40);
+
+  return buffer;
+}
+
+function createDemoTeacherRecording(user: InteractiveUser): TeacherRecording {
+  const baseContent = 'console.log("demo conflict base");\n';
+  const finalContent = `${baseContent}// teacher demo final edit\n`;
+  const mediaMetadata: RecordingMediaAssetMetadata = {
+    id: DEMO_MEDIA_ASSET_ID,
+    recordingId: DEMO_RECORDING_ID,
+    kind: 'audio',
+    mimeType: 'audio/wav',
+    durationMs: 3000,
+    createdAt: '2026-01-01T00:00:01.000Z',
+    ownerUserId: user.id,
+  };
+
+  return {
+    id: DEMO_RECORDING_ID,
+    lessonId: 'lesson-and-solution',
+    version: 1,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    durationMs: 3000,
+    baseFiles: {
+      '/example.html': '<h1>Demo: Interactive Tutorial Conflict Flow</h1>\n',
+      '/example.js': baseContent,
+    },
+    events: [
+      { id: 'demo-event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
+      {
+        id: 'demo-event-opened',
+        seq: 1,
+        tMs: 0,
+        type: 'file.opened',
+        filePath: '/example.js',
+        payload: { filePath: '/example.js' },
+        origin: 'teacher',
+      },
+      {
+        id: 'demo-event-conflict-change',
+        seq: 2,
+        tMs: 2000,
+        type: 'file.changed',
+        filePath: '/example.js',
+        payload: { content: finalContent },
+        origin: 'teacher',
+      },
+    ],
+    mediaAssets: [mediaMetadata],
+    createdByUserId: user.id,
+    ownerUserId: user.id,
+    publishedByUserId: user.id,
+    publishedAt: '2026-01-01T00:00:03.000Z',
+  };
+}
+
+async function deleteDemoData(dataPathsInput?: ReturnType<typeof getDataPaths>) {
+  const dataPaths = dataPathsInput ?? (await ensureDataDirectories());
+  const [recordings, deltas, mediaAssets] = await Promise.all([
+    readAllJsonFiles<TeacherRecording>(dataPaths.teacherRecordings),
+    readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas),
+    readAllJsonFiles<StoredMediaAssetMetadata>(dataPaths.mediaAssets),
+  ]);
+
+  await Promise.all([
+    ...recordings
+      .filter((recording) => isDemoId(recording.id))
+      .map((recording) => rm(getJsonFilePath(dataPaths.teacherRecordings, recording.id), { force: true })),
+    ...deltas
+      .filter((delta) => isDemoId(delta.id) || isDemoId(delta.teacherRecordingId))
+      .map((delta) => rm(getJsonFilePath(dataPaths.learnerDeltas, delta.id), { force: true })),
+    ...mediaAssets
+      .filter((asset) => isDemoId(asset.id) || isDemoId(asset.recordingId))
+      .flatMap((asset) => [
+        rm(path.join(dataPaths.mediaAssets, asset.storedFileName), { force: true }),
+        rm(getJsonFilePath(dataPaths.mediaAssets, asset.id), { force: true }),
+      ]),
+  ]);
+}
+
+async function handleDemo(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  if (req.method !== 'POST') {
+    sendJson(res, { error: 'Not found.' }, 404);
+    return;
+  }
+
+  const user = await requireTeacherUser(req);
+  const dataPaths = await ensureDataDirectories();
+
+  if (routeParts[1] === 'reset') {
+    await deleteDemoData(dataPaths);
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  if (routeParts[1] === 'seed') {
+    await deleteDemoData(dataPaths);
+
+    const recording = createDemoTeacherRecording(user);
+    const mediaBuffer = createSilentWavBuffer(3000);
+    const storedMedia: StoredMediaAssetMetadata = {
+      ...recording.mediaAssets![0]!,
+      storedFileName: `${DEMO_MEDIA_ASSET_ID}.wav`,
+      sizeBytes: mediaBuffer.length,
+    };
+
+    await Promise.all([
+      writeJsonFile(getJsonFilePath(dataPaths.teacherRecordings, recording.id), recording),
+      writeJsonFile(getJsonFilePath(dataPaths.mediaAssets, storedMedia.id), storedMedia),
+      writeFile(path.join(dataPaths.mediaAssets, storedMedia.storedFileName), mediaBuffer),
+    ]);
+
+    sendJson(res, { teacherRecording: recording }, 201);
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
 async function handleAuth(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
   if (req.method === 'GET' && routeParts[1] === 'me') {
     sendJson(res, { user: (await getAuthenticatedUser(req)) ?? null });
@@ -1189,6 +1340,11 @@ export async function handleInteractivePersistenceRequest(req: IncomingMessage, 
 
     if (routeParts[0] === 'users') {
       await handleDevUsers(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'demo') {
+      await handleDemo(req, res, routeParts);
       return;
     }
 

@@ -27,6 +27,11 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     selectedDraftId,
     selectedPublishedRecordingId,
     recordingLibraryStatus,
+    exportStatus,
+    importStatus,
+    demoDataStatus,
+    importPackageFileName,
+    includeLearnerDeltasInExport,
     canStartRecording,
     canStartMediaRecording,
     canStopRecording,
@@ -38,6 +43,11 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     canLoadPublishedRecording,
     canPreviewPublishedRecording,
     canDeleteSelectedDraft,
+    canExportRecording,
+    canImportRecordingPackage,
+    canImportPublishedPackage,
+    canSeedDemoData,
+    canResetDemoData,
     onRefreshRecordingLibrary,
     onSelectDraftRecording,
     onSelectPublishedRecording,
@@ -53,6 +63,13 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     onPublishRecording,
     onLoadPublishedRecording,
     onPreviewPublishedRecording,
+    onToggleIncludeLearnerDeltasInExport,
+    onSelectImportPackageFile,
+    onExportRecording,
+    onImportPackageAsDraft,
+    onImportPackageAsPublished,
+    onDemoSeed,
+    onResetDemoData,
     onMediaElementRef,
   } = props;
 
@@ -113,6 +130,43 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         </button>
       </div>
 
+      <div aria-label="Recording package and demo controls" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <button type="button" onClick={onExportRecording} disabled={!canExportRecording}>
+          Export Recording
+        </button>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+          <input
+            type="checkbox"
+            checked={includeLearnerDeltasInExport}
+            onChange={(event) => onToggleIncludeLearnerDeltasInExport(event.currentTarget.checked)}
+          />
+          Include My Learner Work
+        </label>
+        <label htmlFor="interactive-recording-package-input" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+          Import Recording Package
+        </label>
+        <input
+          id="interactive-recording-package-input"
+          aria-label="Import Recording Package"
+          type="file"
+          accept="application/json,.json"
+          onChange={(event) => onSelectImportPackageFile(event.currentTarget.files?.[0] ?? null)}
+          style={{ display: 'none' }}
+        />
+        <button type="button" onClick={onImportPackageAsDraft} disabled={!canImportRecordingPackage}>
+          Import as Draft
+        </button>
+        <button type="button" onClick={onImportPackageAsPublished} disabled={!canImportPublishedPackage}>
+          Import as Published
+        </button>
+        <button type="button" onClick={onDemoSeed} disabled={!canSeedDemoData}>
+          Demo Seed
+        </button>
+        <button type="button" onClick={onResetDemoData} disabled={!canResetDemoData}>
+          Reset Demo Data
+        </button>
+      </div>
+
       <div aria-live="polite" role="status" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
         <span>Draft status: {draftStatus}</span>
         <span>Current draft id: {currentDraftId}</span>
@@ -120,6 +174,10 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         <span>Published recording id: {publishedRecordingId}</span>
         <span>Published error: {publishedError}</span>
         <span>Recording library status: {recordingLibraryStatus}</span>
+        <span>Export status: {exportStatus}</span>
+        <span>Import status: {importStatus}</span>
+        <span>Import package file: {importPackageFileName}</span>
+        <span>Demo data status: {demoDataStatus}</span>
         <span>Recording storage source: {recordingStorageSource}</span>
         <span>Recording duration ms: {recordingDurationMs}</span>
         <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>

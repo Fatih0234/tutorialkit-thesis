@@ -1,8 +1,8 @@
 # Interactive persistence contract
 
-This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E added a minimal dev identity/session layer and ownership enforcement on top of the same storage contract. Milestone F adds conflict resolution UX without changing persistence writes. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
+This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E added a minimal dev identity/session layer and ownership enforcement on top of the same storage contract. Milestone F added explicit conflict resolution UX without changing persistence writes. Milestone G adds portable export/import packages plus deterministic demo seed/reset hardening. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
 
-The contract preserves the Milestone F local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
+The contract preserves the Milestone G local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
 
 ## Non-goals
 
@@ -15,14 +15,16 @@ This document does not specify or implement:
 - merge algorithms;
 - automatic conflict merging;
 - persisted conflict-resolution decision records;
+- stable public export package API guarantees;
+- production archive/ZIP storage or streaming package uploads;
 - terminal recording persistence;
 - preview iframe recording persistence;
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone F local-draft, remote-published, identity, and conflict UX status
+## Milestone G local-draft, remote-published, identity, conflict UX, and package status
 
-Milestone F keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, and dev auth calls. Conflict resolution is currently client-side UI behavior over already-loaded teacher recordings and learner deltas; it does not add new persistence writes. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
+Milestone G keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, dev auth calls, and dev demo seed/reset calls. Conflict resolution is currently client-side UI behavior over already-loaded teacher recordings and learner deltas; it does not add new persistence writes. Export/import package helpers are layered above the same adapters and do not introduce external services. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
@@ -41,12 +43,12 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
   sessions/
 ```
 
-`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the dev session cookie. Media upload uses `FormData`/`multipart/form-data`. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone E. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the dev session cookie. Media upload uses `FormData`/`multipart/form-data`. Package downloads are browser Blob downloads and package media is serialized as base64 JSON. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone G. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 
-## Milestone F product UX, ownership, and conflict behavior
+## Milestone G product UX, ownership, conflict, and demo behavior
 
-Milestone F keeps the Milestone D recording lists/selectors/product labels and Milestone E dev identity/ownership behavior over the existing adapters, then adds conflict resolution choices when a conflicted restore is attempted:
+Milestone G keeps the Milestone D recording lists/selectors/product labels, Milestone E dev identity/ownership behavior, and Milestone F conflict choices over the existing adapters, then adds teacher/demo hardening controls:
 
 - the **Teacher dashboard** lists local drafts from IndexedDB and published recordings from `/api/interactive/teacher-recordings`;
 - the **Learner playback** view lists published recordings only;
@@ -54,7 +56,12 @@ Milestone F keeps the Milestone D recording lists/selectors/product labels and M
 - **Conflict warning** is still computed from immutable teacher events and learner delta paths;
 - when a conflicted restore is attempted, the learner chooses **Restore My Work Anyway**, **Keep Teacher Version**, **View Conflict Details**, or **Cancel**;
 - these choices do not mutate `TeacherRecording`, do not mutate/delete `LearnerDelta`, and do not create a merged delta or resolution record;
-- “Teacher” and “Learner” remain product UI sections, but publish/save/restore actions now check the dev session user role.
+- **Export Recording** creates a POC JSON package with teacher recording JSON, media metadata, and base64 media data;
+- **Import as Draft** writes a package copy to IndexedDB local draft storage;
+- **Import as Published** writes a package copy to remote/dev storage and requires a teacher/both session;
+- **Demo Seed** creates a deterministic `demo-interactive-conflict-flow` recording with fake audio media and a future conflict-producing teacher edit;
+- **Reset Demo Data** deletes only `demo-` prefixed records and explicitly clears demo localStorage mirrors;
+- “Teacher” and “Learner” remain product UI sections, but publish/import/demo/save/restore actions now check the dev session user role.
 
 `TeacherRecordingDraftSummary` now includes `mediaKind` so list views can show `none`, `audio`, or `webcam` without loading media blobs. Media blobs remain outside localStorage.
 
@@ -211,6 +218,38 @@ Notes:
 - A future backend should store the binary body in object storage or a media table/blob store and keep metadata in a durable media asset record.
 - Media is synchronized to the structured timeline by playback time, not by replacing the timeline with a screen recording.
 
+### `InteractiveRecordingPackage`
+
+A portable POC/demo package for moving one teacher recording and its media between browsers or machines.
+
+```ts
+interface InteractiveRecordingPackage {
+  formatVersion: 1;
+  exportedAt: string;
+  teacherRecording: TeacherRecording;
+  mediaAssets: Array<{
+    metadata: RecordingMediaAssetMetadata;
+    blob?: Blob;
+    dataBase64?: string;
+  }>;
+  learnerDeltas?: LearnerDelta[];
+  packageMetadata?: {
+    title?: string;
+    description?: string;
+    exportedByUserId?: string;
+  };
+}
+```
+
+Notes:
+
+- serialized packages are JSON and store media Blob bytes as base64 strings;
+- `formatVersion: 1` is POC/demo-only and not a stable public API promise;
+- default export includes teacher recording JSON plus media metadata/data only;
+- learner deltas are optional and must be scoped to the current signed-in user unless a future explicit demo-data export mode is added;
+- packages must not contain dev session ids, cookies, or unrelated users' learner deltas;
+- import-as-copy generates a new recording id and new media asset ids to avoid collisions.
+
 ### `TimelineEvent`
 
 One timestamped teacher/system event in a teacher timeline.
@@ -327,11 +366,11 @@ Current conflict rule:
 - find teacher `file.changed` events where `event.tMs > delta.teacherTimestampMs`;
 - report a conflict when the later teacher event path is in the learner-changed file set.
 
-Conflict detection is non-destructive. Milestone F uses it to gate conflicted restores behind explicit UI choices, but the choices still do not write any conflict result or merged delta.
+Conflict detection is non-destructive. Milestone G keeps it as the gate for explicit conflicted restore choices, but the choices still do not write any conflict result or merged delta.
 
 ## 3. API shape
 
-The API shape is intentionally minimal and resource-oriented. Milestone C introduced persistence routes under `/api/interactive/*`, Milestone D used them for product-facing recording lists and open flows, Milestone E added dev auth/session routes plus ownership checks, and Milestone F keeps conflict computation client-side. Production auth remains an open decision, but dev session ownership is enforced for this POC.
+The API shape is intentionally minimal and resource-oriented. Milestone C introduced persistence routes under `/api/interactive/*`, Milestone D used them for product-facing recording lists and open flows, Milestone E added dev auth/session routes plus ownership checks, Milestone F kept conflict computation client-side, and Milestone G adds only demo seed/reset routes. Export/import is mostly client-side over existing storage adapters; import-as-published uses the existing teacher/media write endpoints. Production auth remains an open decision, but dev session ownership is enforced for this POC.
 
 ### `POST /api/interactive/teacher-recordings`
 
@@ -647,6 +686,60 @@ Response body:
 }
 ```
 
+### `POST /api/interactive/demo/seed`
+
+Create a deterministic thesis demo recording. Requires a signed-in teacher/both dev session.
+
+Response body:
+
+```json
+{
+  "teacherRecording": {
+    "id": "demo-interactive-conflict-flow",
+    "lessonId": "lesson-and-solution",
+    "version": 1,
+    "durationMs": 3000,
+    "mediaAssets": [
+      {
+        "id": "demo-interactive-conflict-flow-audio",
+        "recordingId": "demo-interactive-conflict-flow",
+        "kind": "audio",
+        "mimeType": "audio/wav",
+        "durationMs": 3000,
+        "createdAt": "2026-01-01T00:00:01.000Z"
+      }
+    ]
+  }
+}
+```
+
+Rules:
+
+- deletes existing `demo-` prefixed demo records first, then recreates the deterministic recording;
+- writes teacher recording JSON under `.interactive-data/teacher-recordings/`;
+- writes fake silent WAV media under `.interactive-data/media-assets/`;
+- uses the signed-in teacher id for owner fields;
+- does not affect non-demo records.
+
+### `POST /api/interactive/demo/reset`
+
+Delete deterministic demo records. Requires a signed-in teacher/both dev session.
+
+Response body:
+
+```json
+{
+  "ok": true
+}
+```
+
+Rules:
+
+- deletes teacher recordings with ids starting `demo-`;
+- deletes media assets whose ids or linked `recordingId` start `demo-`;
+- deletes learner deltas whose ids or linked `teacherRecordingId` start `demo-`;
+- does not delete non-demo recordings, media, learner deltas, or sessions.
+
 ### Optional `GET /api/interactive/learner-deltas/:id/conflicts`
 
 Compute or fetch conflict summary for one learner delta.
@@ -686,7 +779,7 @@ Response body:
 
 Rules:
 
-- not required for Milestone F because the client computes conflicts from the loaded teacher recording and learner delta;
+- not required for Milestone G because the client computes conflicts from the loaded teacher recording and learner delta;
 - should not mutate the learner delta or teacher recording;
 - should not create a merge result or conflict-resolution decision record;
 - may compute on read from teacher events and delta paths;
@@ -694,7 +787,7 @@ Rules:
 
 ## 4. Storage shape
 
-Production database technology is undecided. These names describe logical tables/collections. Milestone E maps them to gitignored JSON/media/session files in `.interactive-data/`.
+Production database technology is undecided. These names describe logical tables/collections. Milestone G maps them to gitignored JSON/media/session files in `.interactive-data/`.
 
 ### `teacher_recordings`
 
@@ -844,6 +937,21 @@ Validate that:
 - Blob/binary payload is present for local IndexedDB or replaced by an object-storage key in a backend implementation;
 - storing a media asset does not mutate learner deltas.
 
+### Recording package import
+
+Validate that:
+
+- `formatVersion` is supported;
+- `teacherRecording` exists and has a safe id;
+- `teacherRecording.events` is an array;
+- every event has numeric `tMs` and `seq` fields;
+- file paths in base files, event paths, delta paths, and selected files normalize to leading slash;
+- every recording media metadata reference has matching package media data;
+- media package entries include metadata plus Blob or base64 data;
+- import-as-copy generates new safe recording/media ids on collision avoidance;
+- import-as-published requires a signed-in teacher/both session;
+- imported published recordings remain immutable after import.
+
 ### Learner delta creation
 
 Validate that:
@@ -869,7 +977,9 @@ Validate that:
 - creating a learner delta cannot mutate teacher recording rows/documents;
 - fetching/restoring a learner delta cannot mutate teacher recording rows/documents;
 - users can only read/write deltas they own unless a sharing model is explicitly added;
-- teacher recording ownership rules are enforced once auth is defined.
+- teacher recording ownership rules are enforced once auth is defined;
+- export packages must not include session cookies or server session ids;
+- optional learner delta export must be scoped to the current signed-in user unless an explicit demo-data export mode is introduced.
 
 ### Conflict validation
 
@@ -895,7 +1005,7 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
-Milestone E stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, `.interactive-data/media-assets`, and `.interactive-data/sessions`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
+Milestone G stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, `.interactive-data/media-assets`, and `.interactive-data/sessions`. Media blobs are stored only in IndexedDB, `.interactive-data/media-assets`, or base64 inside an explicit exported package; they are not mirrored to localStorage.
 
 ### Equivalent backend records
 
@@ -907,6 +1017,7 @@ Migration mapping:
 | IndexedDB `mediaAssets` item or `.interactive-data/media-assets/<id>.json` plus stored media file | one `RecordingMediaAsset` metadata row plus Blob/object-storage body |
 | IndexedDB `learnerDeltas` item, `.interactive-data/learner-deltas/<id>.json`, or each item in `interactive-poc.learnerDeltas` mirror | one `LearnerDelta` record |
 | Phase 6 conflict result | computed `ConflictSummary`, optional cache |
+| Milestone G exported package JSON | portable `InteractiveRecordingPackage` with `TeacherRecording`, optional scoped `LearnerDelta[]`, media metadata, and base64 media data |
 
 The existing IndexedDB values, `.interactive-data` files, and localStorage JSON mirrors are intentionally close to the production backend payloads, so a future production adapter can translate with minimal restructuring.
 
@@ -969,7 +1080,7 @@ Default recommendation for first backend POC: JSON blob for simplicity, with a d
 
 ### Production auth/user ownership model
 
-Milestone E answers the POC question by deriving remote learner/teacher ownership from the dev session. Production questions remain:
+Milestone G preserves the POC answer of deriving remote learner/teacher ownership from the dev session. Production questions remain:
 
 - Who can create teacher recordings?
 - Can multiple teachers own a lesson?
@@ -978,6 +1089,16 @@ Milestone E answers the POC question by deriving remote learner/teacher ownershi
 - What is the admin/teacher visibility model for learner work?
 
 Default recommendation: backend should derive `userId` from auth, not trust client-provided `userId`, once auth exists.
+
+### Export package stability
+
+Open questions:
+
+- Should the package format become a stable public API or remain a thesis/demo artifact?
+- Should media data stay as JSON/base64 or move to a ZIP/archive layout with checksums?
+- Should package import support explicit overwrite policies, or always import as copy?
+
+Default recommendation: keep the Milestone G package format POC/demo-only until production storage and auth are defined.
 
 ### Media binary storage
 
