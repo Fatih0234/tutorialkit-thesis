@@ -20,6 +20,8 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     mediaError,
     mediaPreviewUrl,
     mediaMimeType,
+    currentUser,
+    canPublishAsTeacher,
     draftRecordings,
     publishedRecordings,
     selectedDraftId,
@@ -61,6 +63,9 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
           Teacher dashboard
         </h2>
         <p style={{ margin: 0 }}>Record, save, preview, and publish an interactive lesson timeline.</p>
+        <p style={{ margin: 0 }}>
+          Signed-in teacher: {currentUser ? `${currentUser.displayName} (${currentUser.role})` : 'signed out'}
+        </p>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -126,6 +131,7 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         <span>Media duration ms: {mediaDurationMs}</span>
         <span>Media mime type: {mediaMimeType || 'none'}</span>
         <span>Media error: {mediaError}</span>
+        <span>Publish identity: {canPublishAsTeacher ? 'teacher allowed' : 'teacher sign-in required'}</span>
       </div>
 
       {mediaPreviewUrl && mediaKind === 'audio' ? (

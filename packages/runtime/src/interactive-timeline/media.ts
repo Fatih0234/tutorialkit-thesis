@@ -7,6 +7,7 @@ export interface RecordingMediaAssetMetadata {
   mimeType: string;
   durationMs: number;
   createdAt: string;
+  ownerUserId?: string;
 }
 
 export interface RecordingMediaAsset extends RecordingMediaAssetMetadata {
@@ -21,5 +22,6 @@ export function getRecordingMediaAssetMetadata(asset: RecordingMediaAsset): Reco
     mimeType: asset.mimeType,
     durationMs: asset.durationMs,
     createdAt: asset.createdAt,
+    ownerUserId: asset.ownerUserId,
   };
 }

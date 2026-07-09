@@ -10,3 +10,5 @@ export * from './storage.js';
 export * from './storage-adapter.js';
 export * from './indexeddb-storage-adapter.js';
 export * from './remote-storage-adapter.js';
+export * from './identity.js';
+export * from './auth-client.js';

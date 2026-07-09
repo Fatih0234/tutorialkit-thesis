@@ -96,6 +96,14 @@ export function InteractiveRecordingLibrary({
                   <dd style={{ margin: 0 }}>{recording.eventCount}</dd>
                   <dt>Source</dt>
                   <dd style={{ margin: 0 }}>{recording.source}</dd>
+                  <dt>Owner</dt>
+                  <dd style={{ margin: 0 }}>{recording.ownerUserId ?? 'unknown'}</dd>
+                  <dt>Created by</dt>
+                  <dd style={{ margin: 0 }}>{recording.createdByUserId ?? 'unknown'}</dd>
+                  <dt>Published by</dt>
+                  <dd style={{ margin: 0 }}>{recording.publishedByUserId ?? 'none'}</dd>
+                  <dt>Published</dt>
+                  <dd style={{ margin: 0 }}>{recording.publishedAt ? formatDate(recording.publishedAt) : 'none'}</dd>
                   <dt>Created</dt>
                   <dd style={{ margin: 0 }}>{formatDate(recording.startedAt)}</dd>
                   {recording.workStatus ? (

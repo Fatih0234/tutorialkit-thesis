@@ -44,6 +44,10 @@ export interface TeacherRecording {
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
   mediaAssets?: RecordingMediaAssetMetadata[];
+  createdByUserId?: string;
+  ownerUserId?: string;
+  publishedByUserId?: string;
+  publishedAt?: string;
 }
 
 export interface LearnerDelta {

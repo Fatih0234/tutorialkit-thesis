@@ -15,6 +15,8 @@ export function InteractiveLearnerPlayback({
   recordingStorageSource,
   publishedRecordings,
   selectedPublishedRecordingId,
+  currentUser,
+  canUseLearnerWork,
   canLoadPublishedRecording,
   canPlayRecording,
   canPausePlayback,
@@ -36,6 +38,9 @@ export function InteractiveLearnerPlayback({
           Learner playback
         </h2>
         <p style={{ margin: 0 }}>Open a published recording, follow the lesson, then try the code yourself.</p>
+        <p style={{ margin: 0 }}>
+          Signed-in learner: {currentUser ? `${currentUser.displayName} (${currentUser.role})` : 'signed out'}
+        </p>
       </div>
 
       <InteractiveRecordingLibrary
@@ -85,6 +90,7 @@ export function InteractiveLearnerPlayback({
         <span>Work status: {learnerDeltaStatus}</span>
         <span>Conflict warning: {conflictStatus}</span>
         <span>Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}</span>
+        <span>Work identity: {canUseLearnerWork ? 'learner allowed' : 'learner sign-in required'}</span>
       </div>
     </section>
   );

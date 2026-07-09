@@ -4,10 +4,19 @@ import {
   RemoteInteractiveTimelineStorage,
   TimelinePlaybackClock,
   TimelineRecorder,
+  INTERACTIVE_DEFAULT_LEARNER_USER_ID,
+  INTERACTIVE_DEV_USERS,
+  INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID,
   applyLearnerDelta,
+  canPublishInteractiveRecording,
+  canSaveInteractiveLearnerWork,
+  devLogin as devLoginUser,
   diffFiles,
   getLearnerDeltaConflicts,
   getRecordingMediaAssetMetadata,
+  listDevUsers,
+  loadCurrentUser,
+  logout as logoutCurrentUser,
   materializeTeacherState,
   normalizeFiles,
   normalizePath,
@@ -16,6 +25,7 @@ import {
   type FileChangedPayload,
   type FilesSnapshot,
   type InteractiveTimelineStorage,
+  type InteractiveUser,
   type LearnerDelta,
   type LearnerDeltaQuery,
   type RecordingMediaAsset,
@@ -81,6 +91,12 @@ export interface InteractivePocControlsModel {
   selectedDraftId: string;
   selectedPublishedRecordingId: string;
   recordingLibraryStatus: string;
+  currentUser: InteractiveUser | null;
+  devUsers: InteractiveUser[];
+  authStatus: string;
+  authError: string;
+  canPublishAsTeacher: boolean;
+  canUseLearnerWork: boolean;
   canStartRecording: boolean;
   canStartMediaRecording: boolean;
   canStopRecording: boolean;
@@ -97,6 +113,8 @@ export interface InteractivePocControlsModel {
   canResumeTeacher: boolean;
   canSaveLearnerDelta: boolean;
   canRestoreLearnerDelta: boolean;
+  onDevLogin: (userId: string) => void;
+  onLogout: () => void;
   onRefreshRecordingLibrary: () => void;
   onSelectDraftRecording: (recordingId: string) => void;
   onSelectPublishedRecording: (recordingId: string) => void;
@@ -137,7 +155,6 @@ export interface UseInteractivePocResult {
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
 const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
-const LOCAL_LEARNER_USER_ID = 'local-poc-user';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 const remoteTimelineStorage: InteractiveTimelineStorage = new RemoteInteractiveTimelineStorage();
 
@@ -191,6 +208,11 @@ export function useInteractivePoc({
   const mediaKindRef = useRef<MediaKindStatus>('none');
   const mediaPlaybackEndMsRef = useRef(0);
   const playbackUsesMediaRef = useRef(false);
+  const currentUserRef = useRef<InteractiveUser | null>(null);
+  const [currentUser, setCurrentUserState] = useState<InteractiveUser | null>(null);
+  const [devUsers, setDevUsers] = useState<InteractiveUser[]>(() => [...INTERACTIVE_DEV_USERS]);
+  const [authStatus, setAuthStatus] = useState('loading');
+  const [authError, setAuthError] = useState('none');
   const [isRecording, setIsRecording] = useState(false);
   const [eventCount, setEventCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -236,6 +258,11 @@ export function useInteractivePoc({
     setRecordingStorageSource(source);
   }
 
+  function setCurrentUser(user: InteractiveUser | null) {
+    currentUserRef.current = user;
+    setCurrentUserState(user);
+  }
+
   function getActiveLearnerStorage() {
     return currentRecordingSourceRef.current === 'published' ? remoteTimelineStorage : localTimelineStorage;
   }
@@ -245,8 +272,35 @@ export function useInteractivePoc({
       lessonId: recording.lessonId || lessonId,
       teacherRecordingId: recording.id,
       teacherRecordingVersion: recording.version,
-      userId: LOCAL_LEARNER_USER_ID,
     };
+  }
+
+  function getAllowedLearnerUserIds() {
+    const user = currentUserRef.current;
+
+    if (!user || !canSaveInteractiveLearnerWork(user)) {
+      return [];
+    }
+
+    const userIds = [user.id];
+
+    if (user.id === INTERACTIVE_DEFAULT_LEARNER_USER_ID) {
+      userIds.push(INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID);
+    }
+
+    return userIds;
+  }
+
+  async function loadScopedLearnerDeltas(recording: TeacherRecording, storage: InteractiveTimelineStorage) {
+    const allowedUserIds = new Set(getAllowedLearnerUserIds());
+
+    if (allowedUserIds.size === 0) {
+      return [];
+    }
+
+    const deltas = await storage.loadLearnerDeltas(getLearnerDeltaQuery(recording));
+
+    return deltas.filter((delta) => allowedUserIds.has(delta.userId));
   }
 
   function toRecordingLibraryItem(
@@ -302,6 +356,68 @@ export function useInteractivePoc({
     setSelectedPublishedRecordingId(recordingId);
   }
 
+  async function refreshAuthState() {
+    setAuthStatus('loading');
+
+    try {
+      const [user, users] = await Promise.all([loadCurrentUser(), listDevUsers()]);
+
+      setDevUsers(users.length > 0 ? users : [...INTERACTIVE_DEV_USERS]);
+      setCurrentUser(user);
+      setAuthStatus(user ? 'signed-in' : 'signed-out');
+      setAuthError('none');
+    } catch (error) {
+      setAuthStatus('error');
+      setAuthError(error instanceof Error ? error.message : 'Unable to load dev identity.');
+    }
+  }
+
+  async function syncAfterAuthChange() {
+    const recording = playbackRecordingRef.current ?? currentDraftRecordingRef.current ?? undefined;
+
+    await syncLearnerDeltaState(recording, getActiveLearnerStorage());
+    await refreshRecordingLibrary();
+  }
+
+  async function signInAsDevUser(userId: string) {
+    setAuthStatus('signing-in');
+    setAuthError('none');
+
+    try {
+      const user = await devLoginUser(userId);
+
+      setCurrentUser(user);
+      setAuthStatus(user ? 'signed-in' : 'signed-out');
+      await syncAfterAuthChange();
+    } catch (error) {
+      setAuthStatus('error');
+      setAuthError(error instanceof Error ? error.message : 'Unable to sign in.');
+    }
+  }
+
+  function onDevLogin(userId: string) {
+    void signInAsDevUser(userId);
+  }
+
+  async function signOut() {
+    setAuthStatus('signing-out');
+    setAuthError('none');
+
+    try {
+      await logoutCurrentUser();
+      setCurrentUser(null);
+      setAuthStatus('signed-out');
+      await syncAfterAuthChange();
+    } catch (error) {
+      setAuthStatus('error');
+      setAuthError(error instanceof Error ? error.message : 'Unable to sign out.');
+    }
+  }
+
+  function onLogout() {
+    void signOut();
+  }
+
   function setCurrentDraftRecording(recording: TeacherRecording | null, status: DraftStatus) {
     currentDraftRecordingRef.current = recording;
     setDraftStatus(status);
@@ -355,17 +471,44 @@ export function useInteractivePoc({
     setMediaError(error);
   }
 
+  function getCurrentTeacherOwnerId() {
+    const user = currentUserRef.current;
+
+    return user && canPublishInteractiveRecording(user) ? user.id : undefined;
+  }
+
+  function getRecordingWithOwner(recording: TeacherRecording): TeacherRecording {
+    const ownerUserId = getCurrentTeacherOwnerId();
+
+    if (!ownerUserId) {
+      return recording;
+    }
+
+    return {
+      ...recording,
+      createdByUserId: recording.createdByUserId ?? ownerUserId,
+      ownerUserId: recording.ownerUserId ?? ownerUserId,
+    };
+  }
+
+  function getMediaAssetWithOwner(asset: RecordingMediaAsset): RecordingMediaAsset {
+    const ownerUserId = getCurrentTeacherOwnerId();
+
+    return ownerUserId ? { ...asset, ownerUserId: asset.ownerUserId ?? ownerUserId } : asset;
+  }
+
   function getRecordingWithMediaMetadata(recording: TeacherRecording, assets: RecordingMediaAsset[]): TeacherRecording {
-    const mediaAssets = assets.map(getRecordingMediaAssetMetadata);
+    const recordingWithOwner = getRecordingWithOwner(recording);
+    const mediaAssets = assets.map((asset) => getRecordingMediaAssetMetadata(getMediaAssetWithOwner(asset)));
 
     if (mediaAssets.length === 0) {
-      const { mediaAssets: _removedMediaAssets, ...recordingWithoutMedia } = recording;
+      const { mediaAssets: _removedMediaAssets, ...recordingWithoutMedia } = recordingWithOwner;
 
       return recordingWithoutMedia;
     }
 
     return {
-      ...recording,
+      ...recordingWithOwner,
       mediaAssets,
     };
   }
@@ -415,9 +558,7 @@ export function useInteractivePoc({
 
   async function getLatestMatchingLearnerDelta(recording?: TeacherRecording, storage = getActiveLearnerStorage()) {
     const resolvedRecording = recording ?? (await storage.loadTeacherRecording());
-    const delta = resolvedRecording
-      ? await storage.loadLatestLearnerDelta(getLearnerDeltaQuery(resolvedRecording))
-      : await storage.loadLatestLearnerDelta();
+    const delta = resolvedRecording ? (await loadScopedLearnerDeltas(resolvedRecording, storage)).at(-1) : undefined;
 
     if (!resolvedRecording || !delta) {
       return undefined;
@@ -437,7 +578,7 @@ export function useInteractivePoc({
   async function syncLearnerDeltaState(recording?: TeacherRecording, storage = getActiveLearnerStorage()) {
     const resolvedRecording = recording ?? (await storage.loadTeacherRecording());
     const matchingDelta = resolvedRecording ? await getLatestMatchingLearnerDelta(resolvedRecording, storage) : undefined;
-    const deltas = resolvedRecording ? await storage.loadLearnerDeltas(getLearnerDeltaQuery(resolvedRecording)) : [];
+    const deltas = resolvedRecording ? await loadScopedLearnerDeltas(resolvedRecording, storage) : [];
 
     setHasTeacherRecording(Boolean(resolvedRecording));
     setLearnerDeltaCount(deltas.length);
@@ -870,7 +1011,7 @@ export function useInteractivePoc({
     }
 
     const startedAtMs = Date.now();
-    const recording = recorder.start({ lessonId, version: 1, baseFiles, startedAtMs });
+    const recording = getRecordingWithOwner(recorder.start({ lessonId, version: 1, baseFiles, startedAtMs }));
 
     if (mediaRecorder) {
       mediaRecorder.start({ recordingId: recording.id, startedAtMs });
@@ -934,7 +1075,7 @@ export function useInteractivePoc({
       setMediaError(error instanceof Error ? error.message : 'Unable to stop media recording.');
     }
 
-    const assets = mediaAsset?.blob ? [mediaAsset] : [];
+    const assets = mediaAsset?.blob ? [getMediaAssetWithOwner(mediaAsset)] : [];
     const recordingWithMedia = getRecordingWithMediaMetadata(stopped, assets);
 
     setIsRecording(false);
@@ -955,9 +1096,10 @@ export function useInteractivePoc({
       return;
     }
 
-    const assets = currentMediaAssetsRef.current;
+    const assets = currentMediaAssetsRef.current.map(getMediaAssetWithOwner);
     const recordingWithMedia = getRecordingWithMediaMetadata(recording, assets);
 
+    currentMediaAssetsRef.current = assets;
     await localTimelineStorage.saveTeacherRecordingDraft(recordingWithMedia);
 
     let mediaSaveFailed = false;
@@ -1049,15 +1191,22 @@ export function useInteractivePoc({
   async function onPublishRecording() {
     const recording = currentDraftRecordingRef.current;
 
+    if (!canPublishInteractiveRecording(currentUserRef.current)) {
+      setPublishedStatus('error');
+      setPublishedError('Sign in as a teacher to publish recordings.');
+      return;
+    }
+
     if (!recording || isRecording) {
       setPublishedStatus('missing');
       setPublishedError('No stopped draft is available to publish.');
       return;
     }
 
-    const assets = currentMediaAssetsRef.current;
+    const assets = currentMediaAssetsRef.current.map(getMediaAssetWithOwner);
     const recordingWithMedia = getRecordingWithMediaMetadata(recording, assets);
 
+    currentMediaAssetsRef.current = assets;
     setPublishedStatus('publishing');
     setPublishedError('none');
 
@@ -1210,6 +1359,13 @@ export function useInteractivePoc({
       return;
     }
 
+    const user = currentUserRef.current;
+
+    if (!user || !canSaveInteractiveLearnerWork(user)) {
+      setLearnerDeltaStatus('sign in required');
+      return;
+    }
+
     const storage = getActiveLearnerStorage();
     const recording = playbackRecordingRef.current ?? (await storage.loadTeacherRecording());
 
@@ -1226,7 +1382,7 @@ export function useInteractivePoc({
     const selectedFilePath = getCurrentFilePath();
     const delta: LearnerDelta = {
       id: createLearnerDeltaId(),
-      userId: LOCAL_LEARNER_USER_ID,
+      userId: user.id,
       lessonId: recording.lessonId || lessonId,
       teacherRecordingId: recording.id,
       teacherRecordingVersion: recording.version,
@@ -1244,6 +1400,11 @@ export function useInteractivePoc({
   }
 
   async function onRestoreLearnerDelta() {
+    if (!canSaveInteractiveLearnerWork(currentUserRef.current)) {
+      setLearnerDeltaStatus('sign in required');
+      return;
+    }
+
     const storage = getActiveLearnerStorage();
     const recording = playbackRecordingRef.current ?? (await storage.loadTeacherRecording());
     const delta = await getLatestMatchingLearnerDelta(recording, storage);
@@ -1329,8 +1490,11 @@ export function useInteractivePoc({
   }
 
   useEffect(() => {
-    void syncLearnerDeltaState(undefined, getActiveLearnerStorage());
-    void refreshRecordingLibrary();
+    void (async () => {
+      await refreshAuthState();
+      await syncLearnerDeltaState(undefined, getActiveLearnerStorage());
+      await refreshRecordingLibrary();
+    })();
   }, [storeRef]);
 
   useEffect(() => {
@@ -1349,8 +1513,10 @@ export function useInteractivePoc({
   const hasCurrentPublishedRecording = currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
   const hasDraftSelection = Boolean(selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0);
   const canStartAnyRecording = !isRecording && mode === 'idle' && lessonFullyLoaded;
-  const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp;
-  const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback';
+  const canPublishAsTeacher = canPublishInteractiveRecording(currentUser);
+  const canUseLearnerWork = canSaveInteractiveLearnerWork(currentUser);
+  const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp && canUseLearnerWork;
+  const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback' && canUseLearnerWork;
 
   return {
     controls: {
@@ -1383,6 +1549,12 @@ export function useInteractivePoc({
       selectedDraftId,
       selectedPublishedRecordingId,
       recordingLibraryStatus,
+      currentUser,
+      devUsers,
+      authStatus,
+      authError,
+      canPublishAsTeacher,
+      canUseLearnerWork,
       canStartRecording: canStartAnyRecording,
       canStartMediaRecording: canStartAnyRecording,
       canStopRecording: isRecording,
@@ -1390,7 +1562,8 @@ export function useInteractivePoc({
       canLoadDraft: !isRecording && mode === 'idle',
       canPreviewDraft: (hasCurrentDraftRecording || hasDraftSelection) && !isRecording && mode === 'idle',
       canDiscardDraft: (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
-      canPublishRecording: hasCurrentDraftRecording && !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
+      canPublishRecording:
+        hasCurrentDraftRecording && !isRecording && mode === 'idle' && publishedStatus !== 'publishing' && canPublishAsTeacher,
       canLoadPublishedRecording: !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
       canPreviewPublishedRecording:
         (hasCurrentPublishedRecording || Boolean(selectedPublishedRecordingId || publishedRecordings.length > 0)) &&
@@ -1402,6 +1575,8 @@ export function useInteractivePoc({
       canResumeTeacher: mode === 'learner-editing',
       canSaveLearnerDelta,
       canRestoreLearnerDelta,
+      onDevLogin,
+      onLogout,
       onRefreshRecordingLibrary,
       onSelectDraftRecording,
       onSelectPublishedRecording,

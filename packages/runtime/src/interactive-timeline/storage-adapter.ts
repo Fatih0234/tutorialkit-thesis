@@ -6,6 +6,7 @@ import {
   saveLearnerDeltas,
   saveTeacherRecording,
 } from './storage.js';
+import { INTERACTIVE_DEFAULT_TEACHER_USER_ID } from './identity.js';
 import type { RecordingMediaAsset, RecordingMediaKind } from './media.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
 
@@ -17,6 +18,10 @@ export interface TeacherRecordingDraftSummary {
   durationMs: number;
   eventCount: number;
   mediaKind: RecordingMediaKind | 'none';
+  ownerUserId?: string;
+  createdByUserId?: string;
+  publishedByUserId?: string;
+  publishedAt?: string;
 }
 
 export interface LearnerDeltaQuery {
@@ -51,6 +56,10 @@ export function getTeacherRecordingDraftSummary(recording: TeacherRecording): Te
     durationMs: recording.durationMs,
     eventCount: recording.events.length,
     mediaKind: recording.mediaAssets?.[0]?.kind ?? 'none',
+    ownerUserId: recording.ownerUserId ?? recording.createdByUserId ?? INTERACTIVE_DEFAULT_TEACHER_USER_ID,
+    createdByUserId: recording.createdByUserId ?? recording.ownerUserId ?? INTERACTIVE_DEFAULT_TEACHER_USER_ID,
+    publishedByUserId: recording.publishedByUserId,
+    publishedAt: recording.publishedAt,
   };
 }
 

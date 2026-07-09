@@ -1,3 +1,4 @@
+import type { InteractiveUser } from './identity.js';
 import { getRecordingMediaAssetMetadata, type RecordingMediaAsset } from './media.js';
 import { saveLearnerDeltas, saveTeacherRecording } from './storage.js';
 import {
@@ -37,11 +38,19 @@ interface MediaAssetsMetadataResponse {
   mediaAssets: Omit<RecordingMediaAsset, 'blob'>[];
 }
 
+interface CurrentUserResponse {
+  user: InteractiveUser | null;
+}
+
+interface DevUsersResponse {
+  users: InteractiveUser[];
+}
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
-function getQueryString(query?: LearnerDeltaQuery): string {
+function getQueryString(query?: LearnerDeltaQuery, { includeUserId = true }: { includeUserId?: boolean } = {}): string {
   const params = new URLSearchParams();
 
   if (query?.lessonId) {
@@ -56,7 +65,7 @@ function getQueryString(query?: LearnerDeltaQuery): string {
     params.set('teacherRecordingVersion', String(query.teacherRecordingVersion));
   }
 
-  if (query?.userId) {
+  if (includeUserId && query?.userId) {
     params.set('userId', query.userId);
   }
 
@@ -118,7 +127,7 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
   }
 
   async loadLearnerDeltas(query?: LearnerDeltaQuery): Promise<LearnerDelta[]> {
-    const response = await this.requestJson<LearnerDeltasResponse>(`/learner-deltas${getQueryString(query)}`);
+    const response = await this.requestJson<LearnerDeltasResponse>(`/learner-deltas${getQueryString(query, { includeUserId: false })}`);
     const deltas = sortLearnerDeltasOldestFirst(response.learnerDeltas ?? []);
 
     saveLearnerDeltas(deltas);
@@ -127,7 +136,7 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
   }
 
   async loadLatestLearnerDelta(query?: LearnerDeltaQuery): Promise<LearnerDelta | undefined> {
-    const response = await this.requestJson<LearnerDeltaResponse>(`/learner-deltas/latest${getQueryString(query)}`);
+    const response = await this.requestJson<LearnerDeltaResponse>(`/learner-deltas/latest${getQueryString(query, { includeUserId: false })}`);
     const delta = response.learnerDelta ?? undefined;
 
     if (delta) {
@@ -145,17 +154,17 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
   }
 
   async saveLearnerDelta(delta: LearnerDelta): Promise<void> {
-    await this.requestJson<LearnerDeltaResponse>('/learner-deltas', {
+    const response = await this.requestJson<LearnerDeltaResponse>('/learner-deltas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(delta),
     });
+    const savedDelta = response.learnerDelta ?? delta;
 
     const deltas = await this.loadLearnerDeltas({
-      lessonId: delta.lessonId,
-      teacherRecordingId: delta.teacherRecordingId,
-      teacherRecordingVersion: delta.teacherRecordingVersion,
-      userId: delta.userId,
+      lessonId: savedDelta.lessonId,
+      teacherRecordingId: savedDelta.teacherRecordingId,
+      teacherRecordingVersion: savedDelta.teacherRecordingVersion,
     });
 
     saveLearnerDeltas(deltas);
@@ -215,7 +224,9 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
       return undefined;
     }
 
-    const blobResponse = await fetch(this.toUrl(metadataResponse.downloadUrl ?? `/media-assets/${encodeURIComponent(assetId)}?blob=1`));
+    const blobResponse = await fetch(this.toUrl(metadataResponse.downloadUrl ?? `/media-assets/${encodeURIComponent(assetId)}?blob=1`), {
+      credentials: 'same-origin',
+    });
 
     if (!blobResponse.ok) {
       throw new Error(`Unable to load remote media asset ${assetId}: ${blobResponse.status}`);
@@ -240,6 +251,32 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
     return response.mediaAssets ?? [];
   }
 
+  async loadCurrentUser(): Promise<InteractiveUser | null> {
+    const response = await this.requestJson<CurrentUserResponse>('/auth/me');
+
+    return response.user;
+  }
+
+  async devLogin(userId: string): Promise<InteractiveUser | null> {
+    const response = await this.requestJson<CurrentUserResponse>('/auth/dev-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+
+    return response.user;
+  }
+
+  async logout(): Promise<void> {
+    await this.requestJson<{ ok: boolean }>('/auth/logout', { method: 'POST' });
+  }
+
+  async listDevUsers(): Promise<InteractiveUser[]> {
+    const response = await this.requestJson<DevUsersResponse>('/users/dev');
+
+    return response.users ?? [];
+  }
+
   private toUrl(path: string): string {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;
@@ -253,7 +290,10 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
   }
 
   private async requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(this.toUrl(path), init);
+    const response = await fetch(this.toUrl(path), {
+      ...init,
+      credentials: init.credentials ?? 'same-origin',
+    });
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');

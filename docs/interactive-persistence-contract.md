@@ -1,14 +1,14 @@
 # Interactive persistence contract
 
-This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D adds product-facing teacher and learner flows on top of the same storage contract. It does not add real auth, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
+This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E adds a minimal dev identity/session layer and ownership enforcement on top of the same storage contract. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
 
-The contract preserves the Milestone D local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
+The contract preserves the Milestone E local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
 
 ## Non-goals
 
 This document does not specify or implement:
 
-- authentication/session middleware;
+- production authentication/session middleware;
 - production database migrations;
 - production storage infrastructure;
 - paid/cloud object storage for media blobs;
@@ -19,16 +19,16 @@ This document does not specify or implement:
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone D local-draft and remote-published status
+## Milestone E local-draft, remote-published, and identity status
 
-Milestone D keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, and server-backed media assets. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
+Milestone E keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, and dev auth calls. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
+The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. Dev sessions are stored server-side under `.interactive-data/sessions/` and are never mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
 
 Remote published data is stored by local dev endpoints under `/api/interactive/*` in a gitignored repository directory:
 
@@ -37,22 +37,65 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
   teacher-recordings/
   learner-deltas/
   media-assets/
+  sessions/
 ```
 
-`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. Media upload uses `FormData`/`multipart/form-data`. No real auth, production database, or cloud object-storage upload is introduced by Milestone D. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the dev session cookie. Media upload uses `FormData`/`multipart/form-data`. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone E. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 
-## Milestone D product UX storage behavior
+## Milestone E product UX and ownership behavior
 
-Milestone D does not change the core persisted resource shapes. It adds recording lists/selectors and product labels over the existing adapters:
+Milestone E keeps the Milestone D recording lists/selectors/product labels and adds dev identity/ownership behavior over the existing adapters:
 
 - the **Teacher dashboard** lists local drafts from IndexedDB and published recordings from `/api/interactive/teacher-recordings`;
 - the **Learner playback** view lists published recordings only;
-- product labels such as **Save My Work** and **Restore My Work** still persist and restore `LearnerDelta` records;
+- product labels such as **Save My Work** and **Restore My Work** still persist and restore `LearnerDelta` records, now scoped to the signed-in learner;
 - **Conflict warning** is still computed from immutable teacher events and learner delta paths;
-- no role/auth enforcement is added yet, so “Teacher” and “Learner” are UI sections, not authenticated identities.
+- “Teacher” and “Learner” remain product UI sections, but publish/save/restore actions now check the dev session user role.
 
 `TeacherRecordingDraftSummary` now includes `mediaKind` so list views can show `none`, `audio`, or `webcam` without loading media blobs. Media blobs remain outside localStorage.
+
+
+## Dev identity/session contract
+
+Milestone E adds demo-only identity types shared by runtime and dev server:
+
+```ts
+type InteractiveUserRole = 'teacher' | 'learner' | 'both';
+
+interface User {
+  id: string;
+  displayName: string;
+  role: InteractiveUserRole;
+  createdAt: string;
+}
+
+interface Session {
+  id: string;
+  userId: string;
+  createdAt: string;
+  expiresAt: string;
+}
+```
+
+Seeded dev users use non-sequential ids:
+
+- Teacher Demo: `dev-user-teacher-demo-8f4c2a9d`;
+- Learner Demo: `dev-user-learner-demo-61b7c3e2`;
+- Learner Two: `dev-user-learner-two-927f4d1a`.
+
+Session behavior:
+
+- `POST /api/interactive/auth/dev-login` accepts one of the known dev user ids;
+- the server creates a random high-entropy session id;
+- `.interactive-data/sessions/<sessionId>.json` stores the server-side session state;
+- the response sets an `interactive_session` cookie;
+- cookie attributes are `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` when the request is HTTPS;
+- the cookie value is only the random session id and contains no user role/name/email;
+- `GET /api/interactive/auth/me` resolves the current user from the session cookie;
+- `POST /api/interactive/auth/logout` deletes the server-side session and clears the cookie.
+
+This is not production authentication. There are no passwords, OAuth/OIDC, email verification, MFA, account recovery, or production authorization policies yet.
 
 ## 1. Persistence goals
 
@@ -119,8 +162,10 @@ interface TeacherRecording {
   baseFiles: Record<string, string>;
   events: TimelineEvent[];
   mediaAssets?: RecordingMediaAssetMetadata[];
-  createdAt: string;
-  createdBy?: string;
+  createdByUserId?: string;
+  ownerUserId?: string;
+  publishedByUserId?: string;
+  publishedAt?: string;
 }
 ```
 
@@ -129,7 +174,9 @@ Notes:
 - `baseFiles` keys must be normalized leading-slash paths.
 - `events` may be stored inline as a JSON blob or separately as event rows; see open decisions.
 - `mediaAssets` stores metadata references only; media Blobs/binary data must be stored separately.
-- `createdBy` is optional until an auth/user ownership model is selected.
+- legacy records without owner fields are treated as owned by Teacher Demo during load/migration;
+- newly published recordings store `ownerUserId`, `createdByUserId`, `publishedByUserId`, and `publishedAt`;
+- the server derives publish ownership from the signed-in teacher/both session, not from trusted client authority.
 
 ### `RecordingMediaAsset`
 
@@ -145,6 +192,7 @@ interface RecordingMediaAssetMetadata {
   mimeType: string;
   durationMs: number;
   createdAt: string;
+  ownerUserId?: string;
 }
 
 interface RecordingMediaAsset extends RecordingMediaAssetMetadata {
@@ -156,7 +204,7 @@ Notes:
 
 - `TeacherRecording.mediaAssets` should embed only `RecordingMediaAssetMetadata`.
 - Local drafts store `Blob` values in IndexedDB object store `mediaAssets`.
-- Published/dev media stores metadata JSON plus binary files in `.interactive-data/media-assets/`.
+- Published/dev media stores metadata JSON plus binary files in `.interactive-data/media-assets/` and includes `ownerUserId` for new uploads.
 - A future backend should store the binary body in object storage or a media table/blob store and keep metadata in a durable media asset record.
 - Media is synchronized to the structured timeline by playback time, not by replacing the timeline with a screen recording.
 
@@ -233,7 +281,9 @@ Notes:
 - `addedOrModified` stores full file contents, not text patches.
 - `removed` stores normalized paths.
 - `selectedFile` stores the editor file selected when the delta was saved.
-- Future backend versions may add `updatedAt`, `supersedesDeltaId`, or `label`, but Phase 8 does not require them.
+- New remote writes derive `userId` from the signed-in learner/both session. Client-supplied `userId` is ignored/replaced by the dev server.
+- Legacy `local-poc-user` deltas remain readable only through the Learner Demo fallback path.
+- Future backend versions may add `updatedAt`, `supersedesDeltaId`, or `label`.
 
 ### `ConflictSummary`
 
@@ -267,11 +317,11 @@ Conflict detection is non-destructive and informational only.
 
 ## 3. API shape
 
-The API shape is intentionally minimal and resource-oriented. Milestone C introduced these routes under `/api/interactive/*` for local dev/demo persistence, and Milestone D continues to use them for product-facing recording lists and open flows. Auth remains an open production decision.
+The API shape is intentionally minimal and resource-oriented. Milestone C introduced persistence routes under `/api/interactive/*`, Milestone D used them for product-facing recording lists and open flows, and Milestone E adds dev auth/session routes plus ownership checks. Production auth remains an open decision, but dev session ownership is enforced for this POC.
 
 ### `POST /api/interactive/teacher-recordings`
 
-Create a new immutable teacher recording.
+Create a new immutable teacher recording. Requires a signed-in teacher/both dev session.
 
 Request body:
 
@@ -311,7 +361,10 @@ Response body:
       "/example.js": "console.log('base');\n"
     },
     "events": [],
-    "createdAt": "2026-01-01T00:00:01.000Z"
+    "ownerUserId": "dev-user-teacher-demo-8f4c2a9d",
+    "createdByUserId": "dev-user-teacher-demo-8f4c2a9d",
+    "publishedByUserId": "dev-user-teacher-demo-8f4c2a9d",
+    "publishedAt": "2026-01-01T00:00:01.000Z"
   }
 }
 ```
@@ -321,7 +374,9 @@ Rules:
 - current dev server requires a safe `id` generated by the client recorder;
 - request must be validated before persistence;
 - after successful creation, the recording is treated as immutable;
-- posting different JSON with an existing id is rejected.
+- posting different JSON with an existing id is rejected;
+- existing ids owned by another teacher are rejected;
+- legacy recordings without owner fields are treated as Teacher Demo owned.
 
 ### `GET /api/interactive/teacher-recordings/:id`
 
@@ -351,13 +406,13 @@ Rules:
 
 ### `POST /api/interactive/learner-deltas`
 
-Create a learner-owned delta.
+Create a learner-owned delta. Requires a signed-in learner/both dev session.
 
 Request body:
 
 ```json
 {
-  "userId": "local-poc-user",
+  "userId": "dev-user-learner-two-927f4d1a",
   "lessonId": "lesson-and-solution",
   "teacherRecordingId": "teacher-recording-123",
   "teacherRecordingVersion": 1,
@@ -377,7 +432,7 @@ Response body:
 {
   "learnerDelta": {
     "id": "learner-delta-123",
-    "userId": "local-poc-user",
+    "userId": "dev-user-learner-demo-61b7c3e2",
     "lessonId": "lesson-and-solution",
     "teacherRecordingId": "teacher-recording-123",
     "teacherRecordingVersion": 1,
@@ -397,17 +452,18 @@ Rules:
 
 - creates a new delta record;
 - must not update the linked teacher recording;
+- server ignores/replaces client-supplied `userId` with the signed-in learner id;
 - should validate teacher recording existence/version/hash;
 - may return a `ConflictSummary` in a later API version, but this is optional.
 
-### `GET /api/interactive/learner-deltas?lessonId=&teacherRecordingId=&userId=`
+### `GET /api/interactive/learner-deltas?lessonId=&teacherRecordingId=`
 
-List learner deltas for a lesson/teacher/user tuple.
+List learner deltas for a lesson/teacher tuple scoped to the signed-in learner.
 
 Example:
 
 ```text
-GET /api/interactive/learner-deltas?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
+GET /api/interactive/learner-deltas?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123
 ```
 
 Response body:
@@ -423,14 +479,14 @@ Recommended ordering:
 1. `createdAt` descending;
 2. `id` descending as a stable tie-breaker.
 
-### `GET /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=&userId=`
+### `GET /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=`
 
-Fetch the latest matching learner delta for restore.
+Fetch the latest matching learner delta for restore, scoped to the signed-in learner.
 
 Example:
 
 ```text
-GET /api/interactive/learner-deltas/latest?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
+GET /api/interactive/learner-deltas/latest?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123
 ```
 
 Response body when present:
@@ -439,7 +495,7 @@ Response body when present:
 {
   "learnerDelta": {
     "id": "learner-delta-123",
-    "userId": "local-poc-user",
+    "userId": "dev-user-learner-demo-61b7c3e2",
     "lessonId": "lesson-and-solution",
     "teacherRecordingId": "teacher-recording-123",
     "teacherRecordingVersion": 1,
@@ -462,9 +518,25 @@ Response body when absent:
 
 Rules:
 
-- latest should be scoped by `lessonId`, `teacherRecordingId`, and `userId`;
+- latest is scoped by `lessonId`, `teacherRecordingId`, and the signed-in learner session user;
 - server may also filter by `teacherRecordingVersion` if supplied;
 - client must still verify the hash match before restore.
+
+### `GET /api/interactive/auth/me`
+
+Returns the current dev user from the `interactive_session` cookie or `null`.
+
+### `POST /api/interactive/auth/dev-login`
+
+Accepts `{ "userId": "..." }` for a known seeded dev user, creates a server-side session, and sets the session cookie.
+
+### `POST /api/interactive/auth/logout`
+
+Deletes the current server-side session and clears the session cookie.
+
+### `GET /api/interactive/users/dev`
+
+Returns the seeded dev users for the demo sign-in UI.
 
 
 ### `GET /api/interactive/teacher-recordings`
@@ -486,7 +558,7 @@ Rules:
 
 ### `POST /api/interactive/media-assets`
 
-Upload a media Blob for a teacher recording.
+Upload a media Blob for a teacher recording. Requires a signed-in teacher/both dev session.
 
 Request format:
 
@@ -500,6 +572,7 @@ Rules:
 - allowed dev MIME types are business-required media formats currently used by the POC (`audio/webm`, `video/webm`, `audio/ogg`, `audio/wav`, `audio/x-wav`);
 - server sets size limits;
 - server validates safe ids and simple file signatures;
+- server verifies the linked recording is owned by the signed-in teacher;
 - server ignores client filenames;
 - server generates stored media filenames;
 - media files are stored outside public webroot under `.interactive-data/media-assets/`.
@@ -594,7 +667,7 @@ Rules:
 
 ## 4. Storage shape
 
-Production database technology is undecided. These names describe logical tables/collections. Milestone C/D maps them to gitignored JSON/media files in `.interactive-data/`.
+Production database technology is undecided. These names describe logical tables/collections. Milestone E maps them to gitignored JSON/media/session files in `.interactive-data/`.
 
 ### `teacher_recordings`
 
@@ -610,7 +683,10 @@ Suggested fields:
 - `base_files_json`;
 - `events_json` if events are stored inline;
 - `created_at`;
-- `created_by` nullable until auth is defined.
+- `created_by_user_id`;
+- `owner_user_id`;
+- `published_by_user_id`;
+- `published_at`.
 
 Recommended indexes:
 
@@ -673,12 +749,26 @@ Suggested fields:
 - `mime_type`;
 - `duration_ms`;
 - `created_at`;
+- `owner_user_id`;
 - `blob` or `object_storage_key` depending on storage implementation.
 
 Recommended indexes:
 
 - `(teacher_recording_id, created_at)`;
 - `(kind, created_at)`.
+
+### `sessions`
+
+Stores dev-only session state.
+
+Suggested fields:
+
+- `id` primary key;
+- `user_id`;
+- `created_at`;
+- `expires_at`.
+
+Session ids must be random/unpredictable and meaningless without this server-side record.
 
 ### Optional conflict cache
 
@@ -745,6 +835,10 @@ Validate that:
 
 Validate that:
 
+- publishing a teacher recording requires a signed-in teacher/both user;
+- saving learner work requires a signed-in learner/both user;
+- session cookies contain only random ids and user meaning lives server-side;
+
 - creating a learner delta cannot mutate teacher recording rows/documents;
 - fetching/restoring a learner delta cannot mutate teacher recording rows/documents;
 - users can only read/write deltas they own unless a sharing model is explicitly added;
@@ -774,7 +868,7 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
-Milestone D stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, and `.interactive-data/media-assets`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
+Milestone E stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, `.interactive-data/media-assets`, and `.interactive-data/sessions`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
 
 ### Equivalent backend records
 
@@ -802,6 +896,10 @@ interface TeacherRecordingDraftSummary {
   durationMs: number;
   eventCount: number;
   mediaKind: 'none' | 'audio' | 'webcam';
+  ownerUserId?: string;
+  createdByUserId?: string;
+  publishedByUserId?: string;
+  publishedAt?: string;
 }
 
 interface InteractiveTimelineStorage {
@@ -842,14 +940,14 @@ Options:
 
 Default recommendation for first backend POC: JSON blob for simplicity, with a documented migration path to event rows if timeline queries become important.
 
-### Auth/user ownership model
+### Production auth/user ownership model
 
-Open questions:
+Milestone E answers the POC question by deriving remote learner/teacher ownership from the dev session. Production questions remain:
 
 - Who can create teacher recordings?
 - Can multiple teachers own a lesson?
 - Can learners share deltas with teachers?
-- Is `userId` supplied by auth middleware rather than request body?
+- Which production auth middleware/session model derives `userId` rather than trusting request bodies?
 - What is the admin/teacher visibility model for learner work?
 
 Default recommendation: backend should derive `userId` from auth, not trust client-provided `userId`, once auth exists.

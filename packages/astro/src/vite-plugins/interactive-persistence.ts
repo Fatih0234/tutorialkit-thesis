@@ -1,9 +1,19 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  INTERACTIVE_DEFAULT_LEARNER_USER_ID,
+  INTERACTIVE_DEFAULT_TEACHER_USER_ID,
+  INTERACTIVE_DEV_LEARNER_TWO_USER_ID,
+  INTERACTIVE_DEV_LEARNER_USER_ID,
+  INTERACTIVE_DEV_TEACHER_USER_ID,
+  INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID,
+  type InteractiveSession,
+  type InteractiveUser,
+} from '@tutorialkit/runtime';
 import type { VitePlugin } from '../types.js';
 
 const API_PREFIX = '/api/interactive';
@@ -17,6 +27,28 @@ const ALLOWED_MEDIA_MIME_TYPES = new Map([
   ['audio/wav', '.wav'],
   ['audio/x-wav', '.wav'],
 ]);
+const SESSION_COOKIE_NAME = 'interactive_session';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEV_USERS: readonly InteractiveUser[] = [
+  {
+    id: INTERACTIVE_DEV_TEACHER_USER_ID,
+    displayName: 'Teacher Demo',
+    role: 'teacher',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: INTERACTIVE_DEV_LEARNER_USER_ID,
+    displayName: 'Learner Demo',
+    role: 'learner',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: INTERACTIVE_DEV_LEARNER_TWO_USER_ID,
+    displayName: 'Learner Two',
+    role: 'learner',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+];
 
 type FilesSnapshot = Record<string, string>;
 
@@ -37,6 +69,7 @@ interface RecordingMediaAssetMetadata {
   mimeType: string;
   durationMs: number;
   createdAt: string;
+  ownerUserId?: string;
 }
 
 interface StoredMediaAssetMetadata extends RecordingMediaAssetMetadata {
@@ -53,6 +86,10 @@ interface TeacherRecording {
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
   mediaAssets?: RecordingMediaAssetMetadata[];
+  createdByUserId?: string;
+  ownerUserId?: string;
+  publishedByUserId?: string;
+  publishedAt?: string;
 }
 
 interface LearnerDelta {
@@ -121,7 +158,149 @@ function getDataPaths() {
     teacherRecordings: path.join(root, 'teacher-recordings'),
     learnerDeltas: path.join(root, 'learner-deltas'),
     mediaAssets: path.join(root, 'media-assets'),
+    sessions: path.join(root, 'sessions'),
   };
+}
+
+function createHttpError(message: string, statusCode: number): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+function getDevUser(userId: string | undefined): InteractiveUser | undefined {
+  return DEV_USERS.find((user) => user.id === userId);
+}
+
+function canTeach(user: InteractiveUser | undefined): boolean {
+  return user?.role === 'teacher' || user?.role === 'both';
+}
+
+function canLearn(user: InteractiveUser | undefined): boolean {
+  return user?.role === 'learner' || user?.role === 'both';
+}
+
+function createSessionId(): string {
+  return `session-${randomBytes(32).toString('base64url')}`;
+}
+
+function parseCookies(req: IncomingMessage): Map<string, string> {
+  const cookies = new Map<string, string>();
+  const cookieHeader = req.headers.cookie;
+
+  if (!cookieHeader) {
+    return cookies;
+  }
+
+  for (const entry of cookieHeader.split(';')) {
+    const separatorIndex = entry.indexOf('=');
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const name = entry.slice(0, separatorIndex).trim();
+    const value = entry.slice(separatorIndex + 1).trim();
+
+    if (name) {
+      cookies.set(name, decodeURIComponent(value));
+    }
+  }
+
+  return cookies;
+}
+
+function isHttpsRequest(req: IncomingMessage): boolean {
+  return Boolean((req.socket as any).encrypted) || req.headers['x-forwarded-proto'] === 'https';
+}
+
+function serializeSessionCookie(req: IncomingMessage, value: string, options: { expires?: Date; maxAgeSeconds?: number } = {}) {
+  const segments = [`${SESSION_COOKIE_NAME}=${encodeURIComponent(value)}`, 'HttpOnly', 'SameSite=Lax', 'Path=/'];
+
+  if (isHttpsRequest(req)) {
+    segments.push('Secure');
+  }
+
+  if (options.expires) {
+    segments.push(`Expires=${options.expires.toUTCString()}`);
+  }
+
+  if (options.maxAgeSeconds !== undefined) {
+    segments.push(`Max-Age=${options.maxAgeSeconds}`);
+  }
+
+  return segments.join('; ');
+}
+
+function setSessionCookie(req: IncomingMessage, res: ServerResponse, session: InteractiveSession) {
+  res.setHeader('Set-Cookie', serializeSessionCookie(req, session.id, { expires: new Date(session.expiresAt) }));
+}
+
+function clearSessionCookie(req: IncomingMessage, res: ServerResponse) {
+  res.setHeader('Set-Cookie', serializeSessionCookie(req, '', { expires: new Date(0), maxAgeSeconds: 0 }));
+}
+
+async function deleteSession(sessionId: string | undefined): Promise<void> {
+  if (!sessionId) {
+    return;
+  }
+
+  const dataPaths = await ensureDataDirectories();
+  await rm(getJsonFilePath(dataPaths.sessions, sessionId), { force: true });
+}
+
+async function readCurrentSession(req: IncomingMessage): Promise<InteractiveSession | undefined> {
+  const sessionId = parseCookies(req).get(SESSION_COOKIE_NAME);
+
+  if (!sessionId) {
+    return undefined;
+  }
+
+  const dataPaths = await ensureDataDirectories();
+  const session = await readJsonFile<InteractiveSession>(getJsonFilePath(dataPaths.sessions, sessionId));
+
+  if (!session || session.id !== sessionId) {
+    return undefined;
+  }
+
+  if (Date.parse(session.expiresAt) <= Date.now()) {
+    await deleteSession(sessionId);
+    return undefined;
+  }
+
+  return session;
+}
+
+async function getAuthenticatedUser(req: IncomingMessage): Promise<InteractiveUser | undefined> {
+  const session = await readCurrentSession(req);
+
+  return session ? getDevUser(session.userId) : undefined;
+}
+
+async function requireTeacherUser(req: IncomingMessage): Promise<InteractiveUser> {
+  const user = await getAuthenticatedUser(req);
+
+  if (!user) {
+    throw createHttpError('Sign in as a teacher to publish recordings.', 401);
+  }
+
+  if (!canTeach(user)) {
+    throw createHttpError('Teacher role is required.', 403);
+  }
+
+  return user;
+}
+
+async function requireLearnerUser(req: IncomingMessage): Promise<InteractiveUser> {
+  const user = await getAuthenticatedUser(req);
+
+  if (!user) {
+    throw createHttpError('Sign in as a learner to save work.', 401);
+  }
+
+  if (!canLearn(user)) {
+    throw createHttpError('Learner role is required.', 403);
+  }
+
+  return user;
 }
 
 function normalizePath(filePath: string): string {
@@ -229,6 +408,7 @@ function normalizeMediaMetadata(value: unknown, fallbackRecordingId?: string): R
     mimeType: candidate.mimeType,
     durationMs: candidate.durationMs,
     createdAt: candidate.createdAt,
+    ownerUserId: candidate.ownerUserId ? assertSafeId(candidate.ownerUserId, 'media owner user id') : undefined,
   };
 }
 
@@ -277,10 +457,14 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     baseFiles: normalizeFiles(candidate.baseFiles),
     events: candidate.events.map(normalizeTimelineEvent).sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs)),
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
+    createdByUserId: candidate.createdByUserId ? assertSafeId(candidate.createdByUserId, 'createdBy user id') : undefined,
+    ownerUserId: candidate.ownerUserId ? assertSafeId(candidate.ownerUserId, 'owner user id') : undefined,
+    publishedByUserId: candidate.publishedByUserId ? assertSafeId(candidate.publishedByUserId, 'publishedBy user id') : undefined,
+    publishedAt: candidate.publishedAt && typeof candidate.publishedAt === 'string' ? candidate.publishedAt : undefined,
   };
 }
 
-function normalizeLearnerDelta(value: unknown): LearnerDelta {
+function normalizeLearnerDelta(value: unknown, fallbackUserId?: string): LearnerDelta {
   const input = value && typeof value === 'object' && 'learnerDelta' in value ? (value as any).learnerDelta : value;
 
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -293,7 +477,9 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
     throw new Error('Learner delta id is required.');
   }
 
-  if (!candidate.userId || typeof candidate.userId !== 'string') {
+  const userId = typeof candidate.userId === 'string' ? candidate.userId : fallbackUserId;
+
+  if (!userId) {
     throw new Error('Learner delta userId is required.');
   }
 
@@ -323,7 +509,7 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
 
   return {
     id: assertSafeId(candidate.id, 'learner delta id'),
-    userId: candidate.userId,
+    userId: assertSafeId(userId, 'learner user id'),
     lessonId: candidate.lessonId,
     teacherRecordingId: assertSafeId(candidate.teacherRecordingId, 'teacher recording id'),
     teacherRecordingVersion: candidate.teacherRecordingVersion,
@@ -356,7 +542,47 @@ function stripMediaStorageFields(metadata: StoredMediaAssetMetadata): RecordingM
     mimeType: metadata.mimeType,
     durationMs: metadata.durationMs,
     createdAt: metadata.createdAt,
+    ownerUserId: metadata.ownerUserId,
   };
+}
+
+function withTeacherOwnershipDefaults(recording: TeacherRecording): TeacherRecording {
+  const ownerUserId = recording.ownerUserId ?? recording.createdByUserId ?? INTERACTIVE_DEFAULT_TEACHER_USER_ID;
+  const createdByUserId = recording.createdByUserId ?? ownerUserId;
+
+  return {
+    ...recording,
+    ownerUserId,
+    createdByUserId,
+    mediaAssets: recording.mediaAssets?.map((asset) => ({ ...asset, ownerUserId: asset.ownerUserId ?? ownerUserId })),
+  };
+}
+
+function withPublishedTeacherOwnership(
+  recording: TeacherRecording,
+  user: InteractiveUser,
+  existingRecording?: TeacherRecording,
+): TeacherRecording {
+  const publishedAt = existingRecording?.publishedAt ?? recording.publishedAt ?? new Date().toISOString();
+
+  return {
+    ...recording,
+    ownerUserId: user.id,
+    createdByUserId: user.id,
+    publishedByUserId: user.id,
+    publishedAt,
+    mediaAssets: recording.mediaAssets?.map((asset) => ({ ...asset, ownerUserId: user.id })),
+  };
+}
+
+function getAllowedLearnerUserIds(user: InteractiveUser): string[] {
+  const userIds = [user.id];
+
+  if (user.id === INTERACTIVE_DEFAULT_LEARNER_USER_ID) {
+    userIds.push(INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID);
+  }
+
+  return userIds;
 }
 
 function getJsonFilePath(directory: string, id: string): string {
@@ -370,6 +596,7 @@ async function ensureDataDirectories() {
     mkdir(dataPaths.teacherRecordings, { recursive: true }),
     mkdir(dataPaths.learnerDeltas, { recursive: true }),
     mkdir(dataPaths.mediaAssets, { recursive: true }),
+    mkdir(dataPaths.sessions, { recursive: true }),
   ]);
 
   return dataPaths;
@@ -544,13 +771,68 @@ function hasExpectedMediaSignature(buffer: Buffer, mimeType: string): boolean {
   return false;
 }
 
+async function handleAuth(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  if (req.method === 'GET' && routeParts[1] === 'me') {
+    sendJson(res, { user: (await getAuthenticatedUser(req)) ?? null });
+    return;
+  }
+
+  if (req.method === 'POST' && routeParts[1] === 'dev-login') {
+    const body = await readJsonRequest(req);
+    const userId = body && typeof body === 'object' && 'userId' in body ? String((body as { userId?: unknown }).userId) : '';
+    const user = getDevUser(userId);
+
+    if (!user) {
+      sendJson(res, { error: 'Unknown dev user.' }, 400);
+      return;
+    }
+
+    await deleteSession(parseCookies(req).get(SESSION_COOKIE_NAME));
+
+    const now = Date.now();
+    const session: InteractiveSession = {
+      id: createSessionId(),
+      userId: user.id,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + SESSION_TTL_MS).toISOString(),
+    };
+    const dataPaths = await ensureDataDirectories();
+
+    await writeJsonFile(getJsonFilePath(dataPaths.sessions, session.id), session);
+    setSessionCookie(req, res, session);
+    sendJson(res, { user });
+    return;
+  }
+
+  if (req.method === 'POST' && routeParts[1] === 'logout') {
+    await deleteSession(parseCookies(req).get(SESSION_COOKIE_NAME));
+    clearSessionCookie(req, res);
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
+async function handleDevUsers(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  if (req.method === 'GET' && routeParts[1] === 'dev') {
+    sendJson(res, { users: DEV_USERS });
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
 async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse, url: URL, routeParts: string[]) {
   const dataPaths = await ensureDataDirectories();
 
   if (req.method === 'GET' && routeParts.length === 1) {
     const recordings = await readAllJsonFiles<TeacherRecording>(dataPaths.teacherRecordings);
     const lessonId = url.searchParams.get('lessonId');
-    const filteredRecordings = lessonId ? recordings.filter((recording) => recording.lessonId === lessonId) : recordings;
+    const recordingsWithOwners = recordings.map(withTeacherOwnershipDefaults);
+    const filteredRecordings = lessonId
+      ? recordingsWithOwners.filter((recording) => recording.lessonId === lessonId)
+      : recordingsWithOwners;
 
     filteredRecordings.sort((a, b) => {
       const startedAtOrder = b.startedAt.localeCompare(a.startedAt);
@@ -575,16 +857,24 @@ async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse
       return;
     }
 
-    sendJson(res, { teacherRecording: recording });
+    sendJson(res, { teacherRecording: withTeacherOwnershipDefaults(recording) });
     return;
   }
 
   if (req.method === 'POST' && routeParts.length === 1) {
-    const recording = normalizeTeacherRecording(await readJsonRequest(req));
-    const filePath = getJsonFilePath(dataPaths.teacherRecordings, recording.id);
-    const existingRecording = await readJsonFile<TeacherRecording>(filePath);
+    const user = await requireTeacherUser(req);
+    const inputRecording = normalizeTeacherRecording(await readJsonRequest(req));
+    const filePath = getJsonFilePath(dataPaths.teacherRecordings, inputRecording.id);
+    const existingRecordingRaw = await readJsonFile<TeacherRecording>(filePath);
+    const existingRecording = existingRecordingRaw ? withTeacherOwnershipDefaults(existingRecordingRaw) : undefined;
+    const recording = withPublishedTeacherOwnership(inputRecording, user, existingRecording);
 
     if (existingRecording) {
+      if (existingRecording.ownerUserId !== user.id) {
+        sendJson(res, { error: 'Teacher recording belongs to a different teacher.' }, 403);
+        return;
+      }
+
       if (hashStableJson(existingRecording) !== hashStableJson(recording)) {
         sendJson(res, { error: 'Teacher recording already exists and is immutable.' }, 409);
         return;
@@ -606,23 +896,38 @@ async function handleLearnerDeltas(req: IncomingMessage, res: ServerResponse, ur
   const dataPaths = await ensureDataDirectories();
 
   if (req.method === 'GET' && routeParts.length === 1) {
+    const user = await getAuthenticatedUser(req);
+
+    if (!user || !canLearn(user)) {
+      sendJson(res, { learnerDeltas: [] });
+      return;
+    }
+
     const deltas = await readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas);
-    const filteredDeltas = filterLearnerDeltas(deltas, url);
+    const filteredDeltas = filterLearnerDeltas(deltas, url, user);
 
     sendJson(res, { learnerDeltas: filteredDeltas });
     return;
   }
 
   if (req.method === 'GET' && routeParts[1] === 'latest') {
+    const user = await getAuthenticatedUser(req);
+
+    if (!user || !canLearn(user)) {
+      sendJson(res, { learnerDelta: null });
+      return;
+    }
+
     const deltas = await readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas);
-    const [latestDelta] = filterLearnerDeltas(deltas, url);
+    const [latestDelta] = filterLearnerDeltas(deltas, url, user);
 
     sendJson(res, { learnerDelta: latestDelta ?? null });
     return;
   }
 
   if (req.method === 'POST' && routeParts.length === 1) {
-    let delta = normalizeLearnerDelta(await readJsonRequest(req));
+    const user = await requireLearnerUser(req);
+    let delta = { ...normalizeLearnerDelta(await readJsonRequest(req), user.id), userId: user.id };
     const linkedRecording = await readJsonFile<TeacherRecording>(
       getJsonFilePath(dataPaths.teacherRecordings, delta.teacherRecordingId),
     );
@@ -652,17 +957,17 @@ async function handleLearnerDeltas(req: IncomingMessage, res: ServerResponse, ur
   sendJson(res, { error: 'Not found.' }, 404);
 }
 
-function filterLearnerDeltas(deltas: LearnerDelta[], url: URL): LearnerDelta[] {
+function filterLearnerDeltas(deltas: LearnerDelta[], url: URL, user: InteractiveUser): LearnerDelta[] {
   const lessonId = url.searchParams.get('lessonId');
   const teacherRecordingId = url.searchParams.get('teacherRecordingId');
   const teacherRecordingVersion = url.searchParams.get('teacherRecordingVersion');
-  const userId = url.searchParams.get('userId');
+  const allowedUserIds = new Set(getAllowedLearnerUserIds(user));
 
   return deltas
+    .filter((delta) => allowedUserIds.has(delta.userId))
     .filter((delta) => !lessonId || delta.lessonId === lessonId)
     .filter((delta) => !teacherRecordingId || delta.teacherRecordingId === teacherRecordingId)
     .filter((delta) => !teacherRecordingVersion || delta.teacherRecordingVersion === Number(teacherRecordingVersion))
-    .filter((delta) => !userId || delta.userId === userId)
     .sort((a, b) => {
       const createdAtOrder = b.createdAt.localeCompare(a.createdAt);
 
@@ -725,10 +1030,21 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
   }
 
   if (req.method === 'DELETE' && routeParts.length === 2) {
+    const user = await requireTeacherUser(req);
     const id = assertSafeId(decodeURIComponent(routeParts[1] ?? ''), 'media asset id');
     const metadata = await readJsonFile<StoredMediaAssetMetadata>(getJsonFilePath(dataPaths.mediaAssets, id));
 
     if (metadata) {
+      const linkedRecording = await readJsonFile<TeacherRecording>(
+        getJsonFilePath(dataPaths.teacherRecordings, metadata.recordingId),
+      );
+      const ownerUserId = metadata.ownerUserId ?? (linkedRecording ? withTeacherOwnershipDefaults(linkedRecording).ownerUserId : undefined);
+
+      if (ownerUserId !== user.id) {
+        sendJson(res, { error: 'Media asset belongs to a different teacher.' }, 403);
+        return;
+      }
+
       await rm(path.join(dataPaths.mediaAssets, metadata.storedFileName), { force: true });
       await rm(getJsonFilePath(dataPaths.mediaAssets, id), { force: true });
     }
@@ -738,6 +1054,7 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
   }
 
   if (req.method === 'POST' && routeParts.length === 1) {
+    const user = await requireTeacherUser(req);
     const contentType = req.headers['content-type'] ?? '';
 
     if (!contentType.includes('multipart/form-data')) {
@@ -759,15 +1076,23 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
             createdAt: multipart.fields.get('createdAt'),
           },
     );
-    const linkedRecording = await readJsonFile<TeacherRecording>(
+    const linkedRecordingRaw = await readJsonFile<TeacherRecording>(
       getJsonFilePath(dataPaths.teacherRecordings, metadata.recordingId),
     );
 
-    if (!linkedRecording) {
+    if (!linkedRecordingRaw) {
       sendJson(res, { error: 'Linked teacher recording was not found.' }, 400);
       return;
     }
 
+    const linkedRecording = withTeacherOwnershipDefaults(linkedRecordingRaw);
+
+    if (linkedRecording.ownerUserId !== user.id) {
+      sendJson(res, { error: 'Media asset recording belongs to a different teacher.' }, 403);
+      return;
+    }
+
+    const metadataWithOwner: RecordingMediaAssetMetadata = { ...metadata, ownerUserId: user.id };
     const file = multipart.files.get('file');
 
     if (!file) {
@@ -775,9 +1100,9 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
       return;
     }
 
-    const extension = getAllowedMediaExtension(metadata.mimeType);
+    const extension = getAllowedMediaExtension(metadataWithOwner.mimeType);
     const uploadMimeType = file.contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-    const metadataMimeType = metadata.mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+    const metadataMimeType = metadataWithOwner.mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
 
     if (uploadMimeType && uploadMimeType !== metadataMimeType && uploadMimeType !== 'application/octet-stream') {
       sendJson(res, { error: 'Media upload Content-Type does not match metadata.' }, 415);
@@ -789,27 +1114,32 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
       return;
     }
 
-    if (!hasExpectedMediaSignature(file.buffer, metadata.mimeType)) {
+    if (!hasExpectedMediaSignature(file.buffer, metadataWithOwner.mimeType)) {
       sendJson(res, { error: 'Media upload does not match the expected file signature.' }, 415);
       return;
     }
 
-    const existingMetadata = await readJsonFile<StoredMediaAssetMetadata>(getJsonFilePath(dataPaths.mediaAssets, metadata.id));
+    const existingMetadata = await readJsonFile<StoredMediaAssetMetadata>(getJsonFilePath(dataPaths.mediaAssets, metadataWithOwner.id));
 
     if (existingMetadata) {
+      if ((existingMetadata.ownerUserId ?? linkedRecording.ownerUserId) !== user.id) {
+        sendJson(res, { error: 'Media asset belongs to a different teacher.' }, 403);
+        return;
+      }
+
       sendJson(res, { mediaAsset: stripMediaStorageFields(existingMetadata) });
       return;
     }
 
-    const storedFileName = `${metadata.id}-${randomUUID()}${extension}`;
+    const storedFileName = `${metadataWithOwner.id}-${randomUUID()}${extension}`;
     const storedMetadata: StoredMediaAssetMetadata = {
-      ...metadata,
+      ...metadataWithOwner,
       storedFileName,
       sizeBytes: file.buffer.length,
     };
 
     await writeFile(path.join(dataPaths.mediaAssets, storedFileName), file.buffer);
-    await writeJsonFile(getJsonFilePath(dataPaths.mediaAssets, metadata.id), storedMetadata);
+    await writeJsonFile(getJsonFilePath(dataPaths.mediaAssets, metadataWithOwner.id), storedMetadata);
     sendJson(res, { mediaAsset: stripMediaStorageFields(storedMetadata) }, 201);
     return;
   }
@@ -852,6 +1182,16 @@ export async function handleInteractivePersistenceRequest(req: IncomingMessage, 
     .map(decodeURIComponent);
 
   try {
+    if (routeParts[0] === 'auth') {
+      await handleAuth(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'users') {
+      await handleDevUsers(req, res, routeParts);
+      return;
+    }
+
     if (routeParts[0] === 'teacher-recordings') {
       await handleTeacherRecordings(req, res, url, routeParts);
       return;

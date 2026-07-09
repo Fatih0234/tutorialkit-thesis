@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { InteractiveDevIdentityPanel } from './InteractiveDevIdentityPanel.js';
 import { InteractiveLearnerPlayback } from './InteractiveLearnerPlayback.js';
 import { InteractiveTeacherDashboard } from './InteractiveTeacherDashboard.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
@@ -29,6 +30,8 @@ export function InteractivePocControls(props: InteractivePocControlsModel) {
           </button>
         </nav>
       </header>
+
+      <InteractiveDevIdentityPanel {...props} />
 
       {activeTab === 'teacher' ? <InteractiveTeacherDashboard {...props} /> : <InteractiveLearnerPlayback {...props} />}
 
