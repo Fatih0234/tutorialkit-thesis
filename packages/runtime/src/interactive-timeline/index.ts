@@ -6,3 +6,4 @@ export * from './learner-delta.js';
 export * from './playback-clock.js';
 export * from './storage.js';
 export * from './storage-adapter.js';
+export * from './indexeddb-storage-adapter.js';

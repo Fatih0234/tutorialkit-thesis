@@ -29,7 +29,11 @@ export function saveLearnerDelta(delta: LearnerDelta): void {
   const existing = loadLearnerDeltas();
   existing.push(delta);
 
-  requireLocalStorage()?.setItem(LEARNER_DELTAS_KEY, JSON.stringify(existing));
+  saveLearnerDeltas(existing);
+}
+
+export function saveLearnerDeltas(deltas: LearnerDelta[]): void {
+  requireLocalStorage()?.setItem(LEARNER_DELTAS_KEY, JSON.stringify(deltas));
 }
 
 export function loadLearnerDeltas(): LearnerDelta[] {

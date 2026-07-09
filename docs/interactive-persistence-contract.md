@@ -1,8 +1,8 @@
 # Interactive persistence contract
 
-This document defines the proposed backend persistence contract for the interactive tutorial POC. It is a contract document only: Phase 8 does not add backend APIs, database code, or runtime behavior changes.
+This document defines the proposed backend persistence contract for the interactive tutorial POC. It remains a contract document for backend work: Milestone A adds local IndexedDB draft storage and an async adapter boundary, but it does not add backend APIs, database code, network calls, auth, or production persistence infrastructure.
 
-The contract preserves the Phase 7 browser-only model described in `docs/interactive-poc-architecture.md` and prepares a future replacement for localStorage persistence.
+The contract preserves the Milestone A browser-only model described in `docs/interactive-poc-architecture.md` and prepares a future replacement for local IndexedDB/localStorage compatibility persistence.
 
 ## Non-goals
 
@@ -16,6 +16,19 @@ This document does not specify or implement:
 - terminal recording persistence;
 - preview iframe recording persistence;
 - analytics or telemetry.
+
+## Milestone A local-first status
+
+Milestone A introduces `InteractiveTimelineStorage` as an async client-side adapter boundary. The default browser adapter is `IndexedDBInteractiveTimelineStorage`, which stores local teacher recording drafts and learner deltas in IndexedDB and mirrors the legacy POC localStorage keys:
+
+```text
+interactive-poc.teacherRecording
+interactive-poc.learnerDeltas
+```
+
+The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable.
+
+No backend routes or fetch calls are introduced by Milestone A. Future backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 ## 1. Persistence goals
 
@@ -562,63 +575,69 @@ When computing conflicts:
 - consider `file.changed` as the only teacher-modifying event for the current POC;
 - return an empty summary rather than failing when no conflicts exist.
 
-## 6. Migration path from localStorage
+## 6. Migration path from local browser storage
 
-### Current localStorage keys
+### Current compatibility localStorage keys
 
-The browser POC currently stores:
+The browser POC still mirrors these compatibility keys:
 
 ```text
 interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-`interactive-poc.teacherRecording` contains one serialized `TeacherRecording`.
+`interactive-poc.teacherRecording` contains one serialized latest `TeacherRecording`.
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
+
+Milestone A also stores the same resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings` and `learnerDeltas`.
 
 ### Equivalent backend records
 
 Migration mapping:
 
-| localStorage value | Backend resource |
+| Local browser value | Backend resource |
 | --- | --- |
-| `interactive-poc.teacherRecording` | one `TeacherRecording` record plus optional event rows |
-| each item in `interactive-poc.learnerDeltas` | one `LearnerDelta` record |
+| IndexedDB `teacherRecordings` item or `interactive-poc.teacherRecording` mirror | one `TeacherRecording` record plus optional event rows |
+| IndexedDB `learnerDeltas` item or each item in `interactive-poc.learnerDeltas` mirror | one `LearnerDelta` record |
 | Phase 6 conflict result | computed `ConflictSummary`, optional cache |
 
-The existing JSON shapes are intentionally close to the proposed backend payloads, so a future adapter can translate with minimal restructuring.
+The existing IndexedDB values and localStorage JSON mirrors are intentionally close to the proposed backend payloads, so a future adapter can translate with minimal restructuring.
 
 ### Adapter interface for future replacement
 
-A future persistence adapter can hide localStorage vs backend implementation from React.
+React now uses an async local adapter boundary. A future backend adapter should satisfy the same shape before local-only assumptions are removed.
 
 ```ts
-interface InteractivePersistenceAdapter {
+interface TeacherRecordingDraftSummary {
+  id: string;
+  lessonId: string;
+  version: number;
+  startedAt: string;
+  durationMs: number;
+  eventCount: number;
+}
+
+interface InteractiveTimelineStorage {
+  loadTeacherRecording(): Promise<TeacherRecording | undefined>;
   saveTeacherRecording(recording: TeacherRecording): Promise<void>;
-  loadTeacherRecording(id?: string): Promise<TeacherRecording | undefined>;
-  saveLearnerDelta(delta: LearnerDelta): Promise<LearnerDelta>;
-  loadLearnerDeltas(query: {
-    lessonId: string;
-    teacherRecordingId: string;
-    userId: string;
-  }): Promise<LearnerDelta[]>;
-  loadLatestLearnerDelta(query: {
-    lessonId: string;
-    teacherRecordingId: string;
-    userId: string;
-  }): Promise<LearnerDelta | undefined>;
-  getLearnerDeltaConflicts?(deltaId: string): Promise<ConflictSummary>;
+  loadLearnerDeltas(): Promise<LearnerDelta[]>;
+  loadLatestLearnerDelta(): Promise<LearnerDelta | undefined>;
+  saveLearnerDelta(delta: LearnerDelta): Promise<void>;
+  listTeacherRecordingDrafts(): Promise<TeacherRecordingDraftSummary[]>;
+  loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
+  saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void>;
+  deleteTeacherRecordingDraft(id: string): Promise<void>;
 }
 ```
 
-Implementation path:
+Backend implementation path:
 
-1. keep current localStorage helpers as the default adapter;
-2. introduce an async adapter boundary without changing UI behavior;
-3. add backend-backed adapter behind the same interface;
-4. keep Playwright tests asserting teacher immutability and learner delta recoverability;
-5. only remove localStorage-specific assumptions after backend behavior matches the POC.
+1. keep `IndexedDBInteractiveTimelineStorage` as the default local authoring adapter;
+2. keep `LocalStorageInteractiveTimelineStorage` as a compatibility/fallback adapter;
+3. add backend-backed adapter behind the same async interface;
+4. keep Playwright tests asserting teacher immutability, draft load/preview, and learner delta recoverability;
+5. only remove localStorage mirror assumptions after backend behavior matches the local POC.
 
 ## 7. Open decisions
 

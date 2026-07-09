@@ -1,31 +1,28 @@
+import { InteractiveAuthoringPanel } from './InteractiveAuthoringPanel.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
-export function InteractivePocControls({
-  isRecording,
-  mode,
-  playbackStatus,
-  eventCount,
-  playheadMs,
-  pausedTeacherTimestampMs,
-  learnerDeltaCount,
-  learnerDeltaStatus,
-  conflictStatus,
-  conflictedFiles,
-  canStartRecording,
-  canStopRecording,
-  canPlayRecording,
-  canPausePlayback,
-  canResumeTeacher,
-  canSaveLearnerDelta,
-  canRestoreLearnerDelta,
-  onStartRecording,
-  onStopRecording,
-  onPlayRecording,
-  onPausePlayback,
-  onResumeTeacher,
-  onSaveLearnerDelta,
-  onRestoreLearnerDelta,
-}: InteractivePocControlsModel) {
+export function InteractivePocControls(props: InteractivePocControlsModel) {
+  const {
+    mode,
+    playbackStatus,
+    playheadMs,
+    pausedTeacherTimestampMs,
+    learnerDeltaCount,
+    learnerDeltaStatus,
+    conflictStatus,
+    conflictedFiles,
+    canPlayRecording,
+    canPausePlayback,
+    canResumeTeacher,
+    canSaveLearnerDelta,
+    canRestoreLearnerDelta,
+    onPlayRecording,
+    onPausePlayback,
+    onResumeTeacher,
+    onSaveLearnerDelta,
+    onRestoreLearnerDelta,
+  } = props;
+
   return (
     <div
       aria-label="Interactive timeline debug controls"
@@ -38,12 +35,7 @@ export function InteractivePocControls({
         padding: '0.5rem',
       }}
     >
-      <button type="button" onClick={onStartRecording} disabled={!canStartRecording}>
-        Start Recording
-      </button>
-      <button type="button" onClick={onStopRecording} disabled={!canStopRecording}>
-        Stop Recording
-      </button>
+      <InteractiveAuthoringPanel {...props} />
       <button type="button" onClick={onPlayRecording} disabled={!canPlayRecording}>
         Play Recording
       </button>
@@ -60,8 +52,6 @@ export function InteractivePocControls({
         Restore Learner Delta
       </button>
       <span>Mode: {mode}</span>
-      <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
-      <span>Event count: {eventCount}</span>
       <span>Playback status: {playbackStatus}</span>
       <span>Playhead ms: {playheadMs}</span>
       <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>

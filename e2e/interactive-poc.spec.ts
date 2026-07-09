@@ -22,14 +22,17 @@ test.describe('interactive timeline POC', () => {
     });
   });
 
-  test('records one editor edit into teacher recording localStorage', async ({ page }) => {
+  test('records one editor edit into a saved teacher draft localStorage mirror', async ({ page }) => {
     const startRecording = page.getByRole('button', { name: /start recording/i });
     const stopRecording = page.getByRole('button', { name: /stop recording/i });
+    const saveDraft = page.getByRole('button', { name: /save draft/i });
 
     await expect(startRecording).toBeVisible();
     await expect(stopRecording).toBeVisible();
+    await expect(saveDraft).toBeVisible();
 
     await startRecording.click();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
     await page.getByRole('button', { name: 'example.js' }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
 
@@ -41,6 +44,10 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/event count:\s*[3-9]\d*/i)).toBeVisible();
 
     await stopRecording.click();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(saveDraft).toBeEnabled();
+    await saveDraft.click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
 
     const rawRecording = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
@@ -53,6 +60,51 @@ test.describe('interactive timeline POC', () => {
     expect(Array.isArray(recording.events)).toBeTruthy();
     expect(recording.events.length).toBeGreaterThan(0);
     expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeTruthy();
+  });
+
+  test('teacher can save and load a local draft', async ({ page }) => {
+    await page.getByRole('button', { name: /start recording/i }).click();
+    await page.getByRole('button', { name: 'example.js' }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// teacher local draft edit');
+    await expect(editor).toContainText('// teacher local draft edit');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeVisible();
+
+    const rawRecording = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+
+    expect(rawRecording).toBeTruthy();
+
+    await page.evaluate(() => localStorage.removeItem('interactive-poc.teacherRecording'));
+    await page.reload();
+
+    const loadDraft = page.getByRole('button', { name: /load draft/i });
+
+    await expect(loadDraft).toBeVisible();
+    await expect(loadDraft).toBeEnabled();
+    await loadDraft.click();
+    await expect(page.getByText(/draft status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeVisible();
+
+    const previewDraft = page.getByRole('button', { name: /preview draft/i });
+
+    await expect(previewDraft).toBeEnabled();
+    await previewDraft.click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+
+    const reloadedEditor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await expect(reloadedEditor).toContainText('// teacher local draft edit');
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
   });
 
   test('plays a stored teacher recording without mutating it', async ({ page }) => {

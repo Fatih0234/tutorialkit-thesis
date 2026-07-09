@@ -1,5 +1,5 @@
 import {
-  LocalStorageInteractiveTimelineStorage,
+  IndexedDBInteractiveTimelineStorage,
   TimelinePlaybackClock,
   TimelineRecorder,
   applyLearnerDelta,
@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 
 export type InteractiveMode = 'teacher-playback' | 'learner-editing' | 'idle';
 export type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
+export type DraftStatus = 'unsaved' | 'saved' | 'loaded' | 'discarded' | 'missing';
 
 interface EditorChangeUpdate {
   content: string;
@@ -45,8 +46,15 @@ export interface InteractivePocControlsModel {
   learnerDeltaStatus: string;
   conflictStatus: 'none' | 'conflict';
   conflictedFiles: string[];
+  draftStatus: DraftStatus;
+  currentDraftId: string;
+  recordingDurationMs: number;
   canStartRecording: boolean;
   canStopRecording: boolean;
+  canSaveDraft: boolean;
+  canLoadDraft: boolean;
+  canPreviewDraft: boolean;
+  canDiscardDraft: boolean;
   canPlayRecording: boolean;
   canPausePlayback: boolean;
   canResumeTeacher: boolean;
@@ -54,6 +62,10 @@ export interface InteractivePocControlsModel {
   canRestoreLearnerDelta: boolean;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onSaveDraft: () => void;
+  onLoadDraft: () => void;
+  onPreviewDraft: () => void;
+  onDiscardDraft: () => void;
   onPlayRecording: () => void;
   onPausePlayback: () => void;
   onResumeTeacher: () => void;
@@ -77,7 +89,7 @@ export interface UseInteractivePocResult {
 }
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
-const interactiveTimelineStorage: InteractiveTimelineStorage = new LocalStorageInteractiveTimelineStorage();
+const interactiveTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 
 export function useInteractivePoc({
   tutorialStore,
@@ -87,6 +99,7 @@ export function useInteractivePoc({
   storeRef,
 }: UseInteractivePocOptions): UseInteractivePocResult {
   const recorderRef = useRef<TimelineRecorder | null>(null);
+  const currentDraftRecordingRef = useRef<TeacherRecording | null>(null);
   const playbackClockRef = useRef<TimelinePlaybackClock | null>(null);
   const playbackRecordingRef = useRef<TeacherRecording | null>(null);
   const playbackEventsRef = useRef<TimelineEvent[]>([]);
@@ -109,26 +122,38 @@ export function useInteractivePoc({
   const [learnerDeltaCount, setLearnerDeltaCount] = useState(0);
   const [learnerDeltaStatus, setLearnerDeltaStatus] = useState('idle');
   const [conflictedFiles, setConflictedFiles] = useState<string[]>([]);
+  const [draftStatus, setDraftStatus] = useState<DraftStatus>('missing');
+  const [currentDraftId, setCurrentDraftId] = useState('none');
+  const [recordingDurationMs, setRecordingDurationMs] = useState(0);
 
   function getCurrentFilePath() {
     return selectedFile ?? tutorialStore.currentDocument.get()?.filePath;
   }
 
   function syncEventCount() {
-    setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
+    setEventCount(recorderRef.current?.getRecording()?.events.length ?? currentDraftRecordingRef.current?.events.length ?? 0);
   }
 
-  function getLatestMatchingLearnerDelta(recording = interactiveTimelineStorage.loadTeacherRecording()) {
-    const delta = interactiveTimelineStorage.loadLatestLearnerDelta();
+  function setCurrentDraftRecording(recording: TeacherRecording | null, status: DraftStatus) {
+    currentDraftRecordingRef.current = recording;
+    setDraftStatus(status);
+    setCurrentDraftId(recording?.id ?? 'none');
+    setRecordingDurationMs(recording?.durationMs ?? 0);
+    setEventCount(recording?.events.length ?? 0);
+  }
 
-    if (!recording || !delta) {
+  async function getLatestMatchingLearnerDelta(recording?: TeacherRecording) {
+    const resolvedRecording = recording ?? (await interactiveTimelineStorage.loadTeacherRecording());
+    const delta = await interactiveTimelineStorage.loadLatestLearnerDelta();
+
+    if (!resolvedRecording || !delta) {
       return undefined;
     }
 
     if (
-      delta.teacherRecordingId !== recording.id ||
-      delta.teacherRecordingVersion !== recording.version ||
-      simpleHashFiles(materializeTeacherState(recording, delta.teacherTimestampMs)) !== delta.baseTeacherFilesHash
+      delta.teacherRecordingId !== resolvedRecording.id ||
+      delta.teacherRecordingVersion !== resolvedRecording.version ||
+      simpleHashFiles(materializeTeacherState(resolvedRecording, delta.teacherTimestampMs)) !== delta.baseTeacherFilesHash
     ) {
       return undefined;
     }
@@ -136,13 +161,17 @@ export function useInteractivePoc({
     return delta;
   }
 
-  function syncLearnerDeltaState(recording = interactiveTimelineStorage.loadTeacherRecording()) {
-    const matchingDelta = getLatestMatchingLearnerDelta(recording);
+  async function syncLearnerDeltaState(recording?: TeacherRecording) {
+    const resolvedRecording = recording ?? (await interactiveTimelineStorage.loadTeacherRecording());
+    const matchingDelta = resolvedRecording ? await getLatestMatchingLearnerDelta(resolvedRecording) : undefined;
+    const deltas = await interactiveTimelineStorage.loadLearnerDeltas();
 
-    setHasTeacherRecording(Boolean(recording));
-    setLearnerDeltaCount(interactiveTimelineStorage.loadLearnerDeltas().length);
+    setHasTeacherRecording(Boolean(resolvedRecording));
+    setLearnerDeltaCount(deltas.length);
     setHasRestorableLearnerDelta(Boolean(matchingDelta));
-    setConflictedFiles(recording && matchingDelta ? getLearnerDeltaConflicts(recording, matchingDelta).filePaths : []);
+    setConflictedFiles(
+      resolvedRecording && matchingDelta ? getLearnerDeltaConflicts(resolvedRecording, matchingDelta).filePaths : [],
+    );
   }
 
   function createLearnerDeltaId() {
@@ -300,8 +329,8 @@ export function useInteractivePoc({
     return events.at(-1)?.tMs ?? 0;
   }
 
-  function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }) {
-    const recording = playbackRecordingRef.current ?? interactiveTimelineStorage.loadTeacherRecording();
+  function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }, recordingOverride?: TeacherRecording) {
+    const recording = recordingOverride ?? playbackRecordingRef.current;
 
     stopPlaybackClock();
 
@@ -349,14 +378,14 @@ export function useInteractivePoc({
     clock.playFrom(startMs);
   }
 
-  function onPlayRecording() {
-    const recording = interactiveTimelineStorage.loadTeacherRecording() ?? null;
+  async function onPlayRecording() {
+    const recording = (await interactiveTimelineStorage.loadTeacherRecording()) ?? null;
 
     playbackRecordingRef.current = recording;
-    syncLearnerDeltaState(recording ?? undefined);
+    await syncLearnerDeltaState(recording ?? undefined);
     setHasPausedTeacherTimestamp(false);
     setPausedTimestampMs(0);
-    playRecordingFrom(-1, { resetToBase: true });
+    playRecordingFrom(-1, { resetToBase: true }, recording ?? undefined);
   }
 
   function onPausePlayback() {
@@ -392,6 +421,10 @@ export function useInteractivePoc({
     const recording = recorder.start({ lessonId, version: 1, baseFiles });
 
     recorderRef.current = recorder;
+    currentDraftRecordingRef.current = recording;
+    setDraftStatus('unsaved');
+    setCurrentDraftId(recording.id);
+    setRecordingDurationMs(0);
     setIsRecording(true);
     setEventCount(recording.events.length);
   }
@@ -399,23 +432,82 @@ export function useInteractivePoc({
   function onStopRecording() {
     const stopped = recorderRef.current?.stop();
 
+    recorderRef.current = null;
+
     if (!stopped) {
       setIsRecording(false);
       return;
     }
 
-    interactiveTimelineStorage.saveTeacherRecording(stopped);
     setIsRecording(false);
-    setEventCount(stopped.events.length);
-    syncLearnerDeltaState(stopped);
+    setCurrentDraftRecording(stopped, 'unsaved');
   }
 
-  function onSaveLearnerDelta() {
+  async function onSaveDraft() {
+    const recording = currentDraftRecordingRef.current;
+
+    if (!recording || isRecording) {
+      setDraftStatus('missing');
+      return;
+    }
+
+    await interactiveTimelineStorage.saveTeacherRecordingDraft(recording);
+    playbackRecordingRef.current = recording;
+    setCurrentDraftRecording(recording, 'saved');
+    await syncLearnerDeltaState(recording);
+  }
+
+  async function onLoadDraft() {
+    const [latestDraft] = await interactiveTimelineStorage.listTeacherRecordingDrafts();
+
+    if (!latestDraft) {
+      setCurrentDraftRecording(null, 'missing');
+      return;
+    }
+
+    const recording = await interactiveTimelineStorage.loadTeacherRecordingDraft(latestDraft.id);
+
+    if (!recording) {
+      setCurrentDraftRecording(null, 'missing');
+      return;
+    }
+
+    playbackRecordingRef.current = recording;
+    setCurrentDraftRecording(recording, 'loaded');
+    await syncLearnerDeltaState(recording);
+  }
+
+  async function onPreviewDraft() {
+    const recording = currentDraftRecordingRef.current;
+
+    if (!recording || isRecording) {
+      setDraftStatus('missing');
+      return;
+    }
+
+    playbackRecordingRef.current = recording;
+    await syncLearnerDeltaState(recording);
+    setHasPausedTeacherTimestamp(false);
+    setPausedTimestampMs(0);
+    playRecordingFrom(-1, { resetToBase: true }, recording);
+  }
+
+  async function onDiscardDraft() {
+    currentDraftRecordingRef.current = null;
+    playbackRecordingRef.current = null;
+    setDraftStatus('discarded');
+    setCurrentDraftId('none');
+    setRecordingDurationMs(0);
+    setEventCount(0);
+    await syncLearnerDeltaState();
+  }
+
+  async function onSaveLearnerDelta() {
     if (modeRef.current !== 'learner-editing' || !hasPausedTeacherTimestamp) {
       return;
     }
 
-    const recording = interactiveTimelineStorage.loadTeacherRecording();
+    const recording = await interactiveTimelineStorage.loadTeacherRecording();
 
     setHasTeacherRecording(Boolean(recording));
 
@@ -442,18 +534,18 @@ export function useInteractivePoc({
       createdAt: new Date().toISOString(),
     };
 
-    interactiveTimelineStorage.saveLearnerDelta(delta);
+    await interactiveTimelineStorage.saveLearnerDelta(delta);
     setLearnerDeltaStatus('saved');
-    syncLearnerDeltaState(recording);
+    await syncLearnerDeltaState(recording);
   }
 
-  function onRestoreLearnerDelta() {
-    const recording = interactiveTimelineStorage.loadTeacherRecording();
-    const delta = getLatestMatchingLearnerDelta(recording);
+  async function onRestoreLearnerDelta() {
+    const recording = await interactiveTimelineStorage.loadTeacherRecording();
+    const delta = await getLatestMatchingLearnerDelta(recording);
 
     if (!recording || !delta) {
       setLearnerDeltaStatus('missing matching delta');
-      syncLearnerDeltaState(recording);
+      await syncLearnerDeltaState(recording);
       return;
     }
 
@@ -483,7 +575,7 @@ export function useInteractivePoc({
       setLearnerDeltaStatus('restored');
     } finally {
       releasePlaybackGuardSoon();
-      syncLearnerDeltaState(recording);
+      await syncLearnerDeltaState(recording);
     }
   }
 
@@ -532,7 +624,7 @@ export function useInteractivePoc({
   }
 
   useEffect(() => {
-    syncLearnerDeltaState();
+    void syncLearnerDeltaState();
   }, [storeRef]);
 
   useEffect(() => {
@@ -543,6 +635,7 @@ export function useInteractivePoc({
     };
   }, []);
 
+  const hasCurrentDraftRecording = currentDraftRecordingRef.current !== null;
   const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp;
   const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback';
 
@@ -559,8 +652,15 @@ export function useInteractivePoc({
       learnerDeltaStatus,
       conflictStatus: conflictedFiles.length > 0 ? 'conflict' : 'none',
       conflictedFiles,
+      draftStatus,
+      currentDraftId,
+      recordingDurationMs,
       canStartRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
       canStopRecording: isRecording,
+      canSaveDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
+      canLoadDraft: !isRecording && mode === 'idle',
+      canPreviewDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
+      canDiscardDraft: (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
       canPlayRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
       canPausePlayback: isPlaying,
       canResumeTeacher: mode === 'learner-editing',
@@ -568,6 +668,10 @@ export function useInteractivePoc({
       canRestoreLearnerDelta,
       onStartRecording,
       onStopRecording,
+      onSaveDraft,
+      onLoadDraft,
+      onPreviewDraft,
+      onDiscardDraft,
       onPlayRecording,
       onPausePlayback,
       onResumeTeacher,

@@ -1,12 +1,13 @@
 # Interactive POC architecture
 
-This document is the local architecture checkpoint for the interactive tutorial POC as of Phase 7. It covers the browser-only recorder, timeline-clock playback, learner delta save/restore, and conflict detection behavior.
+This document is the local architecture checkpoint for the interactive tutorial POC as of Milestone A. It covers the browser-only recorder, local authoring draft lifecycle, async IndexedDB-backed storage adapter, timeline-clock playback, learner delta save/restore, and conflict detection behavior.
 
 ## Scope and invariants
 
 The POC implements only the interactivity layer:
 
 - teacher editor/file actions are recorded into a timeline;
+- teachers can save, load, discard, and preview local recording drafts;
 - learners can replay that timeline;
 - learners can pause, edit their own workspace, and save a file-level delta;
 - saved learner deltas can be restored after teacher playback continues;
@@ -14,15 +15,15 @@ The POC implements only the interactivity layer:
 
 Important invariants:
 
-- **Teacher timeline is immutable.** Learner save/restore must not modify `interactive-poc.teacherRecording`.
-- **Learner work is separate.** Learner changes are stored as learner-owned deltas in `interactive-poc.learnerDeltas`.
+- **Teacher timeline is immutable.** Learner save/restore must not modify saved teacher recording drafts or the `interactive-poc.teacherRecording` compatibility mirror.
+- **Learner work is separate.** Learner changes are stored as learner-owned deltas in IndexedDB and mirrored to `interactive-poc.learnerDeltas`.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
 - **File-level deltas only.** The POC does not compute text patches or merge hunks.
 
 ## 1. Current user flow
 
-The visible debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx`. It exposes crude POC controls and status text.
+The visible local authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle is now explicit.
 
 ### Start Recording
 
@@ -43,21 +44,39 @@ Recorded callback events currently include:
 
 ### Stop Recording
 
-Stops the active `TimelineRecorder` and saves the resulting immutable teacher recording to localStorage:
+Stops the active `TimelineRecorder` and keeps the resulting teacher recording in memory as the current unsaved draft. Stopping does not require a backend or immediate publish step. The draft can then be saved, previewed, or discarded.
+
+Stopping also updates debug state such as draft status, current draft id, recording duration, and event count.
+
+### Save Draft
+
+Saves the current stopped teacher recording draft through the async storage adapter. The default browser adapter writes the draft to IndexedDB and mirrors the latest teacher recording to the compatibility key:
 
 ```text
 interactive-poc.teacherRecording
 ```
 
-Stopping also updates debug state such as event count and learner-delta restore/conflict availability.
+Saving a draft does not mutate learner deltas and does not contact a backend.
+
+### Load Draft
+
+Loads the latest local teacher recording draft from IndexedDB through the async storage adapter. If IndexedDB is unavailable, the adapter falls back to the localStorage compatibility adapter. Loading also refreshes the `interactive-poc.teacherRecording` mirror so existing POC debugging/tests can inspect the latest recording shape.
+
+### Preview Draft
+
+Previews the currently loaded/saved draft using the same timeline playback engine as learner playback. Preview does not start recording and does not mutate the saved draft.
+
+### Discard Draft
+
+Clears the current in-memory draft and marks the authoring panel as discarded. Milestone A keeps persisted localStorage compatibility keys in place and does not delete learner deltas.
 
 ### Play Recording
 
-Loads the teacher recording from localStorage and replays it in `teacher-playback` mode.
+Loads the latest teacher recording through the async storage adapter and replays it in `teacher-playback` mode.
 
 Behavior:
 
-- loads `interactive-poc.teacherRecording`;
+- loads the latest recording from IndexedDB or the `interactive-poc.teacherRecording` compatibility key;
 - resets the workspace to the recording base files for a fresh playback;
 - sorts events by `tMs`, then `seq`;
 - advances one `requestAnimationFrame` timeline clock and applies due events in order;
@@ -93,7 +112,7 @@ Behavior:
 - applies teacher events with `tMs > pausedTeacherTimestampMs` as they become due;
 - does **not** reset the workspace to base files on resume;
 - later teacher `file.changed` events can overwrite the visible workspace;
-- saved learner deltas remain recoverable from localStorage.
+- saved learner deltas remain recoverable from IndexedDB and the localStorage compatibility mirror.
 
 ### Save Learner Delta
 
@@ -105,7 +124,7 @@ Behavior:
 2. materializes teacher files at the paused timestamp;
 3. reads the current learner workspace files;
 4. diffs teacher-at-pause files against learner files;
-5. saves a `LearnerDelta` to `interactive-poc.learnerDeltas`;
+5. saves a `LearnerDelta` through the async storage adapter; the default IndexedDB adapter mirrors the array to `interactive-poc.learnerDeltas`;
 6. recomputes learner delta count, restore availability, and conflict status.
 
 The delta is keyed by:
@@ -309,11 +328,26 @@ interface LearnerDeltaConflicts {
 
 The React hook currently displays only `filePaths` as `Conflict status` and `Conflicted files`.
 
-## 3. localStorage keys
+## 3. Browser storage
 
-The POC uses browser localStorage only.
+Milestone A uses an async storage adapter. The default browser implementation writes structured data to IndexedDB and mirrors the legacy localStorage keys for compatibility with existing tests and manual debugging.
 
-### `interactive-poc.teacherRecording`
+### IndexedDB
+
+The default database is:
+
+```text
+interactive-timeline-poc
+```
+
+Current object stores:
+
+- `teacherRecordings`, keyed by `TeacherRecording.id`;
+- `learnerDeltas`, keyed by `LearnerDelta.id`.
+
+The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. It migrates existing localStorage values into IndexedDB without deleting the old keys.
+
+### `interactive-poc.teacherRecording` compatibility mirror
 
 Stores one serialized `TeacherRecording` object:
 
@@ -323,7 +357,7 @@ localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(recordin
 
 Loading returns `undefined` when no recording exists.
 
-### `interactive-poc.learnerDeltas`
+### `interactive-poc.learnerDeltas` compatibility mirror
 
 Stores a serialized array of `LearnerDelta` objects:
 
@@ -331,7 +365,7 @@ Stores a serialized array of `LearnerDelta` objects:
 localStorage.setItem('interactive-poc.learnerDeltas', JSON.stringify(deltas));
 ```
 
-Saving appends to the existing array. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta.
+The IndexedDB adapter mirrors the full learner-delta array to this key after saves. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta.
 
 ## 4. Runtime modules
 
@@ -393,15 +427,24 @@ Owns the minimal timeline playback clock:
 
 ### `storage.ts`
 
-Owns localStorage persistence:
+Owns the legacy localStorage compatibility helpers and keys:
 
 - `saveTeacherRecording(recording)`;
 - `loadTeacherRecording()`;
 - `saveLearnerDelta(delta)`;
+- `saveLearnerDeltas(deltas)`;
 - `loadLearnerDeltas()`;
 - `loadLatestLearnerDelta()`.
 
 This module intentionally has no backend/API implementation.
+
+### `storage-adapter.ts`
+
+Defines the async `InteractiveTimelineStorage` boundary used by React. It includes teacher recording, learner delta, and teacher draft methods. `LocalStorageInteractiveTimelineStorage` remains as the compatibility/fallback adapter.
+
+### `indexeddb-storage-adapter.ts`
+
+Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts and learner deltas to IndexedDB, migrates existing localStorage values when possible, mirrors latest teacher/learner data back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable.
 
 ## 5. React integration
 
@@ -428,6 +471,8 @@ It should not contain the recorder/playback/delta implementation details.
 Responsibilities:
 
 - recording lifecycle;
+- local teacher draft save/load/preview/discard lifecycle;
+- async storage calls and compatibility state sync;
 - playback lifecycle;
 - pause/resume mode transitions;
 - playback guard;
@@ -448,9 +493,22 @@ Current playback statuses:
 type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
 ```
 
+### `InteractiveAuthoringPanel.tsx`
+
+`packages/react/src/Panels/InteractiveAuthoringPanel.tsx` renders the teacher-facing local authoring controls:
+
+- Start Recording;
+- Stop Recording;
+- Save Draft;
+- Load Draft;
+- Preview Draft;
+- Discard Draft.
+
+It also displays draft status, current draft id, recording duration, recording status, and event count.
+
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders only the visible debug controls and status text.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the authoring panel plus learner/debug controls and status text.
 
 It receives a control model from `useInteractivePoc` and does not own persistence, timeline, or workspace logic.
 
@@ -458,7 +516,7 @@ It receives a control model from `useInteractivePoc` and does not own persistenc
 
 Known limitations are intentional for the POC:
 
-- localStorage only;
+- browser-local IndexedDB/localStorage compatibility storage only;
 - no backend persistence;
 - no account/auth/user identity beyond `local-poc-user`;
 - no merge engine;
@@ -473,7 +531,8 @@ Known limitations are intentional for the POC:
 - file add/remove restore UI is not implemented;
 - playback clock is minimal and does not yet support seeking, speed changes, drift correction, or audio sync;
 - editor selection is stored opaquely and not restored as a first-class feature;
-- localStorage parsing assumes valid POC JSON.
+- localStorage parsing assumes valid POC JSON;
+- draft listing loads the latest local draft and does not yet provide a full draft picker/history drawer.
 
 ## 7. Next phases
 
@@ -482,8 +541,8 @@ Candidate future phases:
 1. **Richer playback clock controls**
    - support seeking, speed, drift correction, cancellation, and deterministic replay state.
 
-2. **Backend persistence API shape**
-   - define server contracts for teacher recordings and learner deltas after localStorage POC validation.
+2. **Backend persistence adapter/API implementation**
+   - implement the documented server contracts after the local authoring storage path is validated.
 
 3. **Conflict resolution UX**
    - show conflicted files clearly;
