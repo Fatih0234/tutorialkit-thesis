@@ -9,12 +9,23 @@ export interface FilesDiff {
 export interface LearnerDeltaConflictEvent {
   filePath: string;
   eventId: string;
+  eventSeq?: number;
   teacherTimestampMs: number;
+}
+
+export interface LearnerDeltaConflictDetail {
+  filePath: string;
+  learnerChangedFile: true;
+  teacherChangedSameFileAfterLearnerTimestamp: true;
+  teacherEventId: string;
+  teacherEventSeq?: number;
+  teacherEventTimestampMs: number;
 }
 
 export interface LearnerDeltaConflicts {
   filePaths: string[];
   events: LearnerDeltaConflictEvent[];
+  details: LearnerDeltaConflictDetail[];
 }
 
 export function diffFiles(beforeInput: FilesSnapshot, afterInput: FilesSnapshot): FilesDiff {
@@ -61,9 +72,10 @@ export function getLearnerDeltaConflicts(recording: TeacherRecording, delta: Lea
   ]);
   const conflictedFiles = new Set<string>();
   const events: LearnerDeltaConflictEvent[] = [];
+  const details: LearnerDeltaConflictDetail[] = [];
 
   if (learnerChangedFiles.size === 0) {
-    return { filePaths: [], events: [] };
+    return { filePaths: [], events: [], details: [] };
   }
 
   for (const event of recording.events) {
@@ -78,18 +90,35 @@ export function getLearnerDeltaConflicts(recording: TeacherRecording, delta: Lea
     }
 
     conflictedFiles.add(filePath);
-    events.push({ filePath, eventId: event.id, teacherTimestampMs: event.tMs });
+    events.push({ filePath, eventId: event.id, eventSeq: event.seq, teacherTimestampMs: event.tMs });
+    details.push({
+      filePath,
+      learnerChangedFile: true,
+      teacherChangedSameFileAfterLearnerTimestamp: true,
+      teacherEventId: event.id,
+      teacherEventSeq: event.seq,
+      teacherEventTimestampMs: event.tMs,
+    });
   }
+
+  const sortConflictEvents = (a: LearnerDeltaConflictEvent, b: LearnerDeltaConflictEvent) => {
+    if (a.teacherTimestampMs !== b.teacherTimestampMs) {
+      return a.teacherTimestampMs - b.teacherTimestampMs;
+    }
+
+    return a.filePath.localeCompare(b.filePath);
+  };
+  const detailToConflictEvent = (detail: LearnerDeltaConflictDetail): LearnerDeltaConflictEvent => ({
+    filePath: detail.filePath,
+    eventId: detail.teacherEventId,
+    eventSeq: detail.teacherEventSeq,
+    teacherTimestampMs: detail.teacherEventTimestampMs,
+  });
 
   return {
     filePaths: [...conflictedFiles].sort((a, b) => a.localeCompare(b)),
-    events: events.sort((a, b) => {
-      if (a.teacherTimestampMs !== b.teacherTimestampMs) {
-        return a.teacherTimestampMs - b.teacherTimestampMs;
-      }
-
-      return a.filePath.localeCompare(b.filePath);
-    }),
+    events: events.sort(sortConflictEvents),
+    details: details.sort((a, b) => sortConflictEvents(detailToConflictEvent(a), detailToConflictEvent(b))),
   };
 }
 

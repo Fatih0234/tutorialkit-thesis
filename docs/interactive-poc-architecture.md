@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the architecture checkpoint for the interactive tutorial POC as of Milestone E. It covers the dev identity/session model, ownership boundaries, role-separated product UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, and conflict warning behavior.
+This document is the architecture checkpoint for the interactive tutorial POC as of Milestone F. It covers the dev identity/session model, ownership boundaries, role-separated product UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, and explicit conflict resolution UX.
 
 ## Scope and invariants
 
@@ -16,7 +16,8 @@ The POC implements only the interactivity layer:
 - signed-in learner/both users can use product-facing controls to try the lesson, edit their own workspace, and save a file-level delta;
 - learner work is scoped to the signed-in learner;
 - saved learner work can be restored after teacher playback continues;
-- conflict warnings report when later teacher timeline edits touch the same learner-changed files.
+- conflict warnings report when later teacher timeline edits touch the same learner-changed files;
+- conflicted restores require an explicit learner choice: restore anyway, keep teacher version, view details, or cancel.
 
 Important invariants:
 
@@ -26,7 +27,7 @@ Important invariants:
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
 - **Media is an attachment, not a replacement.** Milestone E still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
-- **File-level deltas only.** The POC does not compute text patches or merge hunks.
+- **File-level deltas only.** The POC does not compute text patches, merge hunks, or run automatic merges.
 - **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
 - **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing requires a dev teacher/both session.
 
@@ -35,7 +36,7 @@ Important invariants:
 Milestone E keeps the Milestone D product shell and adds a dev identity panel. Milestone D replaced the single raw control strip with a product-facing shell rendered by `packages/react/src/Panels/InteractivePocControls.tsx`. The shell has two role views:
 
 - **Teacher dashboard** for recording, draft management, publishing, and preview.
-- **Learner playback** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and reading conflict warnings.
+- **Learner playback** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
 
 A small `Debug details` disclosure remains for development notes, but primary tests and user flows use visible product controls.
 
@@ -315,18 +316,19 @@ A delta is considered restorable when:
 - its `teacherRecordingVersion` matches the loaded teacher recording;
 - its `baseTeacherFilesHash` matches the materialized teacher state at `teacherTimestampMs`.
 
-Behavior:
+No-conflict behavior remains one click:
 
 - materializes teacher files at the delta timestamp;
 - applies the learner file-level delta over that base;
 - updates existing TutorialKit files in the workspace;
 - restores `selectedFile` when it still exists;
-- does not add/remove file-tree entries in the current UI;
-- does not block on conflicts.
+- does not add/remove file-tree entries in the current UI.
 
-### Conflict warning
+If conflicts exist, `Restore My Work` does not immediately apply the delta. It opens the Milestone F conflict resolution panel instead.
 
-Phase 6 adds non-destructive conflict detection.
+### Conflict warning and resolution
+
+Phase 6 added non-destructive conflict detection. Milestone F keeps that detection client-side and adds explicit learner choices.
 
 Visible learner fields:
 
@@ -335,19 +337,33 @@ Conflict warning: none | conflict
 Conflicted files: /example.js, ...
 ```
 
+When conflicts exist, Learner playback also shows:
+
+```text
+Conflict warning: your saved work touches files the teacher changed later.
+```
+
 A conflict exists when:
 
 - the learner delta changes a file path in `addedOrModified` or `removed`;
 - the teacher recording has a later event with `tMs > delta.teacherTimestampMs`;
 - the later teacher event modifies the same file path;
-- Phase 6 considers only `file.changed` as a teacher-modifying event type.
+- conflict detection considers only `file.changed` as a teacher-modifying event type.
 
-Conflict detection is informational only:
+When the learner attempts a conflicted restore, the conflict resolution panel offers:
 
-- it does not merge;
-- it does not block restore;
-- it does not show a choice modal;
-- it does not mutate the teacher recording.
+- **Restore My Work Anyway**: applies the saved learner delta exactly as before and sets status to `restored with conflicts`;
+- **Keep Teacher Version**: closes the panel, leaves the current teacher/materialized workspace state visible, and sets status to `kept teacher version`;
+- **View Conflict Details**: expands per-file details with file path, learner-changed-file marker, later teacher event timestamp, teacher event id, and teacher event seq when present;
+- **Cancel**: closes the panel without changing files.
+
+Conflict resolution is explicit and non-merge:
+
+- it does not run automatic merge;
+- it does not compute text patches or hunk merges;
+- it does not mutate `TeacherRecording`;
+- it does not mutate or delete the saved `LearnerDelta`;
+- it does not create a merged delta or conflict-resolution record yet.
 
 Conflict state is recomputed on component initialization, teacher recording play/load, learner delta save, and learner delta restore.
 
@@ -521,21 +537,33 @@ Source type lives in `packages/runtime/src/interactive-timeline/learner-delta.ts
 interface LearnerDeltaConflictEvent {
   filePath: string;
   eventId: string;
+  eventSeq?: number;
   teacherTimestampMs: number;
+}
+
+interface LearnerDeltaConflictDetail {
+  filePath: string;
+  learnerChangedFile: true;
+  teacherChangedSameFileAfterLearnerTimestamp: true;
+  teacherEventId: string;
+  teacherEventSeq?: number;
+  teacherEventTimestampMs: number;
 }
 
 interface LearnerDeltaConflicts {
   filePaths: string[];
   events: LearnerDeltaConflictEvent[];
+  details: LearnerDeltaConflictDetail[];
 }
 ```
 
 `getLearnerDeltaConflicts(recording, delta)` returns:
 
 - `filePaths`: sorted normalized paths with conflicts;
-- `events`: matching later teacher `file.changed` events with ids and timestamps.
+- `events`: matching later teacher `file.changed` events with ids, seq values when present, and timestamps;
+- `details`: per-file/event details used by the conflict resolution panel.
 
-The React hook currently displays only `filePaths` as `Conflict warning` and `Conflicted files`.
+The React hook displays `filePaths` as `Conflict warning` and `Conflicted files`, and passes `details` to the Milestone F resolution panel.
 
 ## 3. Storage
 
@@ -800,7 +828,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone E role shell with dev identity plus Teacher and Learner views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, or workspace logic.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone F role shell with dev identity plus Teacher and Learner views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, or workspace logic.
 
 ### `InteractiveTeacherDashboard.tsx`
 
@@ -808,7 +836,7 @@ Renders the teacher product dashboard, local draft controls, published recording
 
 ### `InteractiveLearnerPlayback.tsx`
 
-Renders the learner product playback view with published lessons, Open Recording, Play Lesson, Try It Yourself, Save My Work, Restore My Work, and conflict warning status.
+Renders the learner product playback view with published lessons, Open Recording, Play Lesson, Try It Yourself, Save My Work, Restore My Work, conflict warning status, and the conflict resolution panel/actions.
 
 ### `InteractiveRecordingLibrary.tsx`
 
@@ -829,9 +857,9 @@ Known limitations are intentional for the POC:
 - no production database;
 - no production object storage or cloud media bucket;
 - no merge engine;
+- no automatic merge;
 - no patch-based/hunk-level deltas;
-- no conflict resolution choices;
-- conflicts do not block restore;
+- no persisted conflict-resolution records yet;
 - product-facing POC UI exists, but it is not final production design;
 - no terminal recording;
 - no preview iframe/internal app recording;
@@ -858,10 +886,10 @@ Candidate future phases:
 3. **Production auth/user ownership hardening**
    - replace dev sessions with production authentication, authorization, ownership transfer, and audit rules.
 
-4. **Conflict resolution UX**
-   - show conflicted files clearly;
-   - let the learner choose teacher version, learner version, or eventually a merged version;
-   - keep detection separate from resolution.
+4. **Richer conflict resolution persistence**
+   - persist learner conflict-resolution decisions if product needs audit/history;
+   - add richer side-by-side file views without automatic merge;
+   - keep detection separate from any future resolution records.
 
 5. **Production UI polish**
    - improve layout, history drawers, empty states, and workspace mode affordances beyond the Milestone E POC shell.

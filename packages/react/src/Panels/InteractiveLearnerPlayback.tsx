@@ -10,6 +10,9 @@ export function InteractiveLearnerPlayback({
   learnerDeltaStatus,
   conflictStatus,
   conflictedFiles,
+  conflictDetails,
+  isConflictResolutionVisible,
+  areConflictDetailsVisible,
   publishedStatus,
   publishedRecordingId,
   recordingStorageSource,
@@ -30,7 +33,13 @@ export function InteractiveLearnerPlayback({
   onResumeTeacher,
   onSaveLearnerDelta,
   onRestoreLearnerDelta,
+  onRestoreLearnerDeltaAnyway,
+  onKeepTeacherVersion,
+  onViewConflictDetails,
+  onCancelConflictResolution,
 }: InteractivePocControlsModel) {
+  const hasConflicts = conflictStatus === 'conflict';
+
   return (
     <section aria-labelledby="interactive-learner-heading" style={{ display: 'grid', gap: '1rem' }}>
       <div>
@@ -92,6 +101,54 @@ export function InteractiveLearnerPlayback({
         <span>Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}</span>
         <span>Work identity: {canUseLearnerWork ? 'learner allowed' : 'learner sign-in required'}</span>
       </div>
+
+      {hasConflicts ? (
+        <section aria-label="Conflict warning" role="alert" style={{ border: '1px solid #f59e0b', padding: '0.75rem' }}>
+          <p style={{ marginTop: 0 }}>Conflict warning: your saved work touches files the teacher changed later.</p>
+          <ul aria-label="Conflicted files">
+            {conflictedFiles.map((filePath) => (
+              <li key={filePath}>{filePath}</li>
+            ))}
+          </ul>
+        </section>
+      ) : undefined}
+
+      {isConflictResolutionVisible ? (
+        <section aria-label="Conflict resolution" style={{ border: '1px solid #f59e0b', padding: '0.75rem' }}>
+          <h3 style={{ marginTop: 0 }}>Conflict resolution</h3>
+          <p>Choose how to handle saved work that touches teacher-updated files. No automatic merge will run.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <button type="button" onClick={onRestoreLearnerDeltaAnyway}>
+              Restore My Work Anyway
+            </button>
+            <button type="button" onClick={onKeepTeacherVersion}>
+              Keep Teacher Version
+            </button>
+            <button type="button" onClick={onViewConflictDetails}>
+              View Conflict Details
+            </button>
+            <button type="button" onClick={onCancelConflictResolution}>
+              Cancel
+            </button>
+          </div>
+          {areConflictDetailsVisible ? (
+            <div aria-label="Conflict details">
+              <h4>Conflict details</h4>
+              <ul>
+                {conflictDetails.map((detail) => (
+                  <li key={`${detail.filePath}-${detail.teacherEventId}-${detail.teacherEventTimestampMs}`}>
+                    <strong>{detail.filePath}</strong>: learner changed file:{' '}
+                    {detail.learnerChangedFile ? 'yes' : 'no'}; teacher changed same file after learner timestamp:{' '}
+                    {detail.teacherChangedSameFileAfterLearnerTimestamp ? 'yes' : 'no'}; teacher event timestamp ms:{' '}
+                    {detail.teacherEventTimestampMs}; teacher event id: {detail.teacherEventId}; teacher event seq:{' '}
+                    {detail.teacherEventSeq ?? 'none'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : undefined}
+        </section>
+      ) : undefined}
     </section>
   );
 }

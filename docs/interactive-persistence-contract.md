@@ -1,8 +1,8 @@
 # Interactive persistence contract
 
-This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E adds a minimal dev identity/session layer and ownership enforcement on top of the same storage contract. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
+This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E added a minimal dev identity/session layer and ownership enforcement on top of the same storage contract. Milestone F adds conflict resolution UX without changing persistence writes. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
 
-The contract preserves the Milestone E local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
+The contract preserves the Milestone F local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
 
 ## Non-goals
 
@@ -13,15 +13,16 @@ This document does not specify or implement:
 - production storage infrastructure;
 - paid/cloud object storage for media blobs;
 - merge algorithms;
-- conflict resolution UI;
+- automatic conflict merging;
+- persisted conflict-resolution decision records;
 - terminal recording persistence;
 - preview iframe recording persistence;
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone E local-draft, remote-published, and identity status
+## Milestone F local-draft, remote-published, identity, and conflict UX status
 
-Milestone E keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, and dev auth calls. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
+Milestone F keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, and dev auth calls. Conflict resolution is currently client-side UI behavior over already-loaded teacher recordings and learner deltas; it does not add new persistence writes. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
@@ -43,14 +44,16 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
 `RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the dev session cookie. Media upload uses `FormData`/`multipart/form-data`. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone E. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 
-## Milestone E product UX and ownership behavior
+## Milestone F product UX, ownership, and conflict behavior
 
-Milestone E keeps the Milestone D recording lists/selectors/product labels and adds dev identity/ownership behavior over the existing adapters:
+Milestone F keeps the Milestone D recording lists/selectors/product labels and Milestone E dev identity/ownership behavior over the existing adapters, then adds conflict resolution choices when a conflicted restore is attempted:
 
 - the **Teacher dashboard** lists local drafts from IndexedDB and published recordings from `/api/interactive/teacher-recordings`;
 - the **Learner playback** view lists published recordings only;
 - product labels such as **Save My Work** and **Restore My Work** still persist and restore `LearnerDelta` records, now scoped to the signed-in learner;
 - **Conflict warning** is still computed from immutable teacher events and learner delta paths;
+- when a conflicted restore is attempted, the learner chooses **Restore My Work Anyway**, **Keep Teacher Version**, **View Conflict Details**, or **Cancel**;
+- these choices do not mutate `TeacherRecording`, do not mutate/delete `LearnerDelta`, and do not create a merged delta or resolution record;
 - “Teacher” and “Learner” remain product UI sections, but publish/save/restore actions now check the dev session user role.
 
 `TeacherRecordingDraftSummary` now includes `mediaKind` so list views can show `none`, `audio`, or `webcam` without loading media blobs. Media blobs remain outside localStorage.
@@ -293,7 +296,17 @@ A computed or cached summary of later teacher changes that touch learner-changed
 interface ConflictEventSummary {
   filePath: string;
   eventId: string;
+  eventSeq?: number;
   teacherTimestampMs: number;
+}
+
+interface ConflictDetailSummary {
+  filePath: string;
+  learnerChangedFile: true;
+  teacherChangedSameFileAfterLearnerTimestamp: true;
+  teacherEventId: string;
+  teacherEventSeq?: number;
+  teacherEventTimestampMs: number;
 }
 
 interface ConflictSummary {
@@ -303,6 +316,7 @@ interface ConflictSummary {
   status: 'none' | 'conflict';
   filePaths: string[];
   events: ConflictEventSummary[];
+  details: ConflictDetailSummary[];
   computedAt: string;
 }
 ```
@@ -313,11 +327,11 @@ Current conflict rule:
 - find teacher `file.changed` events where `event.tMs > delta.teacherTimestampMs`;
 - report a conflict when the later teacher event path is in the learner-changed file set.
 
-Conflict detection is non-destructive and informational only.
+Conflict detection is non-destructive. Milestone F uses it to gate conflicted restores behind explicit UI choices, but the choices still do not write any conflict result or merged delta.
 
 ## 3. API shape
 
-The API shape is intentionally minimal and resource-oriented. Milestone C introduced persistence routes under `/api/interactive/*`, Milestone D used them for product-facing recording lists and open flows, and Milestone E adds dev auth/session routes plus ownership checks. Production auth remains an open decision, but dev session ownership is enforced for this POC.
+The API shape is intentionally minimal and resource-oriented. Milestone C introduced persistence routes under `/api/interactive/*`, Milestone D used them for product-facing recording lists and open flows, Milestone E added dev auth/session routes plus ownership checks, and Milestone F keeps conflict computation client-side. Production auth remains an open decision, but dev session ownership is enforced for this POC.
 
 ### `POST /api/interactive/teacher-recordings`
 
@@ -651,7 +665,18 @@ Response body:
       {
         "filePath": "/example.js",
         "eventId": "event-future-change",
+        "eventSeq": 2,
         "teacherTimestampMs": 2000
+      }
+    ],
+    "details": [
+      {
+        "filePath": "/example.js",
+        "learnerChangedFile": true,
+        "teacherChangedSameFileAfterLearnerTimestamp": true,
+        "teacherEventId": "event-future-change",
+        "teacherEventSeq": 2,
+        "teacherEventTimestampMs": 2000
       }
     ],
     "computedAt": "2026-01-01T00:00:03.000Z"
@@ -661,7 +686,9 @@ Response body:
 
 Rules:
 
+- not required for Milestone F because the client computes conflicts from the loaded teacher recording and learner delta;
 - should not mutate the learner delta or teacher recording;
+- should not create a merge result or conflict-resolution decision record;
 - may compute on read from teacher events and delta paths;
 - may use a cache if invalidation rules are clear.
 
