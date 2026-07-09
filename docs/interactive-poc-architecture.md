@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the architecture checkpoint for the interactive tutorial POC as of Milestone C. It covers the structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner delta save/restore, and conflict detection behavior.
+This document is the architecture checkpoint for the interactive tutorial POC as of Milestone D. It covers the role-separated product UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, and conflict warning behavior.
 
 ## Scope and invariants
 
@@ -8,13 +8,13 @@ The POC implements only the interactivity layer:
 
 - teacher editor/file actions are recorded into a structured timeline;
 - teachers can optionally attach microphone narration or webcam media to the same timeline;
-- teachers can save, load, discard, and preview local recording drafts;
+- teachers can see local drafts, then save, load, discard, delete, and preview local recording drafts;
 - teachers can publish recordings and media to local backend/dev storage;
-- teachers and learners can load published recordings after a browser reload;
+- teachers and learners can list and load published recordings after a browser reload;
 - learners can replay that timeline;
-- learners can pause, edit their own workspace, and save a file-level delta;
-- saved learner deltas can be restored after teacher playback continues;
-- conflict detection reports when later teacher timeline edits touch the same learner-changed files.
+- learners can use product-facing controls to try the lesson, edit their own workspace, and save a file-level delta;
+- saved learner work can be restored after teacher playback continues;
+- conflict warnings report when later teacher timeline edits touch the same learner-changed files.
 
 Important invariants:
 
@@ -22,7 +22,7 @@ Important invariants:
 - **Learner work is separate.** Learner changes are stored as learner-owned deltas in the active adapter: IndexedDB for local drafts and remote backend/dev storage for published recordings. Both paths mirror to `interactive-poc.learnerDeltas` for debugging.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
-- **Media is an attachment, not a replacement.** Milestone C records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
+- **Media is an attachment, not a replacement.** Milestone D still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **File-level deltas only.** The POC does not compute text patches or merge hunks.
 - **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
@@ -30,7 +30,96 @@ Important invariants:
 
 ## 1. Current user flow
 
-The visible authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle, optional media capture lifecycle, and publish/load lifecycle are explicit.
+Milestone D replaces the single raw control strip with a product-facing shell rendered by `packages/react/src/Panels/InteractivePocControls.tsx`. The shell has two role views:
+
+- **Teacher dashboard** for recording, draft management, publishing, and preview.
+- **Learner playback** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and reading conflict warnings.
+
+A small `Debug details` disclosure remains for development notes, but primary tests and user flows use visible product controls.
+
+
+### Teacher dashboard
+
+`packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders the teacher product flow.
+
+Visible controls:
+
+- New Recording;
+- Record Timeline Only;
+- Record With Mic;
+- Record With Camera;
+- Stop Recording;
+- Save Draft;
+- Load Draft;
+- Preview Draft;
+- Publish Recording;
+- Load Published Recording;
+- Preview Published Recording;
+- Discard Draft;
+- Delete Draft;
+- Refresh Recordings.
+
+Visible status fields use native text and `role="status"` for important async state:
+
+- Draft status;
+- Current draft id;
+- Published status;
+- Published recording id;
+- Recording library status;
+- Recording storage source;
+- Recording duration;
+- Recording status;
+- Playback status;
+- Playhead;
+- Event count;
+- Media status/kind/duration/MIME/error.
+
+### Recording libraries
+
+`packages/react/src/Panels/InteractiveRecordingLibrary.tsx` renders simple accessible recording selectors and list cards. The teacher dashboard shows two lists:
+
+- **Local drafts** from `IndexedDBInteractiveTimelineStorage`;
+- **Published recordings** from `RemoteInteractiveTimelineStorage` and `.interactive-data/`.
+
+Each list item shows:
+
+- recording id;
+- lesson id;
+- version;
+- media kind (`none`, `audio`, or `webcam`);
+- duration;
+- event count;
+- source (`draft` or `published`);
+- created/started time.
+
+Actions remain intentionally simple: select a recording, then use the nearby load/preview/delete buttons.
+
+### Learner playback
+
+`packages/react/src/Panels/InteractiveLearnerPlayback.tsx` renders the learner product flow.
+
+Visible controls:
+
+- Published lessons selector;
+- Open Recording;
+- Play Lesson;
+- Try It Yourself;
+- Resume Teacher;
+- Save My Work;
+- Restore My Work.
+
+Learner-facing labels replace the older debug wording:
+
+| Previous POC label | Milestone D product label |
+| --- | --- |
+| Pause & Try It | Try It Yourself |
+| Save Learner Delta | Save My Work |
+| Restore Learner Delta | Restore My Work |
+| Learner delta status | Work status |
+| Learner delta count | Saved work count |
+| Conflict status | Conflict warning |
+
+The data model is unchanged: “My Work” is still a learner-owned `LearnerDelta` keyed by lesson, teacher recording id/version, teacher timestamp, and base teacher file hash.
 
 ### Record Timeline Only / Record With Mic / Record With Camera
 
@@ -57,7 +146,7 @@ Stops the active `TimelineRecorder` and keeps the resulting teacher recording in
 
 The teacher recording stores only media metadata (`mediaAssets`), not the Blob itself. Stopping does not require a backend or immediate publish step. The draft can then be saved, previewed, or discarded.
 
-Stopping also updates debug state such as draft status, current draft id, recording duration, event count, media kind, media status, and media duration.
+Stopping also updates product status such as draft status, current draft id, recording duration, event count, media kind, media status, and media duration.
 
 ### Save Draft
 
@@ -71,7 +160,7 @@ Saving a draft does not mutate learner deltas and does not contact a backend. Me
 
 ### Load Draft
 
-Loads the latest local teacher recording draft from IndexedDB through the async storage adapter. Associated media assets are loaded from the IndexedDB `mediaAssets` store using the recording's media asset ids/metadata. If IndexedDB is unavailable, the adapter falls back to the localStorage compatibility adapter for timeline data only. Loading also refreshes the `interactive-poc.teacherRecording` mirror so existing POC debugging/tests can inspect the latest recording shape.
+Loads the selected local teacher recording draft from IndexedDB through the async storage adapter, falling back to the latest draft when no selector value exists. Associated media assets are loaded from the IndexedDB `mediaAssets` store using the recording's media asset ids/metadata. If IndexedDB is unavailable, the adapter falls back to the localStorage compatibility adapter for timeline data only. Loading also refreshes the `interactive-poc.teacherRecording` mirror so existing POC debugging/tests can inspect the latest recording shape.
 
 ### Preview Draft
 
@@ -79,7 +168,7 @@ Previews the currently loaded/saved draft using the same timeline playback engin
 
 ### Discard Draft
 
-Clears the current in-memory draft/media selection and marks the authoring panel as discarded. Milestone C keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets.
+Clears the current in-memory draft/media selection and marks the teacher dashboard as discarded. Milestone D keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets.
 
 ### Publish Recording
 
@@ -98,7 +187,7 @@ Published teacher recordings are treated as immutable. Re-publishing the same id
 
 ### Load Published Recording
 
-Loads the latest published recording from the backend/dev storage through `RemoteInteractiveTimelineStorage`.
+Loads the selected published recording from the backend/dev storage through `RemoteInteractiveTimelineStorage`, falling back to the latest published recording when no selector value exists.
 
 Behavior:
 
@@ -106,15 +195,15 @@ Behavior:
 - loads the latest recording by id;
 - loads associated media metadata and Blob data through `/api/interactive/media-assets`;
 - sets the current recording source to `published`;
-- recomputes remote learner delta count, restore availability, and conflict status.
+- recomputes remote saved work count, restore availability, and conflict warning state.
 
 ### Preview Published Recording
 
 Previews the currently loaded published recording using the same playback engine as local draft preview. If media exists, `HTMLMediaElement.currentTime * 1000` drives the structured timeline. If no media exists, `TimelinePlaybackClock` remains the fallback. Preview does not mutate the published recording.
 
-### Play Recording
+### Play Lesson
 
-Loads the latest teacher recording through the async storage adapter and replays it in `teacher-playback` mode.
+Plays the currently opened teacher recording through the async storage adapter and replays it in `teacher-playback` mode. If no recording has been opened yet, it falls back to the active adapter's latest recording for compatibility with local draft tests.
 
 Behavior:
 
@@ -124,7 +213,7 @@ Behavior:
 - sorts events by `tMs`, then `seq`;
 - when media is loaded, uses the media element's `currentTime` in seconds as the source of truth and applies due events where `event.tMs <= currentTime * 1000`;
 - when media is absent, advances one `requestAnimationFrame` timeline clock and applies due events in order;
-- updates playback status and playhead debug text;
+- updates playback status and playhead product status text;
 - uses a playback guard so programmatic changes are not recorded.
 
 Currently applied event types:
@@ -133,9 +222,9 @@ Currently applied event types:
 - `file.changed`: updates the file content;
 - `editor.scrolled`: restores scroll position and selects the event file when present.
 
-### Pause & Try It
+### Try It Yourself
 
-Stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
+The `Try It Yourself` button stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
 
 Behavior:
 
@@ -159,9 +248,9 @@ Behavior:
 - later teacher `file.changed` events can overwrite the visible workspace;
 - saved learner deltas remain recoverable from IndexedDB and the localStorage compatibility mirror.
 
-### Save Learner Delta
+### Save My Work
 
-Saves learner-owned file-level changes while paused in learner edit mode.
+`Save My Work` saves learner-owned file-level changes while paused in learner edit mode.
 
 Behavior:
 
@@ -170,7 +259,7 @@ Behavior:
 3. reads the current learner workspace files;
 4. diffs teacher-at-pause files against learner files;
 5. saves a `LearnerDelta` through the active async storage adapter: local drafts use IndexedDB, published recordings use `RemoteInteractiveTimelineStorage`; both paths keep the `interactive-poc.learnerDeltas` compatibility mirror;
-6. recomputes learner delta count, restore availability, and conflict status.
+6. recomputes saved work count, restore availability, and conflict warning state.
 
 The delta is keyed by:
 
@@ -180,9 +269,9 @@ The delta is keyed by:
 - teacher timestamp;
 - base teacher files hash.
 
-### Restore Learner Delta
+### Restore My Work
 
-Restores the latest matching learner delta without changing the teacher recording.
+`Restore My Work` restores the latest matching learner delta without changing the teacher recording.
 
 A delta is considered restorable when:
 
@@ -199,14 +288,14 @@ Behavior:
 - does not add/remove file-tree entries in the current UI;
 - does not block on conflicts.
 
-### Conflict status
+### Conflict warning
 
 Phase 6 adds non-destructive conflict detection.
 
-Visible debug fields:
+Visible learner fields:
 
 ```text
-Conflict status: none | conflict
+Conflict warning: none | conflict
 Conflicted files: /example.js, ...
 ```
 
@@ -403,11 +492,11 @@ interface LearnerDeltaConflicts {
 - `filePaths`: sorted normalized paths with conflicts;
 - `events`: matching later teacher `file.changed` events with ids and timestamps.
 
-The React hook currently displays only `filePaths` as `Conflict status` and `Conflicted files`.
+The React hook currently displays only `filePaths` as `Conflict warning` and `Conflicted files`.
 
 ## 3. Storage
 
-Milestone C uses an async storage adapter seam with two concrete browser-facing storage paths:
+Milestone D uses the same async storage adapter seam with two concrete browser-facing storage paths:
 
 - `IndexedDBInteractiveTimelineStorage` for local drafts/offline browser data;
 - `RemoteInteractiveTimelineStorage` for published/backend demo data.
@@ -442,7 +531,7 @@ Loading returns `undefined` when no recording exists.
 
 ### Backend/dev `.interactive-data` storage
 
-Milestone C adds local server-side persistence under the gitignored repository directory:
+Milestone C introduced, and Milestone D continues to use, local server-side persistence under the gitignored repository directory:
 
 ```text
 .interactive-data/
@@ -631,8 +720,8 @@ Responsibilities:
 - playback guard;
 - learner delta save/restore;
 - latest matching delta detection;
-- conflict status recomputation;
-- debug control model returned to the UI.
+- conflict warning recomputation;
+- product control model returned to the UI.
 
 Current modes:
 
@@ -646,29 +735,25 @@ Current playback statuses:
 type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
 ```
 
-### `InteractiveAuthoringPanel.tsx`
-
-`packages/react/src/Panels/InteractiveAuthoringPanel.tsx` renders the teacher-facing local authoring controls:
-
-- Record Timeline Only;
-- Record With Mic;
-- Record With Camera;
-- Stop Recording;
-- Save Draft;
-- Load Draft;
-- Preview Draft;
-- Discard Draft;
-- Publish Recording;
-- Load Published Recording;
-- Preview Published Recording.
-
-It also displays draft status, current draft id, published status, published recording id, published errors, recording storage source, recording duration, recording status, event count, media status, media kind, media duration, MIME type, media errors, and a simple audio/video preview element when media is loaded.
-
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the authoring panel plus learner/debug controls and status text.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone D role shell with Teacher and Learner views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, or workspace logic.
 
-It receives a control model from `useInteractivePoc` and does not own persistence, timeline, or workspace logic.
+### `InteractiveTeacherDashboard.tsx`
+
+Renders the teacher product dashboard, local draft controls, published recording controls, media preview element, and teacher-facing status text.
+
+### `InteractiveLearnerPlayback.tsx`
+
+Renders the learner product playback view with published lessons, Open Recording, Play Lesson, Try It Yourself, Save My Work, Restore My Work, and conflict warning status.
+
+### `InteractiveRecordingLibrary.tsx`
+
+Renders the shared select/list-card recording library for local drafts and published recordings.
+
+### `InteractiveAuthoringPanel.tsx`
+
+Legacy small authoring panel retained for compatibility with earlier POC extraction, but the product shell now uses `InteractiveTeacherDashboard.tsx`.
 
 ## 6. Current limitations
 
@@ -683,7 +768,7 @@ Known limitations are intentional for the POC:
 - no patch-based/hunk-level deltas;
 - no conflict resolution choices;
 - conflicts do not block restore;
-- no production UI;
+- product-facing POC UI exists, but it is not final production design;
 - no terminal recording;
 - no preview iframe/internal app recording;
 - no screen recording;
@@ -694,7 +779,7 @@ Known limitations are intentional for the POC:
 - media-synced playback supports basic media seeking by resetting/replaying structured events, but does not yet expose production seeking/speed/drift controls;
 - editor selection is stored opaquely and not restored as a first-class feature;
 - localStorage parsing assumes valid POC JSON;
-- draft listing loads the latest local draft and does not yet provide a full draft picker/history drawer.
+- recording libraries are simple selectors/list cards, not a final history drawer or table component.
 
 ## 7. Next phases
 
@@ -714,8 +799,8 @@ Candidate future phases:
    - let the learner choose teacher version, learner version, or eventually a merged version;
    - keep detection separate from resolution.
 
-5. **Production UI**
-   - replace the debug control strip with tutorial-appropriate controls and workspace mode affordances.
+5. **Production UI polish**
+   - improve layout, history drawers, empty states, and workspace mode affordances beyond the Milestone D POC shell.
 
 6. **Optional transcript/captions**
    - attach transcript metadata to teacher timeline events without changing the learner delta model.

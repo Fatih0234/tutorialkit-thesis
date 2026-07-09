@@ -64,10 +64,10 @@ export function InteractiveAuthoringPanel({
       <button type="button" onClick={onSaveDraft} disabled={!canSaveDraft}>
         Save Draft
       </button>
-      <button type="button" onClick={onLoadDraft} disabled={!canLoadDraft}>
+      <button type="button" onClick={() => onLoadDraft()} disabled={!canLoadDraft}>
         Load Draft
       </button>
-      <button type="button" onClick={onPreviewDraft} disabled={!canPreviewDraft}>
+      <button type="button" onClick={() => onPreviewDraft()} disabled={!canPreviewDraft}>
         Preview Draft
       </button>
       <button type="button" onClick={onDiscardDraft} disabled={!canDiscardDraft}>
@@ -76,10 +76,10 @@ export function InteractiveAuthoringPanel({
       <button type="button" onClick={onPublishRecording} disabled={!canPublishRecording}>
         Publish Recording
       </button>
-      <button type="button" onClick={onLoadPublishedRecording} disabled={!canLoadPublishedRecording}>
+      <button type="button" onClick={() => onLoadPublishedRecording()} disabled={!canLoadPublishedRecording}>
         Load Published Recording
       </button>
-      <button type="button" onClick={onPreviewPublishedRecording} disabled={!canPreviewPublishedRecording}>
+      <button type="button" onClick={() => onPreviewPublishedRecording()} disabled={!canPreviewPublishedRecording}>
         Preview Published Recording
       </button>
       <span>Draft status: {draftStatus}</span>

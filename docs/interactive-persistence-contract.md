@@ -1,8 +1,8 @@
 # Interactive persistence contract
 
-This document defines the persistence contract for the interactive tutorial POC. Milestone C adds a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. It does not add real auth, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
+This document defines the persistence contract for the interactive tutorial POC. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D adds product-facing teacher and learner flows on top of the same storage contract. It does not add real auth, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
 
-The contract preserves the Milestone C local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
+The contract preserves the Milestone D local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
 
 ## Non-goals
 
@@ -19,9 +19,9 @@ This document does not specify or implement:
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone C local-draft and remote-published status
+## Milestone D local-draft and remote-published status
 
-Milestone C keeps `InteractiveTimelineStorage` as an async client-side adapter boundary and adds `RemoteInteractiveTimelineStorage` for published/demo data. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
+Milestone D keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, and server-backed media assets. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
@@ -39,7 +39,20 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
   media-assets/
 ```
 
-`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. Media upload uses `FormData`/`multipart/form-data`. No real auth, production database, or cloud object-storage upload is introduced by Milestone C. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. Media upload uses `FormData`/`multipart/form-data`. No real auth, production database, or cloud object-storage upload is introduced by Milestone D. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+
+
+## Milestone D product UX storage behavior
+
+Milestone D does not change the core persisted resource shapes. It adds recording lists/selectors and product labels over the existing adapters:
+
+- the **Teacher dashboard** lists local drafts from IndexedDB and published recordings from `/api/interactive/teacher-recordings`;
+- the **Learner playback** view lists published recordings only;
+- product labels such as **Save My Work** and **Restore My Work** still persist and restore `LearnerDelta` records;
+- **Conflict warning** is still computed from immutable teacher events and learner delta paths;
+- no role/auth enforcement is added yet, so “Teacher” and “Learner” are UI sections, not authenticated identities.
+
+`TeacherRecordingDraftSummary` now includes `mediaKind` so list views can show `none`, `audio`, or `webcam` without loading media blobs. Media blobs remain outside localStorage.
 
 ## 1. Persistence goals
 
@@ -254,7 +267,7 @@ Conflict detection is non-destructive and informational only.
 
 ## 3. API shape
 
-The API shape is intentionally minimal and resource-oriented. Milestone C implements these routes under `/api/interactive/*` for local dev/demo persistence. Auth remains an open production decision.
+The API shape is intentionally minimal and resource-oriented. Milestone C introduced these routes under `/api/interactive/*` for local dev/demo persistence, and Milestone D continues to use them for product-facing recording lists and open flows. Auth remains an open production decision.
 
 ### `POST /api/interactive/teacher-recordings`
 
@@ -581,7 +594,7 @@ Rules:
 
 ## 4. Storage shape
 
-Production database technology is undecided. These names describe logical tables/collections. Milestone C maps them to gitignored JSON/media files in `.interactive-data/`.
+Production database technology is undecided. These names describe logical tables/collections. Milestone C/D maps them to gitignored JSON/media files in `.interactive-data/`.
 
 ### `teacher_recordings`
 
@@ -650,7 +663,7 @@ Recommended indexes:
 
 ### `media_assets`
 
-Stores teacher recording media metadata and, for local/browser storage, Blob data. The Milestone C dev backend stores metadata JSON plus media files under `.interactive-data/media-assets/`. A production backend may split metadata and binary/object storage.
+Stores teacher recording media metadata and, for local/browser storage, Blob data. The Milestone C/D dev backend stores metadata JSON plus media files under `.interactive-data/media-assets/`. A production backend may split metadata and binary/object storage.
 
 Suggested fields:
 
@@ -761,7 +774,7 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
-Milestone C stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, and `.interactive-data/media-assets`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
+Milestone D stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, and `.interactive-data/media-assets`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
 
 ### Equivalent backend records
 
@@ -788,6 +801,7 @@ interface TeacherRecordingDraftSummary {
   startedAt: string;
   durationMs: number;
   eventCount: number;
+  mediaKind: 'none' | 'audio' | 'webcam';
 }
 
 interface InteractiveTimelineStorage {

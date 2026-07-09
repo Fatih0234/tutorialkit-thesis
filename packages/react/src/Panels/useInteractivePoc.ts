@@ -21,6 +21,7 @@ import {
   type RecordingMediaAsset,
   type RecordingMediaKind,
   type TeacherRecording,
+  type TeacherRecordingDraftSummary,
   type TimelineEvent,
   type TutorialStore,
 } from '@tutorialkit/runtime';
@@ -33,6 +34,12 @@ export type PublishedStatus = 'idle' | 'publishing' | 'published' | 'loaded' | '
 export type RecordingStorageSource = 'local-draft' | 'published' | 'none';
 export type MediaStatus = 'unavailable' | 'permission-needed' | 'recording' | 'saved' | 'loaded' | 'error';
 export type MediaKindStatus = 'none' | RecordingMediaKind;
+export type RecordingLibrarySource = 'draft' | 'published';
+
+export interface InteractiveRecordingLibraryItem extends TeacherRecordingDraftSummary {
+  source: RecordingLibrarySource;
+  workStatus?: 'not checked' | 'no saved work' | 'saved work' | 'conflict warning';
+}
 
 interface EditorChangeUpdate {
   content: string;
@@ -69,6 +76,11 @@ export interface InteractivePocControlsModel {
   mediaError: string;
   mediaPreviewUrl: string;
   mediaMimeType: string;
+  draftRecordings: InteractiveRecordingLibraryItem[];
+  publishedRecordings: InteractiveRecordingLibraryItem[];
+  selectedDraftId: string;
+  selectedPublishedRecordingId: string;
+  recordingLibraryStatus: string;
   canStartRecording: boolean;
   canStartMediaRecording: boolean;
   canStopRecording: boolean;
@@ -79,22 +91,27 @@ export interface InteractivePocControlsModel {
   canPublishRecording: boolean;
   canLoadPublishedRecording: boolean;
   canPreviewPublishedRecording: boolean;
+  canDeleteSelectedDraft: boolean;
   canPlayRecording: boolean;
   canPausePlayback: boolean;
   canResumeTeacher: boolean;
   canSaveLearnerDelta: boolean;
   canRestoreLearnerDelta: boolean;
+  onRefreshRecordingLibrary: () => void;
+  onSelectDraftRecording: (recordingId: string) => void;
+  onSelectPublishedRecording: (recordingId: string) => void;
   onStartRecording: () => void;
   onStartMicRecording: () => void;
   onStartCameraRecording: () => void;
   onStopRecording: () => void;
   onSaveDraft: () => void;
-  onLoadDraft: () => void;
-  onPreviewDraft: () => void;
+  onLoadDraft: (recordingId?: string) => void;
+  onPreviewDraft: (recordingId?: string) => void;
   onDiscardDraft: () => void;
+  onDeleteSelectedDraft: () => void;
   onPublishRecording: () => void;
-  onLoadPublishedRecording: () => void;
-  onPreviewPublishedRecording: () => void;
+  onLoadPublishedRecording: (recordingId?: string) => void;
+  onPreviewPublishedRecording: (recordingId?: string) => void;
   onPlayRecording: () => void;
   onPausePlayback: () => void;
   onResumeTeacher: () => void;
@@ -200,6 +217,11 @@ export function useInteractivePoc({
   const [mediaError, setMediaError] = useState('none');
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
   const [mediaMimeType, setMediaMimeType] = useState('');
+  const [draftRecordings, setDraftRecordings] = useState<InteractiveRecordingLibraryItem[]>([]);
+  const [publishedRecordings, setPublishedRecordings] = useState<InteractiveRecordingLibraryItem[]>([]);
+  const [selectedDraftId, setSelectedDraftId] = useState('');
+  const [selectedPublishedRecordingId, setSelectedPublishedRecordingId] = useState('');
+  const [recordingLibraryStatus, setRecordingLibraryStatus] = useState('idle');
 
   function getCurrentFilePath() {
     return selectedFile ?? tutorialStore.currentDocument.get()?.filePath;
@@ -225,6 +247,59 @@ export function useInteractivePoc({
       teacherRecordingVersion: recording.version,
       userId: LOCAL_LEARNER_USER_ID,
     };
+  }
+
+  function toRecordingLibraryItem(
+    summary: TeacherRecordingDraftSummary,
+    source: RecordingLibrarySource,
+    workStatus: InteractiveRecordingLibraryItem['workStatus'] = 'not checked',
+  ): InteractiveRecordingLibraryItem {
+    return {
+      ...summary,
+      source,
+      workStatus: source === 'published' ? workStatus : undefined,
+    };
+  }
+
+  function preserveSelectedRecordingId(currentId: string, items: InteractiveRecordingLibraryItem[]) {
+    if (currentId && items.some((item) => item.id === currentId)) {
+      return currentId;
+    }
+
+    return items[0]?.id ?? '';
+  }
+
+  async function refreshRecordingLibrary() {
+    setRecordingLibraryStatus('loading');
+
+    try {
+      const [localDrafts, remotePublished] = await Promise.all([
+        localTimelineStorage.listTeacherRecordingDrafts(),
+        remoteTimelineStorage.listTeacherRecordingDrafts(),
+      ]);
+      const nextDrafts = localDrafts.map((summary) => toRecordingLibraryItem(summary, 'draft'));
+      const nextPublished = remotePublished.map((summary) => toRecordingLibraryItem(summary, 'published'));
+
+      setDraftRecordings(nextDrafts);
+      setPublishedRecordings(nextPublished);
+      setSelectedDraftId((currentId) => preserveSelectedRecordingId(currentId, nextDrafts));
+      setSelectedPublishedRecordingId((currentId) => preserveSelectedRecordingId(currentId, nextPublished));
+      setRecordingLibraryStatus('ready');
+    } catch (error) {
+      setRecordingLibraryStatus(error instanceof Error ? `error: ${error.message}` : 'error');
+    }
+  }
+
+  function onRefreshRecordingLibrary() {
+    void refreshRecordingLibrary();
+  }
+
+  function onSelectDraftRecording(recordingId: string) {
+    setSelectedDraftId(recordingId);
+  }
+
+  function onSelectPublishedRecording(recordingId: string) {
+    setSelectedPublishedRecordingId(recordingId);
   }
 
   function setCurrentDraftRecording(recording: TeacherRecording | null, status: DraftStatus) {
@@ -899,36 +974,59 @@ export function useInteractivePoc({
     playbackRecordingRef.current = recordingWithMedia;
     setCurrentRecordingSource('local-draft');
     setCurrentDraftRecording(recordingWithMedia, 'saved');
+    setSelectedDraftId(recordingWithMedia.id);
     setMediaStatus(mediaSaveFailed ? 'error' : 'saved');
     await syncLearnerDeltaState(recordingWithMedia, localTimelineStorage);
+    await refreshRecordingLibrary();
   }
 
-  async function onLoadDraft() {
-    const [latestDraft] = await localTimelineStorage.listTeacherRecordingDrafts();
+  async function loadDraftRecording(recordingId = selectedDraftId) {
+    const drafts =
+      draftRecordings.length > 0
+        ? draftRecordings
+        : await localTimelineStorage
+            .listTeacherRecordingDrafts()
+            .then((items) => items.map((summary) => toRecordingLibraryItem(summary, 'draft')));
+    const targetId = recordingId || drafts[0]?.id;
 
-    if (!latestDraft) {
+    if (!targetId) {
       setCurrentDraftRecording(null, 'missing');
       setNoMedia(getInitialMediaStatus());
-      return;
+      await refreshRecordingLibrary();
+      return undefined;
     }
 
-    const recording = await localTimelineStorage.loadTeacherRecordingDraft(latestDraft.id);
+    const recording = await localTimelineStorage.loadTeacherRecordingDraft(targetId);
 
     if (!recording) {
       setCurrentDraftRecording(null, 'missing');
       setNoMedia(getInitialMediaStatus());
-      return;
+      await refreshRecordingLibrary();
+      return undefined;
     }
 
     playbackRecordingRef.current = recording;
+    setSelectedDraftId(recording.id);
     setCurrentRecordingSource('local-draft');
     setCurrentDraftRecording(recording, 'loaded');
     await syncMediaAssetsForRecording(recording, 'loaded', localTimelineStorage);
     await syncLearnerDeltaState(recording, localTimelineStorage);
+    await refreshRecordingLibrary();
+
+    return recording;
   }
 
-  async function onPreviewDraft() {
-    const recording = currentDraftRecordingRef.current;
+  async function onLoadDraft(recordingId?: string) {
+    await loadDraftRecording(recordingId);
+  }
+
+  async function onPreviewDraft(recordingId?: string) {
+    const targetId = recordingId || selectedDraftId;
+    const currentRecording = currentDraftRecordingRef.current;
+    const recording =
+      currentRecording && (!targetId || currentRecording.id === targetId)
+        ? currentRecording
+        : await loadDraftRecording(targetId);
 
     if (!recording || isRecording) {
       setDraftStatus('missing');
@@ -940,6 +1038,7 @@ export function useInteractivePoc({
     }
 
     playbackRecordingRef.current = recording;
+    setSelectedDraftId(recording.id);
     setCurrentRecordingSource('local-draft');
     await syncLearnerDeltaState(recording, localTimelineStorage);
     setHasPausedTeacherTimestamp(false);
@@ -973,37 +1072,48 @@ export function useInteractivePoc({
       setCurrentRecordingSource('published');
       setPublishedStatus('published');
       setPublishedRecordingId(recordingWithMedia.id);
+      setSelectedPublishedRecordingId(recordingWithMedia.id);
       setCurrentDraftRecording(recordingWithMedia, draftStatus === 'missing' ? 'loaded' : draftStatus);
       setMediaStatus(assets.length > 0 ? 'saved' : mediaStatus);
       await syncLearnerDeltaState(recordingWithMedia, remoteTimelineStorage);
+      await refreshRecordingLibrary();
     } catch (error) {
       setPublishedStatus('error');
       setPublishedError(error instanceof Error ? error.message : 'Unable to publish recording.');
     }
   }
 
-  async function onLoadPublishedRecording() {
+  async function loadPublishedRecording(recordingId = selectedPublishedRecordingId) {
     setPublishedStatus('idle');
     setPublishedError('none');
 
     try {
-      const [latestPublished] = await remoteTimelineStorage.listTeacherRecordingDrafts();
+      const published =
+        publishedRecordings.length > 0
+          ? publishedRecordings
+          : await remoteTimelineStorage
+              .listTeacherRecordingDrafts()
+              .then((items) => items.map((summary) => toRecordingLibraryItem(summary, 'published')));
+      const targetId = recordingId || published[0]?.id;
 
-      if (!latestPublished) {
+      if (!targetId) {
         setPublishedStatus('missing');
         setPublishedRecordingId('none');
-        return;
+        await refreshRecordingLibrary();
+        return undefined;
       }
 
-      const recording = await remoteTimelineStorage.loadTeacherRecording(latestPublished.id);
+      const recording = await remoteTimelineStorage.loadTeacherRecording(targetId);
 
       if (!recording) {
         setPublishedStatus('missing');
         setPublishedRecordingId('none');
-        return;
+        await refreshRecordingLibrary();
+        return undefined;
       }
 
       playbackRecordingRef.current = recording;
+      setSelectedPublishedRecordingId(recording.id);
       setCurrentRecordingSource('published');
       setPublishedStatus('loaded');
       setPublishedRecordingId(recording.id);
@@ -1011,14 +1121,27 @@ export function useInteractivePoc({
       setEventCount(recording.events.length);
       await syncMediaAssetsForRecording(recording, 'loaded', remoteTimelineStorage);
       await syncLearnerDeltaState(recording, remoteTimelineStorage);
+      await refreshRecordingLibrary();
+
+      return recording;
     } catch (error) {
       setPublishedStatus('error');
       setPublishedError(error instanceof Error ? error.message : 'Unable to load published recording.');
+      return undefined;
     }
   }
 
-  async function onPreviewPublishedRecording() {
-    const recording = playbackRecordingRef.current;
+  async function onLoadPublishedRecording(recordingId?: string) {
+    await loadPublishedRecording(recordingId);
+  }
+
+  async function onPreviewPublishedRecording(recordingId?: string) {
+    const targetId = recordingId || selectedPublishedRecordingId;
+    const currentRecording = playbackRecordingRef.current;
+    const recording =
+      currentRecording && currentRecordingSourceRef.current === 'published' && (!targetId || currentRecording.id === targetId)
+        ? currentRecording
+        : await loadPublishedRecording(targetId);
 
     if (!recording || currentRecordingSourceRef.current !== 'published') {
       setPublishedStatus('missing');
@@ -1045,6 +1168,41 @@ export function useInteractivePoc({
     setEventCount(0);
     setNoMedia(getInitialMediaStatus());
     await syncLearnerDeltaState(undefined, localTimelineStorage);
+    await refreshRecordingLibrary();
+  }
+
+  async function onDeleteSelectedDraft() {
+    const targetId = selectedDraftId || currentDraftRecordingRef.current?.id;
+
+    if (!targetId || isRecording) {
+      return;
+    }
+
+    try {
+      const assets = await localTimelineStorage.listMediaAssetsForRecording(targetId);
+
+      await Promise.all(assets.map((asset) => localTimelineStorage.deleteMediaAsset(asset.id)));
+      await localTimelineStorage.deleteTeacherRecordingDraft(targetId);
+
+      if (currentDraftRecordingRef.current?.id === targetId) {
+        currentDraftRecordingRef.current = null;
+        if (currentRecordingSourceRef.current === 'local-draft') {
+          playbackRecordingRef.current = null;
+          setCurrentRecordingSource('none');
+        }
+        setDraftStatus('discarded');
+        setCurrentDraftId('none');
+        setRecordingDurationMs(0);
+        setEventCount(0);
+        setNoMedia(getInitialMediaStatus());
+      }
+
+      setSelectedDraftId('');
+      await refreshRecordingLibrary();
+    } catch (error) {
+      setDraftStatus('missing');
+      setMediaError(error instanceof Error ? error.message : 'Unable to delete draft.');
+    }
   }
 
   async function onSaveLearnerDelta() {
@@ -1172,6 +1330,7 @@ export function useInteractivePoc({
 
   useEffect(() => {
     void syncLearnerDeltaState(undefined, getActiveLearnerStorage());
+    void refreshRecordingLibrary();
   }, [storeRef]);
 
   useEffect(() => {
@@ -1188,6 +1347,7 @@ export function useInteractivePoc({
 
   const hasCurrentDraftRecording = currentDraftRecordingRef.current !== null;
   const hasCurrentPublishedRecording = currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
+  const hasDraftSelection = Boolean(selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0);
   const canStartAnyRecording = !isRecording && mode === 'idle' && lessonFullyLoaded;
   const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp;
   const canRestoreLearnerDelta = hasRestorableLearnerDelta && !isRecording && mode !== 'teacher-playback';
@@ -1218,21 +1378,33 @@ export function useInteractivePoc({
       mediaError,
       mediaPreviewUrl,
       mediaMimeType,
+      draftRecordings,
+      publishedRecordings,
+      selectedDraftId,
+      selectedPublishedRecordingId,
+      recordingLibraryStatus,
       canStartRecording: canStartAnyRecording,
       canStartMediaRecording: canStartAnyRecording,
       canStopRecording: isRecording,
       canSaveDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
       canLoadDraft: !isRecording && mode === 'idle',
-      canPreviewDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
+      canPreviewDraft: (hasCurrentDraftRecording || hasDraftSelection) && !isRecording && mode === 'idle',
       canDiscardDraft: (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
       canPublishRecording: hasCurrentDraftRecording && !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
       canLoadPublishedRecording: !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
-      canPreviewPublishedRecording: hasCurrentPublishedRecording && !isRecording && mode === 'idle',
+      canPreviewPublishedRecording:
+        (hasCurrentPublishedRecording || Boolean(selectedPublishedRecordingId || publishedRecordings.length > 0)) &&
+        !isRecording &&
+        mode === 'idle',
+      canDeleteSelectedDraft: hasDraftSelection && !isRecording && mode !== 'teacher-playback',
       canPlayRecording: !isRecording && mode === 'idle' && lessonFullyLoaded,
       canPausePlayback: isPlaying,
       canResumeTeacher: mode === 'learner-editing',
       canSaveLearnerDelta,
       canRestoreLearnerDelta,
+      onRefreshRecordingLibrary,
+      onSelectDraftRecording,
+      onSelectPublishedRecording,
       onStartRecording,
       onStartMicRecording,
       onStartCameraRecording,
@@ -1241,6 +1413,7 @@ export function useInteractivePoc({
       onLoadDraft,
       onPreviewDraft,
       onDiscardDraft,
+      onDeleteSelectedDraft,
       onPublishRecording,
       onLoadPublishedRecording,
       onPreviewPublishedRecording,

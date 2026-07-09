@@ -200,6 +200,16 @@ async function seedPublishedRecording(request: APIRequestContext, recording: Ret
   expect(response.ok()).toBeTruthy();
 }
 
+async function openLearnerSection(page: Page) {
+  await page.getByRole('button', { name: 'Learner', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /learner playback/i })).toBeVisible();
+}
+
+async function openTeacherSection(page: Page) {
+  await page.getByRole('button', { name: 'Teacher', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /teacher dashboard/i })).toBeVisible();
+}
+
 test.describe('interactive timeline POC', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     rmSync(INTERACTIVE_DATA_DIR, { recursive: true, force: true });
@@ -209,6 +219,20 @@ test.describe('interactive timeline POC', () => {
       localStorage.removeItem('interactive-poc.learnerDeltas');
       localStorage.removeItem('interactive-poc.fakeMediaRecorder');
     });
+  });
+
+  test('product labels replace debug-only learner flow', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /teacher dashboard/i })).toBeVisible();
+    await openLearnerSection(page);
+
+    await expect(page.getByRole('button', { name: /try it yourself/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /save my work/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /restore my work/i })).toBeVisible();
+    await expect(page.getByText(/work status:/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /pause & try it/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /save learner delta/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /restore learner delta/i })).toHaveCount(0);
   });
 
   test('records one editor edit into a saved teacher draft localStorage mirror', async ({ page }) => {
@@ -251,7 +275,7 @@ test.describe('interactive timeline POC', () => {
     expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeTruthy();
   });
 
-  test('teacher can save and load a local draft', async ({ page }) => {
+  test('teacher draft list works with a saved local draft', async ({ page }) => {
     await page.getByRole('button', { name: /record timeline only/i }).click();
     await page.getByRole('button', { name: 'example.js' }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
@@ -272,9 +296,13 @@ test.describe('interactive timeline POC', () => {
     const rawRecording = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
     expect(rawRecording).toBeTruthy();
+    const savedRecording = JSON.parse(rawRecording!);
 
     await page.evaluate(() => localStorage.removeItem('interactive-poc.teacherRecording'));
     await page.reload();
+
+    await expect(page.getByRole('heading', { name: /local drafts/i })).toBeVisible();
+    await expect(page.getByRole('listitem').filter({ hasText: savedRecording.id })).toBeVisible();
 
     const loadDraft = page.getByRole('button', { name: /load draft/i });
 
@@ -385,6 +413,25 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
   });
 
+  test('teacher dashboard lists a published recording', async ({ page, request }) => {
+    const finalContent = 'console.log("remote learner base");\n// teacher dashboard listed published edit\n';
+    const recording = createPublishedRecording('teacher-recording-dashboard-list-test', finalContent, 25);
+
+    await seedPublishedRecording(request, recording);
+    await openTeacherSection(page);
+    await page.getByRole('button', { name: /refresh recordings/i }).click();
+    await expect(page.getByRole('heading', { name: /published recordings/i })).toBeVisible();
+    await expect(page.getByRole('listitem').filter({ hasText: recording.id })).toBeVisible();
+
+    await page.getByRole('button', { name: /load selected published/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await page.getByRole('button', { name: /preview selected published/i }).click();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText(
+      '// teacher dashboard listed published edit',
+      { timeout: 5000 },
+    );
+  });
+
   test('teacher can publish and reload recording from backend', async ({ page }) => {
     await page.getByRole('button', { name: /record timeline only/i }).click();
     await page.getByRole('button', { name: 'example.js' }).click();
@@ -465,14 +512,15 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
   });
 
-  test('learner delta persists remotely for a published recording', async ({ page, request }) => {
+  test('learner can open a published recording and save work remotely', async ({ page, request }) => {
     const finalContent = 'console.log("remote learner base");\n// remote teacher final edit\n';
     const recording = createPublishedRecording('teacher-recording-remote-delta-test', finalContent);
 
     await seedPublishedRecording(request, recording);
-    await page.getByRole('button', { name: /load published recording/i }).click();
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /open recording/i }).click();
     await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await page.getByRole('button', { name: /play recording/i }).click();
+    await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
@@ -482,7 +530,7 @@ test.describe('interactive timeline POC', () => {
       })
       .toBeGreaterThan(0);
 
-    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
     await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
 
     const editor = page.locator('#editor-opened').getByRole('textbox').first();
@@ -491,19 +539,20 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// remote learner delta edit');
     await expect(editor).toContainText('// remote learner delta edit');
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save learner delta/i }).click();
-    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
+    await page.getByRole('button', { name: /save my work/i }).click();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
 
     await page.evaluate(() => localStorage.removeItem('interactive-poc.learnerDeltas'));
     await page.reload();
-    await page.getByRole('button', { name: /load published recording/i }).click();
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /open recording/i }).click();
     await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
 
-    await page.getByRole('button', { name: /restore learner delta/i }).click();
-    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
+    await page.getByRole('button', { name: /restore my work/i }).click();
+    await expect(page.getByText(/work status:\s*restored/i)).toBeVisible();
     await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText('// remote learner delta edit');
   });
 
@@ -515,8 +564,9 @@ test.describe('interactive timeline POC', () => {
 
     const rawBefore = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
 
-    await page.getByRole('button', { name: /load published recording/i }).click();
-    await page.getByRole('button', { name: /play recording/i }).click();
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /open recording/i }).click();
+    await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
       .poll(async () => {
@@ -524,7 +574,7 @@ test.describe('interactive timeline POC', () => {
         return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
       })
       .toBeGreaterThan(0);
-    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
 
     const editor = page.locator('#editor-opened').getByRole('textbox').first();
 
@@ -532,8 +582,8 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// immutable remote learner edit');
     await expect(editor).toContainText('// immutable remote learner edit');
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save learner delta/i }).click();
-    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+    await page.getByRole('button', { name: /save my work/i }).click();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
 
     const rawAfter = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
 
@@ -581,8 +631,9 @@ test.describe('interactive timeline POC', () => {
     }, recording);
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-    const playRecording = page.getByRole('button', { name: /play recording/i });
-    const pausePlayback = page.getByRole('button', { name: /pause & try it/i });
+    await openLearnerSection(page);
+    const playRecording = page.getByRole('button', { name: /play lesson/i });
+    const pausePlayback = page.getByRole('button', { name: /try it yourself/i });
 
     await expect(playRecording).toBeVisible();
     await expect(pausePlayback).toBeVisible();
@@ -644,8 +695,9 @@ test.describe('interactive timeline POC', () => {
     }, recording);
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    await openLearnerSection(page);
 
-    await page.getByRole('button', { name: /play recording/i }).click();
+    await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
@@ -655,7 +707,7 @@ test.describe('interactive timeline POC', () => {
       })
       .toBeGreaterThan(0);
 
-    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
     await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
     await expect(page.getByText(/playback status:\s*paused/i)).toBeVisible();
 
@@ -726,17 +778,18 @@ test.describe('interactive timeline POC', () => {
     }, recording);
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-    const saveLearnerDelta = page.getByRole('button', { name: /save learner delta/i });
-    const restoreLearnerDelta = page.getByRole('button', { name: /restore learner delta/i });
+    await openLearnerSection(page);
+    const saveLearnerDelta = page.getByRole('button', { name: /save my work/i });
+    const restoreLearnerDelta = page.getByRole('button', { name: /restore my work/i });
 
     await expect(saveLearnerDelta).toBeVisible();
     await expect(saveLearnerDelta).toBeDisabled();
     await expect(restoreLearnerDelta).toBeVisible();
     await expect(restoreLearnerDelta).toBeDisabled();
 
-    await page.getByRole('button', { name: /play recording/i }).click();
+    await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
-    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
     await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
     await expect(saveLearnerDelta).toBeEnabled();
 
@@ -748,9 +801,9 @@ test.describe('interactive timeline POC', () => {
     await page.waitForTimeout(600);
 
     await saveLearnerDelta.click();
-    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
     await expect(page.getByText(/conflicted files:\s*\/example\.js/i)).toBeVisible();
     await expect(restoreLearnerDelta).toBeEnabled();
 
@@ -774,8 +827,8 @@ test.describe('interactive timeline POC', () => {
     await expect(restoreLearnerDelta).toBeEnabled();
 
     await restoreLearnerDelta.click();
-    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
-    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*restored/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
     await expect(editor).toContainText('// learner delta edit');
 
     const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
@@ -824,12 +877,13 @@ test.describe('interactive timeline POC', () => {
     }, recording);
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-    const saveLearnerDelta = page.getByRole('button', { name: /save learner delta/i });
-    const restoreLearnerDelta = page.getByRole('button', { name: /restore learner delta/i });
+    await openLearnerSection(page);
+    const saveLearnerDelta = page.getByRole('button', { name: /save my work/i });
+    const restoreLearnerDelta = page.getByRole('button', { name: /restore my work/i });
 
-    await page.getByRole('button', { name: /play recording/i }).click();
+    await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
-    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await page.getByRole('button', { name: /try it yourself/i }).click();
     await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
     await expect(saveLearnerDelta).toBeEnabled();
 
@@ -841,9 +895,9 @@ test.describe('interactive timeline POC', () => {
     await page.waitForTimeout(600);
 
     await saveLearnerDelta.click();
-    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict status:\s*none/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*none/i)).toBeVisible();
     await expect(page.getByText(/conflicted files:\s*none/i)).toBeVisible();
     await expect(restoreLearnerDelta).toBeEnabled();
 
@@ -862,8 +916,8 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
 
     await restoreLearnerDelta.click();
-    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
-    await expect(page.getByText(/conflict status:\s*none/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*restored/i)).toBeVisible();
+    await expect(page.getByText(/conflict warning:\s*none/i)).toBeVisible();
     await expect(editor).toContainText('// learner unrelated edit');
 
     const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));

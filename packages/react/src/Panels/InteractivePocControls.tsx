@@ -1,64 +1,43 @@
-import { InteractiveAuthoringPanel } from './InteractiveAuthoringPanel.js';
+import { useState } from 'react';
+import { InteractiveLearnerPlayback } from './InteractiveLearnerPlayback.js';
+import { InteractiveTeacherDashboard } from './InteractiveTeacherDashboard.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
+type InteractiveProductTab = 'teacher' | 'learner';
+
 export function InteractivePocControls(props: InteractivePocControlsModel) {
-  const {
-    mode,
-    playbackStatus,
-    playheadMs,
-    pausedTeacherTimestampMs,
-    learnerDeltaCount,
-    learnerDeltaStatus,
-    conflictStatus,
-    conflictedFiles,
-    canPlayRecording,
-    canPausePlayback,
-    canResumeTeacher,
-    canSaveLearnerDelta,
-    canRestoreLearnerDelta,
-    onPlayRecording,
-    onPausePlayback,
-    onResumeTeacher,
-    onSaveLearnerDelta,
-    onRestoreLearnerDelta,
-  } = props;
+  const [activeTab, setActiveTab] = useState<InteractiveProductTab>('teacher');
 
   return (
     <div
-      aria-label="Interactive timeline debug controls"
+      aria-label="Interactive tutorial controls"
       style={{
-        alignItems: 'center',
         borderBottom: '1px solid var(--tk-elements-panel-borderColor)',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '0.5rem',
-        padding: '0.5rem',
+        display: 'grid',
+        gap: '1rem',
+        padding: '0.75rem',
       }}
     >
-      <InteractiveAuthoringPanel {...props} />
-      <button type="button" onClick={onPlayRecording} disabled={!canPlayRecording}>
-        Play Recording
-      </button>
-      <button type="button" onClick={onPausePlayback} disabled={!canPausePlayback}>
-        Pause & Try It
-      </button>
-      <button type="button" onClick={onResumeTeacher} disabled={!canResumeTeacher}>
-        Resume Teacher
-      </button>
-      <button type="button" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
-        Save Learner Delta
-      </button>
-      <button type="button" onClick={onRestoreLearnerDelta} disabled={!canRestoreLearnerDelta}>
-        Restore Learner Delta
-      </button>
-      <span>Mode: {mode}</span>
-      <span>Playback status: {playbackStatus}</span>
-      <span>Playhead ms: {playheadMs}</span>
-      <span>Paused teacher timestamp ms: {pausedTeacherTimestampMs}</span>
-      <span>Learner delta count: {learnerDeltaCount}</span>
-      <span>Learner delta status: {learnerDeltaStatus}</span>
-      <span>Conflict status: {conflictStatus}</span>
-      <span>Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}</span>
+      <header style={{ display: 'grid', gap: '0.5rem' }}>
+        <h1 style={{ fontSize: '1rem', margin: 0 }}>Interactive lesson studio</h1>
+        <nav aria-label="Interactive role views" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <button type="button" aria-pressed={activeTab === 'teacher'} onClick={() => setActiveTab('teacher')}>
+            Teacher
+          </button>
+          <button type="button" aria-pressed={activeTab === 'learner'} onClick={() => setActiveTab('learner')}>
+            Learner
+          </button>
+        </nav>
+      </header>
+
+      {activeTab === 'teacher' ? <InteractiveTeacherDashboard {...props} /> : <InteractiveLearnerPlayback {...props} />}
+
+      <details>
+        <summary>Debug details</summary>
+        <p style={{ margin: '0.5rem 0 0' }}>
+          Raw debug controls were replaced by the Teacher dashboard and Learner playback sections for Milestone D.
+        </p>
+      </details>
     </div>
   );
 }

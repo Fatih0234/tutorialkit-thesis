@@ -6,7 +6,7 @@ import {
   saveLearnerDeltas,
   saveTeacherRecording,
 } from './storage.js';
-import type { RecordingMediaAsset } from './media.js';
+import type { RecordingMediaAsset, RecordingMediaKind } from './media.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
 
 export interface TeacherRecordingDraftSummary {
@@ -16,6 +16,7 @@ export interface TeacherRecordingDraftSummary {
   startedAt: string;
   durationMs: number;
   eventCount: number;
+  mediaKind: RecordingMediaKind | 'none';
 }
 
 export interface LearnerDeltaQuery {
@@ -49,6 +50,7 @@ export function getTeacherRecordingDraftSummary(recording: TeacherRecording): Te
     startedAt: recording.startedAt,
     durationMs: recording.durationMs,
     eventCount: recording.events.length,
+    mediaKind: recording.mediaAssets?.[0]?.kind ?? 'none',
   };
 }
 
