@@ -5,6 +5,10 @@ export function InteractiveAuthoringPanel({
   eventCount,
   draftStatus,
   currentDraftId,
+  publishedStatus,
+  publishedRecordingId,
+  publishedError,
+  recordingStorageSource,
   recordingDurationMs,
   mediaStatus,
   mediaKind,
@@ -19,6 +23,9 @@ export function InteractiveAuthoringPanel({
   canLoadDraft,
   canPreviewDraft,
   canDiscardDraft,
+  canPublishRecording,
+  canLoadPublishedRecording,
+  canPreviewPublishedRecording,
   onStartRecording,
   onStartMicRecording,
   onStartCameraRecording,
@@ -27,6 +34,9 @@ export function InteractiveAuthoringPanel({
   onLoadDraft,
   onPreviewDraft,
   onDiscardDraft,
+  onPublishRecording,
+  onLoadPublishedRecording,
+  onPreviewPublishedRecording,
   onMediaElementRef,
 }: InteractivePocControlsModel) {
   return (
@@ -63,8 +73,21 @@ export function InteractiveAuthoringPanel({
       <button type="button" onClick={onDiscardDraft} disabled={!canDiscardDraft}>
         Discard Draft
       </button>
+      <button type="button" onClick={onPublishRecording} disabled={!canPublishRecording}>
+        Publish Recording
+      </button>
+      <button type="button" onClick={onLoadPublishedRecording} disabled={!canLoadPublishedRecording}>
+        Load Published Recording
+      </button>
+      <button type="button" onClick={onPreviewPublishedRecording} disabled={!canPreviewPublishedRecording}>
+        Preview Published Recording
+      </button>
       <span>Draft status: {draftStatus}</span>
       <span>Current draft id: {currentDraftId}</span>
+      <span>Published status: {publishedStatus}</span>
+      <span>Published recording id: {publishedRecordingId}</span>
+      <span>Published error: {publishedError}</span>
+      <span>Recording storage source: {recordingStorageSource}</span>
       <span>Recording duration ms: {recordingDurationMs}</span>
       <span>Recording status: {isRecording ? 'active' : 'inactive'}</span>
       <span>Event count: {eventCount}</span>

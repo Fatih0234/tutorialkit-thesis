@@ -1,7 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import { readFileSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const FALLBACK_POC_URL = 'http://localhost:4321';
 const POC_LESSON_PATH = '/tests/file-tree/lesson-and-solution';
+const INTERACTIVE_DATA_DIR = fileURLToPath(new URL('../.interactive-data/', import.meta.url));
 
 function getPocUrl(baseURL?: string) {
   const url = new URL(process.env.TK_POC_URL ?? baseURL ?? FALLBACK_POC_URL);
@@ -11,6 +14,10 @@ function getPocUrl(baseURL?: string) {
   }
 
   return url.toString();
+}
+
+function getPublishedRecordingFile(recordingId: string) {
+  return new URL(`../.interactive-data/teacher-recordings/${recordingId}.json`, import.meta.url);
 }
 
 async function seedIndexedDbMediaDraft(
@@ -150,8 +157,52 @@ async function seedIndexedDbMediaDraft(
   );
 }
 
+function createPublishedRecording(recordingId: string, finalContent: string, eventMs = 2000) {
+  const baseContent = 'console.log("remote learner base");\n';
+
+  return {
+    id: recordingId,
+    lessonId: 'lesson-and-solution',
+    version: 1,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    durationMs: eventMs,
+    baseFiles: {
+      '/example.html': '<h1>Remote published base</h1>\n',
+      '/example.js': baseContent,
+    },
+    events: [
+      { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
+      {
+        id: 'event-opened',
+        seq: 1,
+        tMs: 0,
+        type: 'file.opened',
+        filePath: '/example.js',
+        payload: { filePath: '/example.js' },
+        origin: 'teacher',
+      },
+      {
+        id: 'event-remote-change',
+        seq: 2,
+        tMs: eventMs,
+        type: 'file.changed',
+        filePath: '/example.js',
+        payload: { content: finalContent },
+        origin: 'teacher',
+      },
+    ],
+  };
+}
+
+async function seedPublishedRecording(request: APIRequestContext, recording: ReturnType<typeof createPublishedRecording>) {
+  const response = await request.post('/api/interactive/teacher-recordings', { data: recording });
+
+  expect(response.ok()).toBeTruthy();
+}
+
 test.describe('interactive timeline POC', () => {
   test.beforeEach(async ({ page, baseURL }) => {
+    rmSync(INTERACTIVE_DATA_DIR, { recursive: true, force: true });
     await page.goto(getPocUrl(baseURL));
     await page.evaluate(() => {
       localStorage.removeItem('interactive-poc.teacherRecording');
@@ -332,6 +383,161 @@ test.describe('interactive timeline POC', () => {
 
     await expect(editor).toContainText('// media currentTime applied edit', { timeout: 5000 });
     await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+  });
+
+  test('teacher can publish and reload recording from backend', async ({ page }) => {
+    await page.getByRole('button', { name: /record timeline only/i }).click();
+    await page.getByRole('button', { name: 'example.js' }).click();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// teacher backend publish edit');
+    await expect(editor).toContainText('// teacher backend publish edit');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /publish recording/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeVisible();
+
+    const publishedIdText = await page.getByText(/published recording id:\s*teacher-recording-/i).textContent();
+    const publishedId = publishedIdText?.match(/published recording id:\s*(teacher-recording-[\w-]+)/i)?.[1];
+
+    expect(publishedId).toBeTruthy();
+    expect(readFileSync(getPublishedRecordingFile(publishedId!), 'utf8')).toContain('// teacher backend publish edit');
+
+    await page.evaluate(() => {
+      localStorage.removeItem('interactive-poc.teacherRecording');
+      localStorage.removeItem('interactive-poc.learnerDeltas');
+    });
+    await page.reload();
+
+    await page.getByRole('button', { name: /load published recording/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(new RegExp(`published recording id:\\s*${publishedId}`, 'i'))).toBeVisible();
+    await page.getByRole('button', { name: /preview published recording/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText(
+      '// teacher backend publish edit',
+      { timeout: 5000 },
+    );
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+  });
+
+  test('teacher can publish media recording and load media from backend', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('interactive-poc.fakeMediaRecorder', 'true'));
+
+    await page.getByRole('button', { name: /record with mic/i }).click();
+    await expect(page.getByText(/media status:\s*recording/i)).toBeVisible();
+    await page.getByRole('button', { name: 'example.js' }).click();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// teacher backend media publish edit');
+    await expect(editor).toContainText('// teacher backend media publish edit');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /publish recording/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*saved/i)).toBeVisible();
+
+    await page.evaluate(() => {
+      localStorage.removeItem('interactive-poc.teacherRecording');
+      localStorage.removeItem('interactive-poc.learnerDeltas');
+      localStorage.removeItem('interactive-poc.fakeMediaRecorder');
+    });
+    await page.reload();
+
+    await page.getByRole('button', { name: /load published recording/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /preview published recording/i }).click();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText(
+      '// teacher backend media publish edit',
+      { timeout: 5000 },
+    );
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+  });
+
+  test('learner delta persists remotely for a published recording', async ({ page, request }) => {
+    const finalContent = 'console.log("remote learner base");\n// remote teacher final edit\n';
+    const recording = createPublishedRecording('teacher-recording-remote-delta-test', finalContent);
+
+    await seedPublishedRecording(request, recording);
+    await page.getByRole('button', { name: /load published recording/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await page.getByRole('button', { name: /play recording/i }).click();
+    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await expect
+      .poll(async () => {
+        const playheadText = await page.getByText(/playhead ms:\s*\d+/i).textContent();
+        return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
+      })
+      .toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: /pause & try it/i }).click();
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// remote learner delta edit');
+    await expect(editor).toContainText('// remote learner delta edit');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /save learner delta/i }).click();
+    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/conflict status:\s*conflict/i)).toBeVisible();
+
+    await page.evaluate(() => localStorage.removeItem('interactive-poc.learnerDeltas'));
+    await page.reload();
+    await page.getByRole('button', { name: /load published recording/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/learner delta count:\s*1/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /restore learner delta/i }).click();
+    await expect(page.getByText(/learner delta status:\s*restored/i)).toBeVisible();
+    await expect(page.locator('#editor-opened').getByRole('textbox').first()).toContainText('// remote learner delta edit');
+  });
+
+  test('published teacher recording remains immutable after remote learner delta save', async ({ page, request }) => {
+    const finalContent = 'console.log("remote learner base");\n// immutable teacher final edit\n';
+    const recording = createPublishedRecording('teacher-recording-remote-immutable-test', finalContent);
+
+    await seedPublishedRecording(request, recording);
+
+    const rawBefore = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
+
+    await page.getByRole('button', { name: /load published recording/i }).click();
+    await page.getByRole('button', { name: /play recording/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await expect
+      .poll(async () => {
+        const playheadText = await page.getByText(/playhead ms:\s*\d+/i).textContent();
+        return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
+      })
+      .toBeGreaterThan(0);
+    await page.getByRole('button', { name: /pause & try it/i }).click();
+
+    const editor = page.locator('#editor-opened').getByRole('textbox').first();
+
+    await editor.click();
+    await page.keyboard.type('\n// immutable remote learner edit');
+    await expect(editor).toContainText('// immutable remote learner edit');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /save learner delta/i }).click();
+    await expect(page.getByText(/learner delta status:\s*saved/i)).toBeVisible();
+
+    const rawAfter = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
+
+    expect(rawAfter).toBe(rawBefore);
   });
 
   test('plays a stored teacher recording without mutating it', async ({ page }) => {

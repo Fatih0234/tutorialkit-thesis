@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the local architecture checkpoint for the interactive tutorial POC as of Milestone B. It covers the browser-only structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, async IndexedDB-backed storage adapter, media-synced playback, fallback timeline-clock playback, learner delta save/restore, and conflict detection behavior.
+This document is the architecture checkpoint for the interactive tutorial POC as of Milestone C. It covers the structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner delta save/restore, and conflict detection behavior.
 
 ## Scope and invariants
 
@@ -9,6 +9,8 @@ The POC implements only the interactivity layer:
 - teacher editor/file actions are recorded into a structured timeline;
 - teachers can optionally attach microphone narration or webcam media to the same timeline;
 - teachers can save, load, discard, and preview local recording drafts;
+- teachers can publish recordings and media to local backend/dev storage;
+- teachers and learners can load published recordings after a browser reload;
 - learners can replay that timeline;
 - learners can pause, edit their own workspace, and save a file-level delta;
 - saved learner deltas can be restored after teacher playback continues;
@@ -17,20 +19,22 @@ The POC implements only the interactivity layer:
 Important invariants:
 
 - **Teacher timeline is immutable.** Learner save/restore must not modify saved teacher recording drafts or the `interactive-poc.teacherRecording` compatibility mirror.
-- **Learner work is separate.** Learner changes are stored as learner-owned deltas in IndexedDB and mirrored to `interactive-poc.learnerDeltas`.
+- **Learner work is separate.** Learner changes are stored as learner-owned deltas in the active adapter: IndexedDB for local drafts and remote backend/dev storage for published recordings. Both paths mirror to `interactive-poc.learnerDeltas` for debugging.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
-- **Media is an attachment, not a replacement.** Milestone B records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
+- **Media is an attachment, not a replacement.** Milestone C records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **File-level deltas only.** The POC does not compute text patches or merge hunks.
+- **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
+- **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`.
 
 ## 1. Current user flow
 
-The visible local authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle and optional media capture lifecycle are explicit.
+The visible authoring/debug UI is rendered by `packages/react/src/Panels/InteractivePocControls.tsx` and the teacher-facing `packages/react/src/Panels/InteractiveAuthoringPanel.tsx`. It still exposes crude POC controls and status text, but the teacher draft lifecycle, optional media capture lifecycle, and publish/load lifecycle are explicit.
 
 ### Record Timeline Only / Record With Mic / Record With Camera
 
-Starts a local `TimelineRecorder` while the lesson is fully loaded and the mode is `idle`. `Record Timeline Only` keeps the Milestone A behavior. `Record With Mic` prepares an audio `MediaStream` through `getUserMedia({ audio: true })`; `Record With Camera` prepares a webcam stream through `getUserMedia({ audio: true, video: true })`.
+Starts a local `TimelineRecorder` while the lesson is fully loaded and the mode is `idle`. `Record Timeline Only` keeps the original timeline-only behavior. `Record With Mic` prepares an audio `MediaStream` through `getUserMedia({ audio: true })`; `Record With Camera` prepares a webcam stream through `getUserMedia({ audio: true, video: true })`.
 
 Behavior:
 
@@ -75,7 +79,38 @@ Previews the currently loaded/saved draft using the same timeline playback engin
 
 ### Discard Draft
 
-Clears the current in-memory draft/media selection and marks the authoring panel as discarded. Milestone B keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets.
+Clears the current in-memory draft/media selection and marks the authoring panel as discarded. Milestone C keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets.
+
+### Publish Recording
+
+Publishes the current stopped teacher recording draft through `RemoteInteractiveTimelineStorage`.
+
+Behavior:
+
+- keeps Save Draft / Load Draft on the IndexedDB adapter;
+- saves teacher recording metadata, base files, and structured timeline events to `/api/interactive/teacher-recordings`;
+- uploads each media Blob with `FormData` to `/api/interactive/media-assets`;
+- stores only media metadata on `TeacherRecording.mediaAssets`;
+- marks the current recording source as `published` so learner deltas use the remote adapter;
+- does not delete the local IndexedDB draft.
+
+Published teacher recordings are treated as immutable. Re-publishing the same id with different JSON is rejected by the dev backend.
+
+### Load Published Recording
+
+Loads the latest published recording from the backend/dev storage through `RemoteInteractiveTimelineStorage`.
+
+Behavior:
+
+- lists published recordings from `/api/interactive/teacher-recordings`;
+- loads the latest recording by id;
+- loads associated media metadata and Blob data through `/api/interactive/media-assets`;
+- sets the current recording source to `published`;
+- recomputes remote learner delta count, restore availability, and conflict status.
+
+### Preview Published Recording
+
+Previews the currently loaded published recording using the same playback engine as local draft preview. If media exists, `HTMLMediaElement.currentTime * 1000` drives the structured timeline. If no media exists, `TimelinePlaybackClock` remains the fallback. Preview does not mutate the published recording.
 
 ### Play Recording
 
@@ -83,8 +118,8 @@ Loads the latest teacher recording through the async storage adapter and replays
 
 Behavior:
 
-- loads the latest recording from IndexedDB or the `interactive-poc.teacherRecording` compatibility key;
-- loads associated media assets from IndexedDB when the recording references them;
+- loads the current published recording from remote storage when one is active, otherwise loads the latest local draft from IndexedDB or the `interactive-poc.teacherRecording` compatibility key;
+- loads associated media assets from the active storage adapter when the recording references them;
 - resets the workspace to the recording base files for a fresh playback;
 - sorts events by `tMs`, then `seq`;
 - when media is loaded, uses the media element's `currentTime` in seconds as the source of truth and applies due events where `event.tMs <= currentTime * 1000`;
@@ -134,7 +169,7 @@ Behavior:
 2. materializes teacher files at the paused timestamp;
 3. reads the current learner workspace files;
 4. diffs teacher-at-pause files against learner files;
-5. saves a `LearnerDelta` through the async storage adapter; the default IndexedDB adapter mirrors the array to `interactive-poc.learnerDeltas`;
+5. saves a `LearnerDelta` through the active async storage adapter: local drafts use IndexedDB, published recordings use `RemoteInteractiveTimelineStorage`; both paths keep the `interactive-poc.learnerDeltas` compatibility mirror;
 6. recomputes learner delta count, restore availability, and conflict status.
 
 The delta is keyed by:
@@ -264,7 +299,8 @@ Meaning:
 - `audio` assets are produced by `getUserMedia({ audio: true })` and recorded with `MediaRecorder`;
 - `webcam` assets are produced by `getUserMedia({ audio: true, video: true })` when browser/device support is available;
 - `TeacherRecording.mediaAssets` stores only `RecordingMediaAssetMetadata`;
-- IndexedDB stores `RecordingMediaAsset` records including the `Blob`;
+- IndexedDB stores local draft `RecordingMediaAsset` records including the `Blob`;
+- backend/dev storage stores published media files and metadata in `.interactive-data/media-assets/`;
 - localStorage mirrors never store media blobs.
 
 ### TimelineEvent
@@ -369,9 +405,14 @@ interface LearnerDeltaConflicts {
 
 The React hook currently displays only `filePaths` as `Conflict status` and `Conflicted files`.
 
-## 3. Browser storage
+## 3. Storage
 
-Milestone B uses an async storage adapter. The default browser implementation writes structured timeline data and media blobs to IndexedDB while mirroring the legacy localStorage keys for compatibility with existing tests and manual debugging.
+Milestone C uses an async storage adapter seam with two concrete browser-facing storage paths:
+
+- `IndexedDBInteractiveTimelineStorage` for local drafts/offline browser data;
+- `RemoteInteractiveTimelineStorage` for published/backend demo data.
+
+The local browser implementation writes structured timeline data and media blobs to IndexedDB while mirroring the legacy localStorage keys for compatibility with existing tests and manual debugging. The remote adapter uses `fetch` to call `/api/interactive/*` and stores demo data in `.interactive-data/` through the Astro dev/preview server.
 
 ### IndexedDB
 
@@ -399,6 +440,43 @@ localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(recordin
 
 Loading returns `undefined` when no recording exists.
 
+### Backend/dev `.interactive-data` storage
+
+Milestone C adds local server-side persistence under the gitignored repository directory:
+
+```text
+.interactive-data/
+  teacher-recordings/
+    <recordingId>.json
+  learner-deltas/
+    <deltaId>.json
+  media-assets/
+    <assetId>.json
+    <assetId>-<serverGeneratedId>.<ext>
+```
+
+The dev backend is intentionally small and file-based. It is not a production database or object-storage layer. Media files are stored outside the public webroot and are served only through `/api/interactive/media-assets/:id?blob=1`.
+
+### API endpoints
+
+The backend/dev server exposes:
+
+```text
+POST /api/interactive/teacher-recordings
+GET  /api/interactive/teacher-recordings
+GET  /api/interactive/teacher-recordings/:id
+POST /api/interactive/learner-deltas
+GET  /api/interactive/learner-deltas?lessonId=&teacherRecordingId=&userId=
+GET  /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=&userId=
+POST /api/interactive/media-assets
+GET  /api/interactive/media-assets/:id
+GET  /api/interactive/media-assets/:id?blob=1
+GET  /api/interactive/media-assets?recordingId=
+DELETE /api/interactive/media-assets/:id
+```
+
+Media upload uses `FormData`/`multipart/form-data` from the remote adapter. The server validates basic JSON shape, safe ids, leading-slash file paths, expected media MIME types, size limits, and simple file signatures. It ignores client filenames and generates server-side stored media filenames.
+
 ### `interactive-poc.learnerDeltas` compatibility mirror
 
 Stores a serialized array of `LearnerDelta` objects:
@@ -407,7 +485,7 @@ Stores a serialized array of `LearnerDelta` objects:
 localStorage.setItem('interactive-poc.learnerDeltas', JSON.stringify(deltas));
 ```
 
-The IndexedDB adapter mirrors the full learner-delta array to this key after saves. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta. Media blobs are intentionally excluded from localStorage.
+The IndexedDB adapter mirrors the full learner-delta array to this key after saves. The remote adapter mirrors remote learner delta query results after remote saves/loads so existing debug inspection remains useful. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta. Media blobs are intentionally excluded from localStorage.
 
 ## 4. Runtime modules
 
@@ -510,6 +588,14 @@ Defines the async `InteractiveTimelineStorage` boundary used by React. It includ
 
 Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts, learner deltas, and media assets to IndexedDB, migrates existing localStorage values when possible, mirrors latest teacher/learner metadata back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable. Media blobs are stored only in the `mediaAssets` object store.
 
+### `remote-storage-adapter.ts`
+
+Implements `RemoteInteractiveTimelineStorage`. It is the only interactivity module that uses `fetch`. It maps the async storage interface to `/api/interactive/*` endpoints and uploads media with `FormData`. It mirrors loaded/saved published teacher recordings and remote learner deltas to the legacy localStorage keys for inspection, but it does not store media blobs in localStorage.
+
+### `packages/astro/src/vite-plugins/interactive-persistence.ts`
+
+Provides the local backend/dev persistence handlers. During Astro dev it installs API middleware. During E2E preview, `e2e/scripts/preview-with-interactive-api.mjs` serves static build output and mounts the same API middleware.
+
 ## 5. React integration
 
 ### `WorkspacePanel.tsx`
@@ -537,6 +623,8 @@ Responsibilities:
 - recording lifecycle;
 - optional mic/webcam media recording lifecycle;
 - local teacher draft save/load/preview/discard lifecycle;
+- published recording publish/load/preview lifecycle;
+- storage selection between local draft and remote published adapters;
 - async storage calls and compatibility state sync;
 - media-synced playback and fallback clock playback lifecycle;
 - pause/resume mode transitions;
@@ -569,9 +657,12 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 - Save Draft;
 - Load Draft;
 - Preview Draft;
-- Discard Draft.
+- Discard Draft;
+- Publish Recording;
+- Load Published Recording;
+- Preview Published Recording.
 
-It also displays draft status, current draft id, recording duration, recording status, event count, media status, media kind, media duration, MIME type, media errors, and a simple audio/video preview element when media is loaded.
+It also displays draft status, current draft id, published status, published recording id, published errors, recording storage source, recording duration, recording status, event count, media status, media kind, media duration, MIME type, media errors, and a simple audio/video preview element when media is loaded.
 
 ### `InteractivePocControls.tsx`
 
@@ -583,9 +674,11 @@ It receives a control model from `useInteractivePoc` and does not own persistenc
 
 Known limitations are intentional for the POC:
 
-- browser-local IndexedDB/localStorage compatibility storage only;
-- no backend persistence;
+- local IndexedDB/localStorage compatibility storage remains required for drafts;
+- backend persistence is file-based dev/demo storage only;
 - no account/auth/user identity beyond `local-poc-user`;
+- no production database;
+- no production object storage or cloud media bucket;
 - no merge engine;
 - no patch-based/hunk-level deltas;
 - no conflict resolution choices;
@@ -610,19 +703,22 @@ Candidate future phases:
 1. **Richer playback clock controls**
    - support seeking, speed, drift correction, cancellation, and deterministic replay state.
 
-2. **Backend persistence adapter/API implementation**
-   - implement the documented server contracts after the local authoring storage path is validated.
+2. **Production persistence hardening**
+   - replace `.interactive-data/` with a real database/object-storage implementation behind the same remote adapter contract.
 
-3. **Conflict resolution UX**
+3. **Auth/user ownership**
+   - derive `userId` from auth instead of the current fixed `local-poc-user`.
+
+4. **Conflict resolution UX**
    - show conflicted files clearly;
    - let the learner choose teacher version, learner version, or eventually a merged version;
    - keep detection separate from resolution.
 
-4. **Production UI**
+5. **Production UI**
    - replace the debug control strip with tutorial-appropriate controls and workspace mode affordances.
 
-5. **Optional transcript/captions**
+6. **Optional transcript/captions**
    - attach transcript metadata to teacher timeline events without changing the learner delta model.
 
-6. **Optional richer capture**
+7. **Optional richer capture**
    - screen, terminal, and preview capture should remain out of scope until the editor/file timeline plus media narration path is stable.

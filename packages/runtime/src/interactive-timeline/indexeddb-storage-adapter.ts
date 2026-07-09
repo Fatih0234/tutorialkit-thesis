@@ -3,6 +3,7 @@ import {
   LocalStorageInteractiveTimelineStorage,
   getTeacherRecordingDraftSummary,
   type InteractiveTimelineStorage,
+  type LearnerDeltaQuery,
   type TeacherRecordingDraftSummary,
 } from './storage-adapter.js';
 import type { RecordingMediaAsset } from './media.js';
@@ -47,6 +48,15 @@ function sortTeacherRecordingsNewestFirst(recordings: TeacherRecording[]): Teach
   });
 }
 
+function matchesLearnerDeltaQuery(delta: LearnerDelta, query: LearnerDeltaQuery = {}): boolean {
+  return (
+    (!query.lessonId || delta.lessonId === query.lessonId) &&
+    (!query.teacherRecordingId || delta.teacherRecordingId === query.teacherRecordingId) &&
+    (!query.teacherRecordingVersion || delta.teacherRecordingVersion === query.teacherRecordingVersion) &&
+    (!query.userId || delta.userId === query.userId)
+  );
+}
+
 function sortLearnerDeltasOldestFirst(deltas: LearnerDelta[]): LearnerDelta[] {
   return [...deltas].sort((a, b) => {
     const createdAtOrder = a.createdAt.localeCompare(b.createdAt);
@@ -68,8 +78,25 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
     this.fallbackStorage = fallbackStorage;
   }
 
-  async loadTeacherRecording(): Promise<TeacherRecording | undefined> {
+  async loadTeacherRecording(id?: string): Promise<TeacherRecording | undefined> {
     await this.migrateLocalStorageIfNeeded();
+
+    if (id) {
+      const indexedDbRecording = await this.readTeacherRecordingFromIndexedDB(id);
+
+      if (indexedDbRecording) {
+        await this.fallbackStorage.saveTeacherRecording(indexedDbRecording);
+        return indexedDbRecording;
+      }
+
+      const fallbackById = await this.fallbackStorage.loadTeacherRecording(id);
+
+      if (fallbackById) {
+        await this.writeTeacherRecordingToIndexedDB(fallbackById);
+      }
+
+      return fallbackById;
+    }
 
     const indexedDbRecordings = await this.readAllTeacherRecordingsFromIndexedDB();
 
@@ -98,13 +125,13 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
     await this.saveTeacherRecordingDraft(recording);
   }
 
-  async loadLearnerDeltas(): Promise<LearnerDelta[]> {
+  async loadLearnerDeltas(query?: LearnerDeltaQuery): Promise<LearnerDelta[]> {
     await this.migrateLocalStorageIfNeeded();
 
     const indexedDbDeltas = await this.readAllLearnerDeltasFromIndexedDB();
 
     if (!indexedDbDeltas) {
-      return this.fallbackStorage.loadLearnerDeltas();
+      return this.fallbackStorage.loadLearnerDeltas(query);
     }
 
     if (indexedDbDeltas.length > 0) {
@@ -112,7 +139,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
 
       saveLearnerDeltas(sortedDeltas);
 
-      return sortedDeltas;
+      return sortedDeltas.filter((delta) => matchesLearnerDeltaQuery(delta, query));
     }
 
     const fallbackDeltas = await this.fallbackStorage.loadLearnerDeltas();
@@ -121,11 +148,11 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       await this.writeLearnerDeltaToIndexedDB(delta);
     }
 
-    return fallbackDeltas;
+    return fallbackDeltas.filter((delta) => matchesLearnerDeltaQuery(delta, query));
   }
 
-  async loadLatestLearnerDelta(): Promise<LearnerDelta | undefined> {
-    return (await this.loadLearnerDeltas()).at(-1);
+  async loadLatestLearnerDelta(query?: LearnerDeltaQuery): Promise<LearnerDelta | undefined> {
+    return (await this.loadLearnerDeltas(query)).at(-1);
   }
 
   async saveLearnerDelta(delta: LearnerDelta): Promise<void> {

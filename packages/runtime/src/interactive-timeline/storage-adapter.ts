@@ -18,11 +18,18 @@ export interface TeacherRecordingDraftSummary {
   eventCount: number;
 }
 
+export interface LearnerDeltaQuery {
+  lessonId?: string;
+  teacherRecordingId?: string;
+  teacherRecordingVersion?: number;
+  userId?: string;
+}
+
 export interface InteractiveTimelineStorage {
-  loadTeacherRecording(): Promise<TeacherRecording | undefined>;
+  loadTeacherRecording(id?: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecording(recording: TeacherRecording): Promise<void>;
-  loadLearnerDeltas(): Promise<LearnerDelta[]>;
-  loadLatestLearnerDelta(): Promise<LearnerDelta | undefined>;
+  loadLearnerDeltas(query?: LearnerDeltaQuery): Promise<LearnerDelta[]>;
+  loadLatestLearnerDelta(query?: LearnerDeltaQuery): Promise<LearnerDelta | undefined>;
   saveLearnerDelta(delta: LearnerDelta): Promise<void>;
   listTeacherRecordingDrafts(): Promise<TeacherRecordingDraftSummary[]>;
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
@@ -45,21 +52,36 @@ export function getTeacherRecordingDraftSummary(recording: TeacherRecording): Te
   };
 }
 
+function matchesLearnerDeltaQuery(delta: LearnerDelta, query: LearnerDeltaQuery = {}): boolean {
+  return (
+    (!query.lessonId || delta.lessonId === query.lessonId) &&
+    (!query.teacherRecordingId || delta.teacherRecordingId === query.teacherRecordingId) &&
+    (!query.teacherRecordingVersion || delta.teacherRecordingVersion === query.teacherRecordingVersion) &&
+    (!query.userId || delta.userId === query.userId)
+  );
+}
+
 export class LocalStorageInteractiveTimelineStorage implements InteractiveTimelineStorage {
-  async loadTeacherRecording(): Promise<TeacherRecording | undefined> {
-    return loadTeacherRecording();
+  async loadTeacherRecording(id?: string): Promise<TeacherRecording | undefined> {
+    const recording = loadTeacherRecording();
+
+    return !id || recording?.id === id ? recording : undefined;
   }
 
   async saveTeacherRecording(recording: TeacherRecording): Promise<void> {
     saveTeacherRecording(recording);
   }
 
-  async loadLearnerDeltas(): Promise<LearnerDelta[]> {
-    return loadLearnerDeltas();
+  async loadLearnerDeltas(query?: LearnerDeltaQuery): Promise<LearnerDelta[]> {
+    return loadLearnerDeltas().filter((delta) => matchesLearnerDeltaQuery(delta, query));
   }
 
-  async loadLatestLearnerDelta(): Promise<LearnerDelta | undefined> {
-    return loadLatestLearnerDelta();
+  async loadLatestLearnerDelta(query?: LearnerDeltaQuery): Promise<LearnerDelta | undefined> {
+    if (!query) {
+      return loadLatestLearnerDelta();
+    }
+
+    return (await this.loadLearnerDeltas(query)).at(-1);
   }
 
   async saveLearnerDelta(delta: LearnerDelta): Promise<void> {

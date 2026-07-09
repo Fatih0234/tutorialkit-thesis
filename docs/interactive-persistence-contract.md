@@ -1,17 +1,17 @@
 # Interactive persistence contract
 
-This document defines the proposed backend persistence contract for the interactive tutorial POC. It remains a contract document for backend work: Milestone B adds local media assets in IndexedDB and media-synced playback, but it does not add backend APIs, database code, network calls, auth, object storage, or production persistence infrastructure.
+This document defines the persistence contract for the interactive tutorial POC. Milestone C adds a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. It does not add real auth, a production database, paid/cloud object storage, analytics, or production persistence infrastructure.
 
-The contract preserves the Milestone B browser-only model described in `docs/interactive-poc-architecture.md` and prepares a future replacement for local IndexedDB/localStorage compatibility persistence.
+The contract preserves the Milestone C local-draft plus remote-published model described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
 
 ## Non-goals
 
 This document does not specify or implement:
 
 - authentication/session middleware;
-- database migrations;
+- production database migrations;
 - production storage infrastructure;
-- object storage for media blobs;
+- paid/cloud object storage for media blobs;
 - merge algorithms;
 - conflict resolution UI;
 - terminal recording persistence;
@@ -19,18 +19,27 @@ This document does not specify or implement:
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone B local-first status
+## Milestone C local-draft and remote-published status
 
-Milestone B keeps `InteractiveTimelineStorage` as an async client-side adapter boundary and extends it with media asset methods. The default browser adapter is `IndexedDBInteractiveTimelineStorage`, which stores local teacher recording drafts, learner deltas, and media assets in IndexedDB and mirrors the legacy POC localStorage keys:
+Milestone C keeps `InteractiveTimelineStorage` as an async client-side adapter boundary and adds `RemoteInteractiveTimelineStorage` for published/demo data. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in the IndexedDB `mediaAssets` object store and are not mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
+The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
 
-No backend routes, fetch calls, auth, or object-storage uploads are introduced by Milestone B. Future backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+Remote published data is stored by local dev endpoints under `/api/interactive/*` in a gitignored repository directory:
+
+```text
+.interactive-data/
+  teacher-recordings/
+  learner-deltas/
+  media-assets/
+```
+
+`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. Media upload uses `FormData`/`multipart/form-data`. No real auth, production database, or cloud object-storage upload is introduced by Milestone C. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 ## 1. Persistence goals
 
@@ -133,7 +142,8 @@ interface RecordingMediaAsset extends RecordingMediaAssetMetadata {
 Notes:
 
 - `TeacherRecording.mediaAssets` should embed only `RecordingMediaAssetMetadata`.
-- Local Milestone B stores `Blob` values in IndexedDB object store `mediaAssets`.
+- Local drafts store `Blob` values in IndexedDB object store `mediaAssets`.
+- Published/dev media stores metadata JSON plus binary files in `.interactive-data/media-assets/`.
 - A future backend should store the binary body in object storage or a media table/blob store and keep metadata in a durable media asset record.
 - Media is synchronized to the structured timeline by playback time, not by replacing the timeline with a screen recording.
 
@@ -242,11 +252,11 @@ Current conflict rule:
 
 Conflict detection is non-destructive and informational only.
 
-## 3. Proposed API shape
+## 3. API shape
 
-The API shape is intentionally minimal and resource-oriented. Exact framework, route namespacing, and auth are open decisions.
+The API shape is intentionally minimal and resource-oriented. Milestone C implements these routes under `/api/interactive/*` for local dev/demo persistence. Auth remains an open production decision.
 
-### `POST /teacher-recordings`
+### `POST /api/interactive/teacher-recordings`
 
 Create a new immutable teacher recording.
 
@@ -254,6 +264,7 @@ Request body:
 
 ```json
 {
+  "id": "teacher-recording-123",
   "lessonId": "lesson-and-solution",
   "version": 1,
   "startedAt": "2026-01-01T00:00:00.000Z",
@@ -294,11 +305,12 @@ Response body:
 
 Rules:
 
-- server may generate `id` values if not provided;
+- current dev server requires a safe `id` generated by the client recorder;
 - request must be validated before persistence;
-- after successful creation, the recording should be treated as immutable.
+- after successful creation, the recording is treated as immutable;
+- posting different JSON with an existing id is rejected.
 
-### `GET /teacher-recordings/:id`
+### `GET /api/interactive/teacher-recordings/:id`
 
 Fetch one teacher recording by id.
 
@@ -324,7 +336,7 @@ Rules:
 - events must be returned in deterministic order or documented as sortable by `tMs` and `seq`;
 - file paths must already be normalized or normalized by the client adapter.
 
-### `POST /learner-deltas`
+### `POST /api/interactive/learner-deltas`
 
 Create a learner-owned delta.
 
@@ -375,14 +387,14 @@ Rules:
 - should validate teacher recording existence/version/hash;
 - may return a `ConflictSummary` in a later API version, but this is optional.
 
-### `GET /learner-deltas?lessonId=&teacherRecordingId=&userId=`
+### `GET /api/interactive/learner-deltas?lessonId=&teacherRecordingId=&userId=`
 
 List learner deltas for a lesson/teacher/user tuple.
 
 Example:
 
 ```text
-GET /learner-deltas?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
+GET /api/interactive/learner-deltas?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
 ```
 
 Response body:
@@ -398,14 +410,14 @@ Recommended ordering:
 1. `createdAt` descending;
 2. `id` descending as a stable tie-breaker.
 
-### `GET /learner-deltas/latest?lessonId=&teacherRecordingId=&userId=`
+### `GET /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=&userId=`
 
 Fetch the latest matching learner delta for restore.
 
 Example:
 
 ```text
-GET /learner-deltas/latest?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
+GET /api/interactive/learner-deltas/latest?lessonId=lesson-and-solution&teacherRecordingId=teacher-recording-123&userId=local-poc-user
 ```
 
 Response body when present:
@@ -441,7 +453,101 @@ Rules:
 - server may also filter by `teacherRecordingVersion` if supplied;
 - client must still verify the hash match before restore.
 
-### Optional `GET /learner-deltas/:id/conflicts`
+
+### `GET /api/interactive/teacher-recordings`
+
+List published/dev teacher recordings.
+
+Response body:
+
+```json
+{
+  "teacherRecordings": []
+}
+```
+
+Rules:
+
+- returns immutable teacher recording records;
+- current dev implementation sorts newest first by `startedAt`, then `id`.
+
+### `POST /api/interactive/media-assets`
+
+Upload a media Blob for a teacher recording.
+
+Request format:
+
+- `multipart/form-data`;
+- `metadata` field containing serialized `RecordingMediaAssetMetadata`, or equivalent individual fields;
+- `file` field containing the media Blob.
+
+Rules:
+
+- linked teacher recording must already exist;
+- allowed dev MIME types are business-required media formats currently used by the POC (`audio/webm`, `video/webm`, `audio/ogg`, `audio/wav`, `audio/x-wav`);
+- server sets size limits;
+- server validates safe ids and simple file signatures;
+- server ignores client filenames;
+- server generates stored media filenames;
+- media files are stored outside public webroot under `.interactive-data/media-assets/`.
+
+Response body:
+
+```json
+{
+  "mediaAsset": {
+    "id": "media-asset-123",
+    "recordingId": "teacher-recording-123",
+    "kind": "audio",
+    "mimeType": "audio/webm",
+    "durationMs": 2000,
+    "createdAt": "2026-01-01T00:00:01.000Z"
+  }
+}
+```
+
+### `GET /api/interactive/media-assets/:id`
+
+Fetch media metadata and a controlled download URL.
+
+Response body:
+
+```json
+{
+  "mediaAsset": {
+    "id": "media-asset-123",
+    "recordingId": "teacher-recording-123",
+    "kind": "audio",
+    "mimeType": "audio/webm",
+    "durationMs": 2000,
+    "createdAt": "2026-01-01T00:00:01.000Z"
+  },
+  "downloadUrl": "/api/interactive/media-assets/media-asset-123?blob=1"
+}
+```
+
+### `GET /api/interactive/media-assets/:id?blob=1`
+
+Fetch the media binary through a controlled endpoint.
+
+Rules:
+
+- responds with the stored media MIME type;
+- does not expose the server-side stored filename.
+
+### `GET /api/interactive/media-assets?recordingId=`
+
+List media metadata for a teacher recording.
+
+Response body:
+
+```json
+{
+  "mediaAssets": []
+}
+```
+
+### Optional `GET /api/interactive/learner-deltas/:id/conflicts`
 
 Compute or fetch conflict summary for one learner delta.
 
@@ -475,7 +581,7 @@ Rules:
 
 ## 4. Storage shape
 
-Exact database technology is undecided. These names describe logical tables/collections.
+Production database technology is undecided. These names describe logical tables/collections. Milestone C maps them to gitignored JSON/media files in `.interactive-data/`.
 
 ### `teacher_recordings`
 
@@ -544,7 +650,7 @@ Recommended indexes:
 
 ### `media_assets`
 
-Stores teacher recording media metadata and, for local/browser storage, Blob data. A production backend may split metadata and binary/object storage.
+Stores teacher recording media metadata and, for local/browser storage, Blob data. The Milestone C dev backend stores metadata JSON plus media files under `.interactive-data/media-assets/`. A production backend may split metadata and binary/object storage.
 
 Suggested fields:
 
@@ -642,7 +748,7 @@ When computing conflicts:
 
 ## 6. Migration path from local browser storage
 
-### Current compatibility localStorage keys
+### Current compatibility localStorage keys and dev data directory
 
 The browser POC still mirrors these compatibility keys:
 
@@ -655,7 +761,7 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
-Milestone B also stores the same resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Media blobs are stored only in IndexedDB and are not mirrored to localStorage.
+Milestone C stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, and `.interactive-data/media-assets`. Media blobs are stored only in IndexedDB or `.interactive-data/media-assets` and are not mirrored to localStorage.
 
 ### Equivalent backend records
 
@@ -663,16 +769,16 @@ Migration mapping:
 
 | Local browser value | Backend resource |
 | --- | --- |
-| IndexedDB `teacherRecordings` item or `interactive-poc.teacherRecording` mirror | one `TeacherRecording` record plus optional event rows |
-| IndexedDB `mediaAssets` item | one `RecordingMediaAsset` metadata row plus Blob/object-storage body |
-| IndexedDB `learnerDeltas` item or each item in `interactive-poc.learnerDeltas` mirror | one `LearnerDelta` record |
+| IndexedDB `teacherRecordings` item, `.interactive-data/teacher-recordings/<id>.json`, or `interactive-poc.teacherRecording` mirror | one `TeacherRecording` record plus optional event rows |
+| IndexedDB `mediaAssets` item or `.interactive-data/media-assets/<id>.json` plus stored media file | one `RecordingMediaAsset` metadata row plus Blob/object-storage body |
+| IndexedDB `learnerDeltas` item, `.interactive-data/learner-deltas/<id>.json`, or each item in `interactive-poc.learnerDeltas` mirror | one `LearnerDelta` record |
 | Phase 6 conflict result | computed `ConflictSummary`, optional cache |
 
-The existing IndexedDB values and localStorage JSON mirrors are intentionally close to the proposed backend payloads, so a future adapter can translate with minimal restructuring.
+The existing IndexedDB values, `.interactive-data` files, and localStorage JSON mirrors are intentionally close to the production backend payloads, so a future production adapter can translate with minimal restructuring.
 
-### Adapter interface for future replacement
+### Adapter interface for storage replacement
 
-React now uses an async local adapter boundary. A future backend adapter should satisfy the same shape before local-only assumptions are removed.
+React now uses an async storage adapter boundary. The local IndexedDB adapter and remote dev adapter satisfy the same shape; a future production backend adapter should preserve that shape before local-only assumptions are removed.
 
 ```ts
 interface TeacherRecordingDraftSummary {
@@ -685,10 +791,10 @@ interface TeacherRecordingDraftSummary {
 }
 
 interface InteractiveTimelineStorage {
-  loadTeacherRecording(): Promise<TeacherRecording | undefined>;
+  loadTeacherRecording(id?: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecording(recording: TeacherRecording): Promise<void>;
-  loadLearnerDeltas(): Promise<LearnerDelta[]>;
-  loadLatestLearnerDelta(): Promise<LearnerDelta | undefined>;
+  loadLearnerDeltas(query?: LearnerDeltaQuery): Promise<LearnerDelta[]>;
+  loadLatestLearnerDelta(query?: LearnerDeltaQuery): Promise<LearnerDelta | undefined>;
   saveLearnerDelta(delta: LearnerDelta): Promise<void>;
   listTeacherRecordingDrafts(): Promise<TeacherRecordingDraftSummary[]>;
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
@@ -703,12 +809,13 @@ interface InteractiveTimelineStorage {
 
 Backend implementation path:
 
-1. keep `IndexedDBInteractiveTimelineStorage` as the default local authoring/media adapter;
+1. keep `IndexedDBInteractiveTimelineStorage` as the local authoring/media draft adapter;
 2. keep `LocalStorageInteractiveTimelineStorage` as a compatibility/fallback adapter for timeline-only data;
-3. add backend-backed adapter behind the same async interface;
-4. choose a backend media binary strategy before production media uploads (object storage, database Blob, or local file store);
-5. keep Playwright tests asserting teacher immutability, media draft load/preview, fallback no-media playback, and learner delta recoverability;
-6. only remove localStorage mirror assumptions after backend behavior matches the local POC.
+3. use `RemoteInteractiveTimelineStorage` for published/backend demo data;
+4. keep `.interactive-data/` as a dev-only storage implementation;
+5. choose a production media binary strategy before production media uploads (object storage, database Blob, or local file store);
+6. keep Playwright tests asserting teacher immutability, media draft load/preview, published media load/preview, fallback no-media playback, and learner delta recoverability;
+7. only remove localStorage mirror assumptions after backend behavior matches the local POC.
 
 ## 7. Open decisions
 
