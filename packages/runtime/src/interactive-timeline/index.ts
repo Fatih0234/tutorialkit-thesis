@@ -5,3 +5,4 @@ export * from './materialize.js';
 export * from './learner-delta.js';
 export * from './playback-clock.js';
 export * from './storage.js';
+export * from './storage-adapter.js';

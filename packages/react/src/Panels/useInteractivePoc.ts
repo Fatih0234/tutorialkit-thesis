@@ -1,21 +1,18 @@
 import {
+  LocalStorageInteractiveTimelineStorage,
   TimelinePlaybackClock,
   TimelineRecorder,
   applyLearnerDelta,
   diffFiles,
   getLearnerDeltaConflicts,
-  loadLatestLearnerDelta,
-  loadLearnerDeltas,
-  loadTeacherRecording,
   materializeTeacherState,
   normalizeFiles,
   normalizePath,
-  saveLearnerDelta,
-  saveTeacherRecording,
   simpleHashFiles,
   type EditorScrolledPayload,
   type FileChangedPayload,
   type FilesSnapshot,
+  type InteractiveTimelineStorage,
   type LearnerDelta,
   type TeacherRecording,
   type TimelineEvent,
@@ -80,6 +77,7 @@ export interface UseInteractivePocResult {
 }
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
+const interactiveTimelineStorage: InteractiveTimelineStorage = new LocalStorageInteractiveTimelineStorage();
 
 export function useInteractivePoc({
   tutorialStore,
@@ -120,8 +118,8 @@ export function useInteractivePoc({
     setEventCount(recorderRef.current?.getRecording()?.events.length ?? 0);
   }
 
-  function getLatestMatchingLearnerDelta(recording = loadTeacherRecording()) {
-    const delta = loadLatestLearnerDelta();
+  function getLatestMatchingLearnerDelta(recording = interactiveTimelineStorage.loadTeacherRecording()) {
+    const delta = interactiveTimelineStorage.loadLatestLearnerDelta();
 
     if (!recording || !delta) {
       return undefined;
@@ -138,11 +136,11 @@ export function useInteractivePoc({
     return delta;
   }
 
-  function syncLearnerDeltaState(recording = loadTeacherRecording()) {
+  function syncLearnerDeltaState(recording = interactiveTimelineStorage.loadTeacherRecording()) {
     const matchingDelta = getLatestMatchingLearnerDelta(recording);
 
     setHasTeacherRecording(Boolean(recording));
-    setLearnerDeltaCount(loadLearnerDeltas().length);
+    setLearnerDeltaCount(interactiveTimelineStorage.loadLearnerDeltas().length);
     setHasRestorableLearnerDelta(Boolean(matchingDelta));
     setConflictedFiles(recording && matchingDelta ? getLearnerDeltaConflicts(recording, matchingDelta).filePaths : []);
   }
@@ -303,7 +301,7 @@ export function useInteractivePoc({
   }
 
   function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }) {
-    const recording = playbackRecordingRef.current ?? loadTeacherRecording();
+    const recording = playbackRecordingRef.current ?? interactiveTimelineStorage.loadTeacherRecording();
 
     stopPlaybackClock();
 
@@ -352,7 +350,7 @@ export function useInteractivePoc({
   }
 
   function onPlayRecording() {
-    const recording = loadTeacherRecording() ?? null;
+    const recording = interactiveTimelineStorage.loadTeacherRecording() ?? null;
 
     playbackRecordingRef.current = recording;
     syncLearnerDeltaState(recording ?? undefined);
@@ -406,7 +404,7 @@ export function useInteractivePoc({
       return;
     }
 
-    saveTeacherRecording(stopped);
+    interactiveTimelineStorage.saveTeacherRecording(stopped);
     setIsRecording(false);
     setEventCount(stopped.events.length);
     syncLearnerDeltaState(stopped);
@@ -417,7 +415,7 @@ export function useInteractivePoc({
       return;
     }
 
-    const recording = loadTeacherRecording();
+    const recording = interactiveTimelineStorage.loadTeacherRecording();
 
     setHasTeacherRecording(Boolean(recording));
 
@@ -444,13 +442,13 @@ export function useInteractivePoc({
       createdAt: new Date().toISOString(),
     };
 
-    saveLearnerDelta(delta);
+    interactiveTimelineStorage.saveLearnerDelta(delta);
     setLearnerDeltaStatus('saved');
     syncLearnerDeltaState(recording);
   }
 
   function onRestoreLearnerDelta() {
-    const recording = loadTeacherRecording();
+    const recording = interactiveTimelineStorage.loadTeacherRecording();
     const delta = getLatestMatchingLearnerDelta(recording);
 
     if (!recording || !delta) {
