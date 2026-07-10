@@ -232,18 +232,59 @@ async function clickUntilTextVisible(page: Page, buttonName: RegExp, expectedTex
   }
 }
 
+async function chooseDemoIdentity(page: Page, learnerName: 'Teacher Demo' | 'Learner Demo' | 'Learner Two') {
+  const identitySelect = page.getByLabel(/choose demo identity/i);
+
+  await expect(identitySelect).toBeVisible();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await identitySelect.selectOption({ label: `Sign in as ${learnerName}` });
+
+    try {
+      await expect(page.getByText(new RegExp(`signed-in user:\\s*${learnerName}`, 'i'))).toBeVisible({ timeout: 2500 });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+
+      await page.waitForTimeout(300);
+    }
+  }
+}
+
 async function signInAsTeacher(page: Page) {
-  await clickUntilTextVisible(page, /sign in as teacher demo/i, /signed-in user:\s*teacher demo/i);
+  await chooseDemoIdentity(page, 'Teacher Demo');
   await expect(page.getByText(/signed-in role:\s*teacher/i)).toBeVisible();
 }
 
-async function signInAsLearner(page: Page, learnerName = 'Learner Demo') {
-  await clickUntilTextVisible(page, new RegExp(`sign in as ${learnerName}`, 'i'), new RegExp(`signed-in user:\\s*${learnerName}`, 'i'));
+async function signInAsLearner(page: Page, learnerName: 'Learner Demo' | 'Learner Two' = 'Learner Demo') {
+  await chooseDemoIdentity(page, learnerName);
   await expect(page.getByText(/signed-in role:\s*learner/i)).toBeVisible();
 }
 
 async function signOut(page: Page) {
   await clickUntilTextVisible(page, /sign out/i, /signed-in user:\s*signed out/i);
+}
+
+async function expandDetails(page: Page, summaryName: string) {
+  const summary = page.locator('summary').filter({ hasText: summaryName }).first();
+
+  await expect(summary).toBeVisible();
+
+  const isOpen = await summary.evaluate((element) => element.closest('details')?.hasAttribute('open') ?? false);
+
+  if (!isOpen) {
+    await summary.click();
+  }
+}
+
+async function openRecordingLibrary(page: Page) {
+  await expandDetails(page, 'Recording Library');
+}
+
+async function openTeacherTools(page: Page) {
+  await expandDetails(page, 'Import, Export, and Demo Tools');
 }
 
 async function clickRoleTabUntilVisible(page: Page, tabName: 'Teacher Studio' | 'Learner Lesson', heading: RegExp) {
@@ -285,6 +326,7 @@ async function waitForPlayheadToAdvance(page: Page) {
 }
 
 async function confirmResetDemoData(page: Page) {
+  await openTeacherTools(page);
   await page.getByRole('button', { name: /^reset demo data$/i }).click();
   await expect(page.getByText(/are you sure\? this removes only demo-prefixed records/i)).toBeVisible();
   await page.getByRole('button', { name: /^confirm reset demo data$/i }).click();
@@ -296,10 +338,12 @@ async function seedDemoRecordingFromTeacherDashboard(page: Page) {
   await expect(page.getByText(/demo data status:\s*reset/i)).toBeVisible();
   await page.getByRole('button', { name: /demo seed/i }).click();
   await expect(page.getByText(/demo data status:\s*seeded demo-interactive-conflict-flow/i)).toBeVisible();
+  await openRecordingLibrary(page);
   await expect(page.getByLabel(/select published lesson/i)).toHaveValue('demo-interactive-conflict-flow');
 }
 
 async function exportRecordingPackageFromUi(page: Page, outputPath: string) {
+  await openTeacherTools(page);
   const downloadPromise = page.waitForEvent('download');
 
   await page.getByRole('button', { name: /export package/i }).click();
@@ -313,6 +357,7 @@ async function exportRecordingPackageFromUi(page: Page, outputPath: string) {
 }
 
 async function uploadRecordingPackage(page: Page, packagePath: string) {
+  await openTeacherTools(page);
   await page.getByLabel(/import package/i).setInputFiles(packagePath);
   await expect(page.getByText(/import package status:\s*package selected/i)).toBeVisible();
 }
@@ -450,14 +495,14 @@ test.describe('interactive timeline POC', () => {
 
   test('primary UI uses thesis-demo product wording', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /interactive thesis demo/i })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /thesis demo walkthrough/i })).toBeVisible();
-    await expect(page.getByText(/seed demo lesson or create a recording/i)).toBeVisible();
-    await expect(page.getByText(/resolve conflict if prompted/i)).toBeVisible();
+    await expandDetails(page, 'Thesis demo walkthrough');
+    await expect(page.getByText(/seed a lesson or create a recording/i)).toBeVisible();
+    await expect(page.getByText(/resume, restore, and resolve conflicts/i)).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: /teacher studio/i })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /demo identity/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in as teacher demo/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in as learner demo/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in as learner two/i })).toBeVisible();
+    await expect(page.getByLabel(/choose demo identity/i)).toBeVisible();
+    await expect(page.getByRole('option', { name: /sign in as teacher demo/i })).toBeAttached();
+    await expect(page.getByRole('option', { name: /sign in as learner demo/i })).toBeAttached();
+    await expect(page.getByRole('option', { name: /sign in as learner two/i })).toBeAttached();
     await openLearnerSection(page);
 
     await expect(page.getByRole('button', { name: /try it yourself/i })).toBeVisible();
@@ -485,6 +530,7 @@ test.describe('interactive timeline POC', () => {
     await signInAsTeacher(page);
     await openTeacherSection(page);
 
+    await openTeacherTools(page);
     await page.getByRole('button', { name: /^reset demo data$/i }).click();
     await expect(page.getByRole('button', { name: /^confirm reset demo data$/i })).toBeVisible();
     await expect(page.getByText(/are you sure\? this removes only demo-prefixed records/i)).toBeVisible();
@@ -495,6 +541,7 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /record timeline only/i }).click();
     await page.getByRole('button', { name: /stop recording/i }).click();
     await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await openRecordingLibrary(page);
     await page.getByRole('button', { name: /^discard draft$/i }).click();
     await expect(page.getByRole('button', { name: /^confirm discard draft$/i })).toBeVisible();
     await expect(page.getByText(/are you sure\? this clears the current draft/i)).toBeVisible();
@@ -506,6 +553,7 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /stop recording/i }).click();
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await openRecordingLibrary(page);
     await page.getByRole('button', { name: /^delete draft$/i }).click();
     await expect(page.getByRole('button', { name: /^confirm delete draft$/i }).first()).toBeVisible();
     await expect(page.getByText(/are you sure\? this deletes the selected local draft/i).first()).toBeVisible();
@@ -550,6 +598,9 @@ test.describe('interactive timeline POC', () => {
     await expect(saveDraft).toBeVisible();
 
     await startRecording.click();
+    await expect(page.getByRole('region', { name: /recording session/i })).toContainText(/recording in progress/i);
+    await expect(page.getByText(/recording status:\s*active/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /stop recording/i })).toBeEnabled();
     await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
     await page.getByRole('button', { name: 'example.js' }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
@@ -605,6 +656,7 @@ test.describe('interactive timeline POC', () => {
 
     await page.evaluate(() => localStorage.removeItem('interactive-poc.teacherRecording'));
     await page.reload();
+    await openRecordingLibrary(page);
 
     await expect(page.getByRole('heading', { name: /local drafts/i })).toBeVisible();
     await expect(page.getByRole('listitem').filter({ hasText: savedRecording.id })).toBeVisible();
@@ -724,6 +776,7 @@ test.describe('interactive timeline POC', () => {
 
     await seedPublishedRecording(request, recording);
     await openTeacherSection(page);
+    await openRecordingLibrary(page);
     await page.getByRole('button', { name: /refresh recordings/i }).click();
     await expect(page.getByRole('heading', { name: /published lessons/i })).toBeVisible();
     await expect(page.getByRole('listitem').filter({ hasText: recording.id })).toBeVisible();
@@ -763,6 +816,7 @@ test.describe('interactive timeline POC', () => {
       localStorage.removeItem('interactive-poc.learnerDeltas');
     });
     await page.reload();
+    await openRecordingLibrary(page);
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue(publishedId!);
 
     await page.getByRole('button', { name: /load published lesson/i }).click();
@@ -810,6 +864,7 @@ test.describe('interactive timeline POC', () => {
       localStorage.removeItem('interactive-poc.fakeMediaRecorder');
     });
     await page.reload();
+    await openRecordingLibrary(page);
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue(publishedId!);
 
     await page.getByRole('button', { name: /load published lesson/i }).click();
@@ -854,6 +909,7 @@ test.describe('interactive timeline POC', () => {
     await uploadRecordingPackage(page, packagePath);
     await page.getByRole('button', { name: /import as draft/i }).click();
     await expect(page.getByText(/import package status:\s*imported draft copy demo-interactive-conflict-flow-import/i)).toBeVisible();
+    await openRecordingLibrary(page);
     await expect(page.getByLabel(/select local draft/i)).toHaveValue(/demo-interactive-conflict-flow-import/);
 
     await page.getByRole('button', { name: /^preview draft$/i }).click();
@@ -874,6 +930,7 @@ test.describe('interactive timeline POC', () => {
 
     const importedId = await getImportedPublishedId(page);
 
+    await openRecordingLibrary(page);
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue(importedId);
 
     await apiDevLogin(request, DEV_TEACHER_USER_ID);
@@ -1203,7 +1260,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
     await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
     await expect(page.getByText(/conflicted files:\s*\/example\.js/i)).toBeVisible();
-    await expect(page.getByText(/Conflict warning: your saved work touches files the teacher changed later\./i)).toBeVisible();
+    await expect(page.getByText(/your saved work touches files the teacher changed later/i)).toBeVisible();
     await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
 
     await page.getByRole('button', { name: /resume teacher/i }).click();

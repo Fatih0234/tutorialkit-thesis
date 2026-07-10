@@ -65,11 +65,12 @@ Expected Playwright result for Milestone I: **31 passed**.
 ## Demo seed and reset
 
 1. Open **Teacher Studio**.
-2. In **Demo Identity**, choose **Sign in as Teacher Demo**.
-3. To start clean, select **Reset Demo Data**, then **Confirm Reset Demo Data**.
-4. Select **Demo Seed**.
-5. Confirm that `demo-interactive-conflict-flow` appears under **Published Lessons**.
-6. Switch to **Learner Lesson**, sign in as **Learner Demo**, and open the seeded lesson.
+2. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
+3. Expand **Import, Export, and Demo Tools**.
+4. To start clean, select **Reset Demo Data**, then **Confirm Reset Demo Data**.
+5. Select **Demo Seed**.
+6. Expand **Recording Library** and confirm that `demo-interactive-conflict-flow` appears under **Published Lessons**.
+7. Switch to **Learner Lesson**, choose **Sign in as Learner Demo** in the identity selector, and open the seeded lesson.
 
 Reset removes only demo-prefixed recordings, linked media, and linked learner deltas. `.interactive-data/` is gitignored local demo persistence; deleting that directory manually also produces a clean local server state.
 

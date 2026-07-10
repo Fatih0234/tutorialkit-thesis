@@ -158,26 +158,28 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       minSize={10}
       maxSize={hasEditor ? 100 : 0}
       collapsible={!hasEditor}
-      className="transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
+      className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
       <InteractivePocControls {...interactivePoc.controls} />
-      <EditorPanel
-        id={storeRef}
-        theme={theme}
-        showFileTree={tutorialStore.hasFileTree()}
-        editorDocument={currentDocument}
-        files={files}
-        i18n={lesson.data.i18n as I18n}
-        hideRoot={lesson.data.hideRoot}
-        helpAction={helpAction}
-        onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
-        onFileSelect={interactivePoc.onFileSelect}
-        onFileTreeChange={onFileTreeChange}
-        allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
-        selectedFile={selectedFile}
-        onEditorScroll={interactivePoc.onEditorScroll}
-        onEditorChange={interactivePoc.onEditorChange}
-      />
+      <div className="min-h-0 flex-1">
+        <EditorPanel
+          id={storeRef}
+          theme={theme}
+          showFileTree={tutorialStore.hasFileTree()}
+          editorDocument={currentDocument}
+          files={files}
+          i18n={lesson.data.i18n as I18n}
+          hideRoot={lesson.data.hideRoot}
+          helpAction={helpAction}
+          onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
+          onFileSelect={interactivePoc.onFileSelect}
+          onFileTreeChange={onFileTreeChange}
+          allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
+          selectedFile={selectedFile}
+          onEditorScroll={interactivePoc.onEditorScroll}
+          onEditorChange={interactivePoc.onEditorChange}
+        />
+      </div>
     </Panel>
   );
 }

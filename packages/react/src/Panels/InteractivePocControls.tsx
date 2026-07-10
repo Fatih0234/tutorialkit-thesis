@@ -1,91 +1,136 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { classNames } from '../utils/classnames.js';
 import { InteractiveDevIdentityPanel } from './InteractiveDevIdentityPanel.js';
 import { InteractiveLearnerPlayback } from './InteractiveLearnerPlayback.js';
 import { InteractiveTeacherDashboard } from './InteractiveTeacherDashboard.js';
+import {
+  interactiveDetailsClassName,
+  interactiveSummaryClassName,
+} from './InteractivePocUi.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
 type InteractiveProductTab = 'teacher' | 'learner';
 
 function DemoGuidePanel() {
   return (
-    <section
-      aria-labelledby="interactive-demo-guide-heading"
-      style={{
-        border: '1px solid var(--tk-elements-panel-borderColor)',
-        borderRadius: '0.375rem',
-        display: 'grid',
-        gap: '0.5rem',
-        padding: '0.5rem',
-      }}
-    >
-      <h2 id="interactive-demo-guide-heading" style={{ fontSize: '0.95rem', margin: 0 }}>
-        Thesis demo walkthrough
-      </h2>
-      <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(16rem, 1fr))' }}>
-        <div>
-          <h3 style={{ fontSize: '0.9rem', margin: 0 }}>Teacher Studio</h3>
-          <ol style={{ margin: '0.25rem 0 0', paddingInlineStart: '1.25rem' }}>
-            <li>Sign in as Teacher Demo</li>
-            <li>Seed demo lesson or create a recording</li>
-            <li>Preview recording</li>
-            <li>Publish recording</li>
-            <li>Export package if desired</li>
-          </ol>
+    <details className={interactiveDetailsClassName}>
+      <summary className={interactiveSummaryClassName}>
+        <span className="flex items-center gap-2">
+          <span aria-hidden="true" className="i-ph-map-trifold-duotone text-base text-tk-text-accent" />
+          Thesis demo walkthrough
+        </span>
+        <span aria-hidden="true" className="i-ph-caret-down-bold transition-transform group-open:rotate-180" />
+      </summary>
+      <section aria-labelledby="interactive-demo-guide-heading" className="mt-3 border-t border-tk-border-primary pt-3">
+        <h2 id="interactive-demo-guide-heading" className="sr-only">
+          Thesis demo walkthrough
+        </h2>
+        <div className="grid gap-4 text-xs md:grid-cols-2">
+          <div>
+            <h3 className="mb-2 flex items-center gap-1.5 text-sm font-600 text-tk-text-primary">
+              <span aria-hidden="true" className="i-ph-record-duotone text-red-400" />
+              Teacher Studio
+            </h3>
+            <ol className="m-0 grid list-decimal gap-1 pl-5 text-tk-text-secondary">
+              <li>Sign in as Teacher Demo</li>
+              <li>Seed a lesson or create a recording</li>
+              <li>Preview and publish the recording</li>
+              <li>Export a package if needed</li>
+            </ol>
+          </div>
+          <div>
+            <h3 className="mb-2 flex items-center gap-1.5 text-sm font-600 text-tk-text-primary">
+              <span aria-hidden="true" className="i-ph-student-duotone text-blue-300" />
+              Learner Lesson
+            </h3>
+            <ol className="m-0 grid list-decimal gap-1 pl-5 text-tk-text-secondary">
+              <li>Sign in as Learner Demo</li>
+              <li>Open and play a published lesson</li>
+              <li>Try it yourself and save your work</li>
+              <li>Resume, restore, and resolve conflicts</li>
+            </ol>
+          </div>
         </div>
-        <div>
-          <h3 style={{ fontSize: '0.9rem', margin: 0 }}>Learner Lesson</h3>
-          <ol style={{ margin: '0.25rem 0 0', paddingInlineStart: '1.25rem' }}>
-            <li>Sign in as Learner Demo</li>
-            <li>Open published lesson</li>
-            <li>Play lesson</li>
-            <li>Try it yourself</li>
-            <li>Save my work</li>
-            <li>Resume teacher</li>
-            <li>Restore my work</li>
-            <li>Resolve conflict if prompted</li>
-          </ol>
-        </div>
-      </div>
-    </section>
+      </section>
+    </details>
   );
 }
 
 export function InteractivePocControls(props: InteractivePocControlsModel) {
   const [activeTab, setActiveTab] = useState<InteractiveProductTab>('teacher');
+  const controlsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    controlsRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   return (
     <div
+      ref={controlsRef}
       aria-label="Interactive tutorial controls"
-      style={{
-        borderBottom: '1px solid var(--tk-elements-panel-borderColor)',
-        display: 'grid',
-        gap: '1rem',
-        padding: '0.75rem',
-      }}
+      className="max-h-[70%] min-h-[10rem] shrink-0 overflow-y-auto border-b border-tk-elements-app-borderColor bg-tk-background-primary p-3 text-sm"
     >
-      <header style={{ display: 'grid', gap: '0.5rem' }}>
-        <h1 style={{ fontSize: '1rem', margin: 0 }}>Interactive Thesis Demo</h1>
-        <nav aria-label="Interactive role views" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <button type="button" aria-pressed={activeTab === 'teacher'} onClick={() => setActiveTab('teacher')}>
-            Teacher Studio
-          </button>
-          <button type="button" aria-pressed={activeTab === 'learner'} onClick={() => setActiveTab('learner')}>
-            Learner Lesson
-          </button>
-        </nav>
-      </header>
+      <div className="mx-auto grid max-w-6xl gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="m-0 flex items-center gap-2 truncate text-base font-600 text-tk-text-primary">
+              <span aria-hidden="true" className="i-ph-chalkboard-teacher-duotone text-xl text-tk-text-accent" />
+              Interactive Thesis Demo
+            </h1>
+            <p className="m-0 text-xs text-tk-text-secondary">Record a lesson or experience it as a learner.</p>
+          </div>
 
-      <DemoGuidePanel />
-      <InteractiveDevIdentityPanel {...props} />
+          <nav
+            aria-label="Interactive role views"
+            className="inline-flex rounded-lg border border-tk-border-primary bg-tk-background-secondary p-1"
+          >
+            {([
+              ['teacher', 'i-ph-record-duotone', 'Teacher Studio'],
+              ['learner', 'i-ph-student-duotone', 'Learner Lesson'],
+            ] as const).map(([tab, icon, label]) => {
+              const isActive = activeTab === tab;
 
-      {activeTab === 'teacher' ? <InteractiveTeacherDashboard {...props} /> : <InteractiveLearnerPlayback {...props} />}
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setActiveTab(tab)}
+                  className={classNames(
+                    'inline-flex min-h-8 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-500 transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-tk-border-accent',
+                    isActive
+                      ? 'bg-tk-elements-primaryButton-backgroundColor text-tk-elements-primaryButton-textColor shadow-sm'
+                      : 'text-tk-text-secondary hover:bg-tk-background-active hover:text-tk-text-primary',
+                  )}
+                >
+                  <span aria-hidden="true" className={classNames(icon, 'text-base')} />
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+        </header>
 
-      <details>
-        <summary>Debug details</summary>
-        <p style={{ margin: '0.5rem 0 0' }}>
-          Compatibility localStorage keys, generated ids, playback timestamps, and raw status values are retained for local thesis validation.
-        </p>
-      </details>
+        <InteractiveDevIdentityPanel {...props} />
+
+        {activeTab === 'teacher' ? <InteractiveTeacherDashboard {...props} /> : <InteractiveLearnerPlayback {...props} />}
+
+        <DemoGuidePanel />
+
+        <details className={interactiveDetailsClassName}>
+          <summary className={interactiveSummaryClassName}>
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true" className="i-ph-bug-duotone text-base" />
+              Debug details
+            </span>
+            <span aria-hidden="true" className="i-ph-caret-down-bold transition-transform group-open:rotate-180" />
+          </summary>
+          <p className="mb-0 mt-2 text-xs text-tk-text-secondary">
+            Compatibility localStorage keys, generated ids, playback timestamps, and raw status values are retained for local thesis validation.
+          </p>
+        </details>
+      </div>
     </div>
   );
 }

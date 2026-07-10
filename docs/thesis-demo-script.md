@@ -57,11 +57,11 @@ Expected Milestone I result: **31 passed** in `interactive-poc.spec.ts`.
 ## 4. Reset and seed demo data
 
 1. Open **Teacher Studio**.
-2. Sign in with **Sign in as Teacher Demo**.
-3. Click **Reset Demo Data**.
-4. Click **Confirm Reset Demo Data**.
+2. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
+3. Expand **Import, Export, and Demo Tools**.
+4. Click **Reset Demo Data**, then **Confirm Reset Demo Data**.
 5. Click **Demo Seed**.
-6. Confirm the Published Lesson selector contains:
+6. Expand **Recording Library** and confirm the Published Lesson selector contains:
 
 ```text
 demo-interactive-conflict-flow
@@ -71,20 +71,20 @@ Reset only removes `demo-` prefixed recordings/media/deltas. Non-demo recordings
 
 ## 5. Teacher walkthrough
 
-1. In **Demo Identity**, sign in as **Teacher Demo**.
+1. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
 2. In **Teacher Studio**, either:
-   - click **Demo Seed**, or
-   - create a fresh recording with **Record Timeline Only**, edit `example.js`, and click **Stop Recording**.
+   - expand **Import, Export, and Demo Tools** and click **Demo Seed**, or
+   - create a fresh recording with **Record Timeline Only**, confirm the red **Recording in progress** banner appears, edit `example.js`, and click the prominent **Stop Recording** action.
 3. Click **Save Draft** for local IndexedDB draft storage.
 4. Click **Preview Draft** to show structured replay.
 5. Click **Publish Recording** to write the immutable recording to `.interactive-data/`.
 6. Use **Preview Published Lesson** to show the published replay path.
-7. Use **Export Package** to download a portable JSON package.
+7. Expand **Import, Export, and Demo Tools** and use **Export Package** to download a portable JSON package.
 
 ## 6. Learner walkthrough
 
 1. Switch to **Learner Lesson**.
-2. Sign in as **Learner Demo**.
+2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
 3. Select the Published Lesson.
 4. Click **Open Published Lesson**.
 5. Click **Play Lesson**.
@@ -106,7 +106,7 @@ The seeded demo is deterministic:
 Flow:
 
 1. Seed the demo as Teacher Demo.
-2. Sign in as Learner Demo.
+2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
 3. Open and play the Published Lesson.
 4. Click **Try It Yourself** before the teacher's later `/example.js` edit.
 5. Add a learner edit to `/example.js`.
@@ -124,9 +124,9 @@ No automatic merge runs. Teacher recordings and learner deltas are not mutated b
 
 ## 8. Export/import walkthrough
 
-1. Sign in as Teacher Demo.
+1. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
 2. Seed or publish a recording.
-3. Click **Export Package**.
+3. Expand **Import, Export, and Demo Tools**, then click **Export Package**.
 4. Optionally enable **Include My Learner Work** before export if demonstrating scoped learner delta export.
 5. Click **Reset Demo Data** and **Confirm Reset Demo Data** to prove portability.
 6. Choose the downloaded JSON file with **Import Package**.

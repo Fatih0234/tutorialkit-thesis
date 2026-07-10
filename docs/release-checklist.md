@@ -68,25 +68,25 @@ pnpm --dir e2e run dev
 
 ## 4. Deterministic seed/reset check
 
-- [ ] Sign in as **Teacher Demo**.
-- [ ] Select **Reset Demo Data**, then **Confirm Reset Demo Data**.
+- [ ] In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
+- [ ] Expand **Import, Export, and Demo Tools**, then select **Reset Demo Data** and **Confirm Reset Demo Data**.
 - [ ] Confirm reset reports success and does not remove a known non-demo record if one is used for the evaluation.
 - [ ] Select **Demo Seed**.
-- [ ] Confirm `demo-interactive-conflict-flow` appears under **Published Lessons**.
+- [ ] Expand **Recording Library** and confirm `demo-interactive-conflict-flow` appears under **Published Lessons**.
 
 ## 5. Teacher demonstration check
 
 - [ ] Record and stop a timeline-only editor change, or use the seeded recording.
 - [ ] Save and preview a local IndexedDB draft.
 - [ ] Publish and preview an immutable published lesson.
-- [ ] Export the selected recording with **Export Package**.
+- [ ] Expand **Import, Export, and Demo Tools**, then export the selected recording with **Export Package**.
 - [ ] Confirm exported JSON contains `formatVersion: 1`, `teacherRecording`, `mediaAssets`, and no session cookie/id.
 - [ ] Import the package as a draft and confirm the status reports a new copied recording id.
 - [ ] Import it as published and confirm it appears as a separate published copy.
 
 ## 6. Learner and conflict demonstration check
 
-- [ ] Switch to **Learner Lesson** and sign in as **Learner Demo**.
+- [ ] Switch to **Learner Lesson** and choose **Sign in as Learner Demo** in the **Demo Identity** selector.
 - [ ] Open and play `demo-interactive-conflict-flow`.
 - [ ] Choose **Try It Yourself** before the future teacher `/example.js` edit.
 - [ ] Edit `/example.js` and select **Save My Work**.
@@ -117,7 +117,7 @@ These are currently non-blocking only when the build command exits successfully,
 
 ## 9. Cleanup
 
-- [ ] In Teacher Studio, select **Reset Demo Data** and **Confirm Reset Demo Data** to remove demo-prefixed recording/media/delta records while preserving sessions and non-demo data.
+- [ ] In Teacher Studio, expand **Import, Export, and Demo Tools**, then select **Reset Demo Data** and **Confirm Reset Demo Data** to remove demo-prefixed recording/media/delta records while preserving sessions and non-demo data.
 - [ ] Stop the dev/preview server.
 - [ ] Remove all local development persistence only when a completely clean machine state is intended:
 

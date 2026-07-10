@@ -36,7 +36,7 @@ Important invariants:
 
 ## 1. Current user flow
 
-Milestone H keeps the Milestone D product shell, Milestone E demo identity panel, Milestone F conflict UX, and Milestone G export/import/demo controls, then polishes the visible copy for thesis presentation. `packages/react/src/Panels/InteractivePocControls.tsx` now presents a small demo walkthrough plus two role views:
+Milestone H keeps the Milestone D product shell, Milestone E demo identity panel, Milestone F conflict UX, and Milestone G export/import/demo controls, then polishes the visible copy for thesis presentation. `packages/react/src/Panels/InteractivePocControls.tsx` now presents a compact, scrollable workspace toolbar with two role views and a collapsed demo walkthrough:
 
 - **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
 - **Learner Lesson** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
@@ -45,18 +45,11 @@ A small `Debug details` disclosure remains for generated ids, compatibility loca
 
 ### Thesis demo walkthrough panel
 
-`InteractivePocControls.tsx` renders a visible guide for the live thesis demo. It lists the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save/restore work, and resolve conflicts). The panel is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
+`InteractivePocControls.tsx` renders a collapsed **Thesis demo walkthrough** disclosure for the live thesis demo. Expanding it shows the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save/restore work, and resolve conflicts). The guide is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
 
 ### Demo Identity panel
 
-`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders demo sign-in controls:
-
-- Sign in as Teacher Demo;
-- Sign in as Learner Demo;
-- Sign in as Learner Two;
-- Sign out.
-
-The panel shows signed-in user, role, auth status, and auth errors. It is intentionally labeled as dev-only and is not production authentication.
+`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders a compact **Demo Identity** selector with options for Teacher Demo, Learner Demo, and Learner Two, plus a Sign out action. The selected user and role remain visible without occupying a full workflow panel. Auth status and errors remain available to assistive technology/debug validation. It is intentionally labeled as dev-only and is not production authentication.
 
 Seeded users are non-sequential dev ids:
 
@@ -108,7 +101,7 @@ Visible controls:
 - Demo Seed (requires teacher/both demo identity);
 - Reset Demo Data (requires teacher/both demo identity).
 
-Visible status fields use native text and `role="status"` for important async state. Raw ids/timestamps remain visible for thesis validation and are also described as debug details where appropriate:
+Important status fields use badges, compact cards, native text, and `role="status"` for async state. While recording, a prominent red **Recording in progress** banner shows an animated indicator, elapsed time, event count, media state, and the primary **Stop Recording** action. Raw ids/timestamps remain available in compact status cards or collapsed technical details for thesis validation:
 
 - Draft status;
 - Current draft id;
