@@ -519,7 +519,9 @@ test.describe('interactive timeline POC', () => {
       localStorage.removeItem('interactive-poc.teacherRecording');
       localStorage.removeItem('interactive-poc.learnerDeltas');
       localStorage.removeItem('interactive-poc.fakeMediaRecorder');
+      localStorage.removeItem('interactive-poc.workspaceLayout');
     });
+    await expect(page.locator('[data-interactive-hydrated="true"]')).toBeAttached();
   });
 
   test('primary UI uses thesis-demo product wording', async ({ page }) => {
@@ -577,6 +579,38 @@ test.describe('interactive timeline POC', () => {
         (event: any) => event.type === 'file.changed' && event.payload?.content?.includes('// prepared before recording'),
       ),
     ).toBeFalsy();
+  });
+
+  test('immersive workspace reveals foldable explanation and terminal panels', async ({ page }) => {
+    await page.getByRole('button', { name: /edit materials/i }).click();
+
+    const explanationToggle = page.getByRole('button', { name: /^explanation$/i });
+    const terminalToggle = page.getByRole('button', { name: /^terminal$/i });
+
+    await expect(explanationToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(terminalToggle).toHaveAttribute('aria-pressed', 'false');
+
+    await explanationToggle.click();
+    const explanation = page.getByRole('complementary', { name: /lesson explanation/i });
+    await expect(explanation).toBeVisible();
+    await expect(explanation.getByRole('heading', { name: /file tree test/i })).toBeVisible();
+    await expect(explanationToggle).toHaveAttribute('aria-pressed', 'true');
+
+    await terminalToggle.click();
+    await expect(page.getByLabel(/live terminal panel/i)).toBeVisible();
+    await expect(page.getByRole('tab', { name: /output/i })).toBeVisible();
+    await expect(terminalToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel(/lesson timeline/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: /close explanation/i }).click();
+    await expect(explanation).toBeHidden();
+    await terminalToggle.click();
+    await expect(page.getByLabel(/live terminal panel/i)).toBeHidden();
+
+    const savedLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.workspaceLayout') || 'null'));
+    expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
+    expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
+    expect(savedLayout.terminalSize).toBeGreaterThanOrEqual(18);
   });
 
   test('demo sign-in works', async ({ page }) => {

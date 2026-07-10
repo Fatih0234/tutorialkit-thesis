@@ -1014,6 +1014,8 @@ interactive-poc.learnerDeltas
 
 `interactive-poc.learnerDeltas` contains a serialized array of `LearnerDelta` objects.
 
+The separate `interactive-poc.workspaceLayout` preference stores only immersive explanation/terminal visibility and sizes. It is not recording or learner-work data, is not mirrored to a backend, and can be discarded safely.
+
 Milestone H stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, `.interactive-data/media-assets`, and `.interactive-data/sessions`. Media blobs are stored only in IndexedDB, `.interactive-data/media-assets`, or base64 inside an explicit exported package; they are not mirrored to localStorage.
 
 ### Equivalent backend records

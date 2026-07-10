@@ -14,6 +14,7 @@ import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation
 import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
 import { InteractiveButton } from './InteractivePocUi.js';
 import { InteractiveVideoControls } from './InteractiveVideoControls.js';
+import { InteractiveWorkspaceSurface } from './InteractiveWorkspaceSurface.js';
 import {
   initialInteractiveExperienceState,
   interactiveExperienceReducer,
@@ -30,6 +31,7 @@ import { TerminalPanel } from './TerminalPanel.js';
 import { useInteractivePoc } from './useInteractivePoc.js';
 
 const DEFAULT_TERMINAL_SIZE = 25;
+const INTERACTIVE_WORKSPACE_LAYOUT_KEY = 'interactive-poc.workspaceLayout';
 
 type FileTreeChangeEvent = Parameters<NonNullable<ComponentProps<typeof EditorPanel>['onFileTreeChange']>>[0];
 interface Props {
@@ -47,6 +49,11 @@ interface PanelProps extends Omit<Props, 'dialog'> {
 interface TerminalProps extends PanelProps {
   terminalPanelRef: React.RefObject<ImperativePanelHandle>;
   terminalExpanded: React.MutableRefObject<boolean>;
+  immersiveTerminalHost: HTMLDivElement | null;
+}
+
+interface EditorSectionProps extends PanelProps {
+  onImmersiveTerminalHostChange: (host: HTMLDivElement | null) => void;
 }
 
 /**
@@ -66,6 +73,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
 
   const terminalPanelRef = useRef<ImperativePanelHandle>(null);
   const terminalExpanded = useRef(false);
+  const [immersiveTerminalHost, setImmersiveTerminalHost] = useState<HTMLDivElement | null>(null);
 
   return (
     <PanelGroup className={resizePanelStyles.PanelGroup} id="right-panel-group" direction="vertical">
@@ -76,6 +84,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
           hasEditor={hasEditor}
           hasPreviews={hasPreviews}
           hideTerminalPanel={hideTerminalPanel}
+          onImmersiveTerminalHostChange={setImmersiveTerminalHost}
         />
       </DialogProvider>
 
@@ -91,6 +100,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
         terminalPanelRef={terminalPanelRef}
         terminalExpanded={terminalExpanded}
         hideTerminalPanel={hideTerminalPanel}
+        immersiveTerminalHost={immersiveTerminalHost}
         hasPreviews={hasPreviews}
         hasEditor={hasEditor}
       />
@@ -107,6 +117,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
         terminalPanelRef={terminalPanelRef}
         terminalExpanded={terminalExpanded}
         hideTerminalPanel={hideTerminalPanel}
+        immersiveTerminalHost={immersiveTerminalHost}
         hasEditor={hasEditor}
         hasPreviews={hasPreviews}
       />
@@ -114,11 +125,17 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
   );
 }
 
-function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
+function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onImmersiveTerminalHostChange }: EditorSectionProps) {
   const [helpAction, setHelpAction] = useState<'solve' | 'reset'>('reset');
   const [experience, dispatchExperience] = useReducer(interactiveExperienceReducer, initialInteractiveExperienceState);
   const [recordingMode, setRecordingMode] = useState<InteractiveRecordingMode>('none');
   const [isStartingRecording, setIsStartingRecording] = useState(false);
+  const [explanationOpen, setExplanationOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [explanationSize, setExplanationSize] = useState(28);
+  const [terminalSize, setTerminalSize] = useState(30);
+  const [explanationHtml, setExplanationHtml] = useState('');
+  const [isClientReady, setIsClientReady] = useState(false);
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
   const currentDocument = useStore(tutorialStore.currentDocument);
@@ -265,6 +282,37 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   }
 
   useEffect(() => {
+    setIsClientReady(true);
+    const source = document.querySelector<HTMLElement>('[data-tutorial-content] .markdown-content');
+    setExplanationHtml(source?.innerHTML ?? '');
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(INTERACTIVE_WORKSPACE_LAYOUT_KEY) ?? '{}') as {
+        explanationOpen?: boolean;
+        terminalOpen?: boolean;
+        explanationSize?: number;
+        terminalSize?: number;
+      };
+      setExplanationOpen(saved.explanationOpen ?? false);
+      setTerminalOpen(!hideTerminalPanel && (saved.terminalOpen ?? false));
+      setExplanationSize(Math.min(45, Math.max(18, saved.explanationSize ?? 28)));
+      setTerminalSize(Math.min(65, Math.max(18, saved.terminalSize ?? 30)));
+    } catch {
+      setExplanationOpen(false);
+      setTerminalOpen(false);
+    }
+  }, [lesson.id, hideTerminalPanel]);
+
+  useEffect(() => {
+    localStorage.setItem(INTERACTIVE_WORKSPACE_LAYOUT_KEY, JSON.stringify({
+      explanationOpen,
+      terminalOpen,
+      explanationSize,
+      terminalSize,
+    }));
+  }, [explanationOpen, terminalOpen, explanationSize, terminalSize]);
+
+  useEffect(() => {
     if (tutorialStore.hasSolution()) {
       setHelpAction('solve');
     } else {
@@ -331,8 +379,8 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     />
   );
 
-  const editorSurface = (
-    <div className={classNames('min-h-0 flex-1', !showInteractiveEditor && 'hidden')}>
+  const editor = (
+    <div className="h-full min-h-0">
       <EditorPanel
         id={storeRef}
         theme={theme}
@@ -353,8 +401,29 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     </div>
   );
 
+  const editorSurface = showInteractiveEditor ? (
+    <InteractiveWorkspaceSurface
+      explanationHtml={explanationHtml}
+      explanationOpen={explanationOpen}
+      terminalOpen={terminalOpen}
+      terminalAvailable={!hideTerminalPanel}
+      explanationSize={explanationSize}
+      terminalSize={terminalSize}
+      onExplanationOpenChange={setExplanationOpen}
+      onTerminalOpenChange={setTerminalOpen}
+      onExplanationSizeChange={setExplanationSize}
+      onTerminalSizeChange={setTerminalSize}
+      onTerminalHostChange={onImmersiveTerminalHostChange}
+    >
+      {editor}
+    </InteractiveWorkspaceSurface>
+  ) : (
+    <div className="hidden">{editor}</div>
+  );
+
   const editorExperience = (
     <div
+      data-interactive-hydrated={isClientReady ? 'true' : 'false'}
       className={classNames(
         'flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor',
         theme,
@@ -433,7 +502,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       collapsible={!hasEditor}
       className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
-      {typeof document !== 'undefined' ? createPortal(editorExperience, document.body) : editorExperience}
+      {isClientReady ? createPortal(editorExperience, document.body) : editorExperience}
     </Panel>
   );
 }
@@ -550,6 +619,7 @@ function TerminalSection({
   terminalPanelRef,
   terminalExpanded,
   hideTerminalPanel,
+  immersiveTerminalHost,
   hasEditor,
   hasPreviews,
 }: TerminalProps) {
@@ -587,7 +657,9 @@ function TerminalSection({
         'border-t border-tk-elements-app-borderColor': hasPreviews,
       })}
     >
-      <TerminalPanel tutorialStore={tutorialStore} theme={theme} />
+      {immersiveTerminalHost
+        ? createPortal(<TerminalPanel tutorialStore={tutorialStore} theme={theme} />, immersiveTerminalHost)
+        : <TerminalPanel tutorialStore={tutorialStore} theme={theme} />}
     </Panel>
   );
 }

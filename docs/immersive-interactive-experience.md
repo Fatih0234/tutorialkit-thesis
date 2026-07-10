@@ -9,7 +9,16 @@ The full-viewport product root has two kinds of screens:
 - **management screens**: Teacher Studio and Interactive Lessons;
 - **immersive workspace screens**: material preparation, recording, recording review, and learner playback.
 
-The normal TutorialKit lesson remains the source of files and the real editor, but it is covered by the product shell. Management controls are never rendered inside an active player.
+The normal TutorialKit lesson remains the source of files, explanation content, terminal, and the real editor, but it is covered by the product shell. Management controls are never rendered inside an active player.
+
+## Optional context panels
+
+The immersive workspace remains editor-first, with two optional and resizable context panels:
+
+- **Explanation** opens the trusted Markdown rendered by `TutorialContent.astro` as a collapsible left pane;
+- **Terminal** moves the existing `TerminalPanel` into a collapsible pane below the editor without mounting a second terminal or WebContainer.
+
+Both are closed by default. Their visibility and last sizes are stored under `interactive-poc.workspaceLayout`. This preference is UI-only: toggling or resizing panels never creates teacher events, learner deltas, or dirty-work state. The terminal stays mounted while collapsed so output and process attachment survive. Terminal activity is live context and remains outside the recording and replay schema.
 
 ## Session lifecycle
 
@@ -24,7 +33,7 @@ Selected and active recording identifiers are separate. A library selection does
 
 ## Learner player
 
-The learner player uses the real TutorialKit file tree and editor as its visual frame. A full-width bottom control bar contains:
+The learner player uses the real TutorialKit explanation, file tree, editor, and terminal as its visual frame. Explanation and terminal are opt-in, while a full-width bottom control bar remains visible and contains:
 
 - play/pause;
 - restart;

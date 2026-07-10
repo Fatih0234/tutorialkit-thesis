@@ -45,7 +45,7 @@ pnpm --dir e2e run preview
 
 Open `http://localhost:4329/tests/file-tree/lesson-and-solution`.
 
-The interactive product now opens as a full-viewport shell. Teacher Studio and Interactive Lessons contain management; preparation, recording, review, and learner playback use the real editor as an immersive video-like surface with a full-width timeline. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md).
+The interactive product now opens as a full-viewport shell. Teacher Studio and Interactive Lessons contain management; preparation, recording, review, and learner playback use the real editor as an immersive video-like surface with a full-width timeline. Foldable, resizable Explanation and Terminal panels restore lesson context without sacrificing the minimal editor-first view. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md).
 
 ## Validation
 
@@ -60,7 +60,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after the immersive-player refinement: **34 passed**.
+Expected interactive POC result after the immersive context-panel refinement: **35 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 
