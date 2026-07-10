@@ -82,15 +82,14 @@ export function InteractiveRecordingStudio({ model, lessonId, initialFile, onSto
               <h1 className="m-0 text-base font-700 text-white">Recording in progress</h1>
               <InteractiveStatusBadge tone="negative">Recording status: active</InteractiveStatusBadge>
             </div>
-            <p className="m-0 truncate text-xs text-red-100/80">
-              {lessonId} · Initial file: {initialFile || 'automatic'}
-            </p>
-            <div aria-live="polite" role="status" className="mt-1 flex flex-wrap gap-x-3 text-xs text-red-100/90">
-              <strong className="font-mono text-sm">Elapsed: {formatInteractiveTime(elapsedMs)}</strong>
-              <span>Event count: {model.eventCount}</span>
-              <span>Draft status: {model.draftStatus}</span>
-              <span>Media kind: {model.mediaKind}</span>
-              <span>Media status: {model.mediaStatus}</span>
+            <p className="m-0 truncate text-xs text-red-100/80">{lessonId} · {initialFile || 'Automatic starting file'}</p>
+            <div aria-live="polite" role="status" className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-red-100/90">
+              <strong className="font-mono text-sm">{formatInteractiveTime(elapsedMs)}</strong>
+              <span>{model.mediaKind === 'none' ? 'Timeline recording' : `${model.mediaKind} connected`}</span>
+              <span hidden>Event count: {model.eventCount}</span>
+              <span hidden>Draft status: {model.draftStatus}</span>
+              <span hidden>Media status: {model.mediaStatus}</span>
+              <span hidden>Media kind: {model.mediaKind}</span>
             </div>
           </div>
         </div>

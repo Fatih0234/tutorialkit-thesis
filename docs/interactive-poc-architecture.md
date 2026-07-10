@@ -36,6 +36,8 @@ Important invariants:
 
 ## 1. Current user flow
 
+The UI now uses a full-viewport product root. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `interactive-session.ts` provides explicit screen transitions and separates a library selection from the active player recording. `InteractiveVideoControls.tsx` supplies the shared full-width bottom transport, accessible seek range, media surface, learner markers, keyboard controls, and experiment drawer. See `docs/immersive-interactive-experience.md`.
+
 `packages/react/src/Panels/InteractivePocControls.tsx` presents two role views and a collapsed demo walkthrough. The workspace orchestrator lifts the role and teacher-stage state so management can be physically separated from the editor:
 
 - **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
@@ -144,15 +146,15 @@ Actions remain intentionally simple: select a recording, then use the nearby loa
 
 ### Learner Lesson
 
-`packages/react/src/Panels/InteractiveLearnerPlayback.tsx` renders the learner product flow.
+`InteractiveLearnerLibrary.tsx`, the immersive workspace shell in `WorkspacePanel.tsx`, and `InteractiveVideoControls.tsx` render the learner product flow.
 
 Visible controls:
 
 - Published lessons selector;
-- Open Published Lesson;
-- Play Lesson;
-- Try It Yourself;
-- Resume Lecture;
+- Start Lesson;
+- Play;
+- Pause and Experiment;
+- Return to Lecture;
 - Save Experiment (requires learner/both demo identity);
 - timestamped experiment markers and **My Experiments** entries;
 - Save and Resume, Resume Without Saving, and Cancel when work is dirty.
@@ -272,7 +274,7 @@ Milestone H keeps deterministic thesis demo controls and adds inline confirmatio
 
 Reset is intentionally not a destructive “delete everything” action. Non-demo recordings, non-demo media, non-demo learner deltas, and dev sessions are left in place.
 
-### Play Lesson
+### Play
 
 Plays the currently opened teacher recording through the async storage adapter and replays it in `teacher-playback` mode. If no recording has been opened yet, it falls back to the active adapter's latest recording for compatibility with local draft tests.
 
@@ -296,9 +298,9 @@ Currently applied event types:
 
 The shared editor player exposes pause, restart, and deterministic seek. Seeking pauses the driver, restores base files, reapplies ordered events through the selected timestamp, and aligns loaded media. Continuing after a seek starts from that materialized state.
 
-### Try It Yourself
+### Pause and Experiment
 
-The `Try It Yourself` button stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
+The `Pause and Experiment` button stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
 
 Behavior:
 
@@ -308,7 +310,7 @@ Behavior:
 - sets playback status to `paused`;
 - does not mutate the saved teacher recording.
 
-### Resume Lecture
+### Return to Lecture
 
 Returning from `learner-editing` never continues over the learner workspace. The player reconstructs the immutable teacher state at `pausedTeacherTimestampMs`, aligns media to that timestamp, and then continues ordered teacher events. Saved learner experiments remain separate and recoverable. If the learner workspace is dirty, the UI requires **Save and Resume**, **Resume Without Saving**, or **Cancel**.
 
@@ -816,23 +818,27 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the role shell and the stage-specific setup, material, recording, review, and learner controls. Workspace-level React state owns visible stage transitions; `useInteractivePoc` remains the source of recording, playback, storage, and learner behavior.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the full-viewport management shell. `interactive-session.ts` owns explicit screen transitions; `WorkspacePanel.tsx` composes the persistent editor into immersive screens; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, and learner behavior.
 
 ### `InteractiveTeacherDashboard.tsx`
 
-Renders Lecture Setup, Recording Review, local/published recording management, package tools, demo controls, media preview, and teacher status text.
+Renders Lecture Setup plus local/published recording management, package tools, demo controls, media preview, and teacher status text. Recording Review now lives in the isolated immersive shell.
 
 ### `InteractiveRecordingStudio.tsx`
 
-Renders the focused red recording HUD, elapsed/event/media state, optional live webcam preview, and Stop action above the full-screen editor.
+Renders the focused red recording HUD, elapsed/media state, optional live webcam preview, and Stop action above the full-screen editor.
 
-### `InteractiveEditorPlayer.tsx`
+### `InteractiveVideoControls.tsx`
 
-Renders the shared teacher/learner transport: play, pause, restart, time display, deterministic range seek, status, and recorded media.
+Renders the shared full-width teacher/learner transport: custom progress track, accessible range seek, play/pause, restart, time display, synchronized media, keyboard controls, learner markers, experiment actions, dirty-work protection, and the My Experiments drawer.
 
-### `InteractiveLearnerPlayback.tsx`
+### `InteractiveLearnerLibrary.tsx`
 
-Renders the learner library, shared editor player, Try It Yourself, Save Experiment, Resume Lecture, dirty-work protection, timestamp markers, and the My Experiments list.
+Renders published lesson discovery and transitions an explicitly selected recording into the isolated learner player.
+
+### `interactive-session.ts`
+
+Defines reducer-driven dashboard, library, preparation, recording, review, and learner-player states while keeping selected and active recording ids distinct.
 
 ### `InteractiveRecordingLibrary.tsx`
 

@@ -4,7 +4,7 @@
 
 The teacher recording is an immutable, video-like editor timeline. Lecture Playback always materializes the teacher's original files at the current playhead. Learner work is never merged into that playback state.
 
-Selecting **Try It Yourself** creates an experiment anchored to the current teacher timestamp:
+Selecting **Pause and Experiment** creates an experiment anchored to the current teacher timestamp:
 
 ```text
 Teacher timeline  00:00 -------- 01:20 -------- 02:10 -------- 03:00
@@ -12,17 +12,17 @@ Teacher timeline  00:00 -------- 01:20 -------- 02:10 -------- 03:00
                                   +-- learner experiment
 ```
 
-The experiment workspace is `teacher state at anchor timestamp + learner file delta`. **Save Experiment** persists that branch. **Resume Lecture** reconstructs teacher truth at the anchor and continues the original timeline. A saved violet marker does nothing when ordinary playback passes it; selecting it explicitly reconstructs its historical teacher base and applies the learner delta.
+The experiment workspace is `teacher state at anchor timestamp + learner file delta`. **Save Experiment** persists that branch. **Return to Lecture** reconstructs teacher truth at the anchor and continues the original timeline. A saved violet marker does nothing when ordinary playback passes it; selecting it explicitly reconstructs its historical teacher base and applies the learner delta.
 
 ## State transitions
 
 ```text
 idle/teacher playback
-  -> Try It Yourself
+  -> Pause and Experiment
 learner-editing(anchor timestamp)
   -> Save Experiment
 saved learner-editing + timeline marker
-  -> Resume Lecture
+  -> Return to Lecture
 teacher state reconstructed at anchor + playback continues
   -> marker click
 learner-editing(checkpoint timestamp + checkpoint delta)
@@ -48,9 +48,9 @@ A checkpoint opens automatically only when recording id, recording version, and 
 
 `InteractiveLearnerPlayback` provides:
 
-- **Try It Yourself**;
+- **Pause and Experiment**;
 - **Save Experiment**;
-- **Resume Lecture**;
+- **Return to Lecture**;
 - dirty/saved status;
 - an unsaved-work decision panel;
 - a **My Experiments** list synchronized with timeline markers.

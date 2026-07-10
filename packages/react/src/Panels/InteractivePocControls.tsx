@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { classNames } from '../utils/classnames.js';
 import { InteractiveDevIdentityPanel } from './InteractiveDevIdentityPanel.js';
-import { InteractiveLearnerPlayback } from './InteractiveLearnerPlayback.js';
+import { InteractiveLearnerLibrary } from './InteractiveLearnerLibrary.js';
 import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
 import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
 import {
@@ -37,6 +37,8 @@ export interface InteractivePocControlsProps extends InteractivePocControlsModel
   onPreviewCurrentDraft: () => void;
   onPreviewSelectedDraft: (recordingId: string) => void;
   onPreviewSelectedPublished: (recordingId: string) => void;
+  onOpenLearnerLesson: (recordingId: string) => void;
+  onContinueLoadedLearnerLesson: () => void;
 }
 
 function DemoGuidePanel() {
@@ -118,10 +120,7 @@ export function InteractivePocControls(props: InteractivePocControlsProps) {
     <div
       ref={controlsRef}
       aria-label="Interactive tutorial controls"
-      className={classNames(
-        'min-h-[10rem] shrink-0 overflow-y-auto border-b border-tk-elements-app-borderColor bg-tk-background-primary p-3 text-sm',
-        activeTab === 'teacher' && teacherStage === 'setup' ? 'max-h-none flex-1' : 'max-h-[70%]',
-      )}
+      className="min-h-0 flex-1 overflow-y-auto bg-tk-background-primary p-4 text-sm"
     >
       <div className="mx-auto grid max-w-6xl gap-3">
         <header className="flex flex-wrap items-center justify-between gap-3">
@@ -173,7 +172,11 @@ export function InteractivePocControls(props: InteractivePocControlsProps) {
             view={teacherStage === 'review' ? 'review' : 'setup'}
           />
         ) : (
-          <InteractiveLearnerPlayback {...props} />
+          <InteractiveLearnerLibrary
+            {...props}
+            onOpenLesson={props.onOpenLearnerLesson}
+            onContinueLoadedLesson={props.onContinueLoadedLearnerLesson}
+          />
         )}
 
         <DemoGuidePanel />

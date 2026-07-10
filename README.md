@@ -45,6 +45,8 @@ pnpm --dir e2e run preview
 
 Open `http://localhost:4329/tests/file-tree/lesson-and-solution`.
 
+The interactive product now opens as a full-viewport shell. Teacher Studio and Interactive Lessons contain management; preparation, recording, review, and learner playback use the real editor as an immersive video-like surface with a full-width timeline. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md).
+
 ## Validation
 
 Run the release-candidate build and full interactive POC suite:
@@ -58,7 +60,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after the recording-studio refinement: **34 passed**.
+Expected interactive POC result after the immersive-player refinement: **34 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 
@@ -80,6 +82,7 @@ For the complete teacher, learner-experiment, and export/import walkthrough, see
 
 - [Architecture summary](./docs/thesis-architecture-summary.md)
 - [Detailed POC architecture](./docs/interactive-poc-architecture.md)
+- [Immersive teacher and learner experience](./docs/immersive-interactive-experience.md)
 - [Interactive recording studio workflow](./docs/interactive-recording-studio.md)
 - [Learner timeline experiments](./docs/learner-timeline-experiments.md)
 - [Persistence contract](./docs/interactive-persistence-contract.md)

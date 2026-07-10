@@ -5,6 +5,8 @@ interface InteractiveMaterialPreparationProps {
   fileCount: number;
   selectedFile: string;
   onDone: () => void;
+  onStartRecording?: () => void;
+  isStartingRecording?: boolean;
 }
 
 export function InteractiveMaterialPreparation({
@@ -12,6 +14,8 @@ export function InteractiveMaterialPreparation({
   fileCount,
   selectedFile,
   onDone,
+  onStartRecording,
+  isStartingRecording = false,
 }: InteractiveMaterialPreparationProps) {
   return (
     <header
@@ -30,9 +34,14 @@ export function InteractiveMaterialPreparation({
         </div>
         <div className="flex items-center gap-2">
           <InteractiveStatusBadge tone="positive">No recording in progress</InteractiveStatusBadge>
-          <InteractiveButton variant="primary" icon="i-ph-check" onClick={onDone}>
-            Use This Workspace
+          <InteractiveButton variant="ghost" icon="i-ph-arrow-left" onClick={onDone}>
+            Exit Preparation
           </InteractiveButton>
+          {onStartRecording ? (
+            <InteractiveButton variant="primary" icon={isStartingRecording ? 'i-ph-spinner-gap' : 'i-ph-record-fill'} onClick={onStartRecording} disabled={isStartingRecording}>
+              {isStartingRecording ? 'Opening Studio' : 'Start Recording'}
+            </InteractiveButton>
+          ) : null}
         </div>
       </div>
     </header>

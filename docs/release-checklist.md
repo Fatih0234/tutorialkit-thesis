@@ -91,10 +91,10 @@ pnpm --dir e2e run dev
 
 - [ ] Switch to **Learner Lesson** and choose **Sign in as Learner Demo** in the **Demo Identity** selector.
 - [ ] Open and play `demo-interactive-conflict-flow` (legacy deterministic seed id).
-- [ ] Choose **Try It Yourself** before the future teacher `/example.js` edit.
+- [ ] Choose **Pause and Experiment** before the future teacher `/example.js` edit.
 - [ ] Edit `/example.js` and select **Save Experiment**.
 - [ ] Verify a violet marker and **My Experiments** entry appear at the paused timestamp.
-- [ ] Select **Resume Lecture** and verify teacher truth is restored before playback continues.
+- [ ] Select **Return to Lecture** and verify teacher truth is restored before playback continues.
 - [ ] Verify playback passes the marker without applying learner work.
 - [ ] Select the marker and verify the learner experiment reopens from its historical teacher state without a conflict prompt.
 - [ ] Repeat with unsaved work and demonstrate **Save and Resume**, **Resume Without Saving**, and **Cancel**.

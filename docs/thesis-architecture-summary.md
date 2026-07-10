@@ -67,9 +67,9 @@ Only `RemoteInteractiveTimelineStorage` performs interactivity-layer `fetch` cal
 
 1. The learner signs in and opens a published lesson.
 2. The shared editor player resets the workspace to `baseFiles`, applies ordered events by `tMs` then `seq`, and supports deterministic pause/restart/seek.
-3. **Try It Yourself** pauses the playback source and captures the teacher timestamp.
+3. **Pause and Experiment** pauses the playback source and captures the teacher timestamp.
 4. **Save Experiment** compares the learner workspace with teacher state materialized at that timestamp, stores the file-level delta, and creates a timeline marker.
-5. **Resume Lecture** reconstructs teacher truth at the anchor timestamp before continuing teacher events; the saved experiment remains separate.
+5. **Return to Lecture** reconstructs teacher truth at the anchor timestamp before continuing teacher events; the saved experiment remains separate.
 6. Selecting a marker validates recording id/version and base-state hash, reconstructs the historical teacher state, and applies the latest learner-owned checkpoint at that timestamp.
 
 ## Structured timeline and media attachment model

@@ -53,7 +53,7 @@ The current product UI uses the existing adapters and ownership boundary as foll
 - the **Teacher Studio** lists local drafts from IndexedDB and Published Lessons from `/api/interactive/teacher-recordings`;
 - the **Learner Lesson** view lists Published Lessons only;
 - **Save Experiment** persists a user-scoped `LearnerDelta` and presents it as a timestamped marker;
-- **Resume Lecture** reconstructs teacher truth at the anchor timestamp before playback continues;
+- **Return to Lecture** reconstructs teacher truth at the anchor timestamp before playback continues;
 - selecting a marker reconstructs the historical teacher base and applies the latest learner checkpoint at that timestamp;
 - later teacher edits do not create a normal conflict because no merge with a later state is attempted;
 - unsaved work uses save/discard/cancel loss protection without adding persistence writes;

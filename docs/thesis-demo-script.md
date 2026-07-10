@@ -88,13 +88,13 @@ Reset only removes `demo-` prefixed recordings/media/deltas. Non-demo recordings
 1. Switch to **Learner Lesson**.
 2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
 3. Select the Published Lesson.
-4. Click **Open Published Lesson**.
-5. Click **Play Lesson**.
-6. Click **Try It Yourself** while playback is running.
+4. Click **Start Lesson** and point out that management disappears into a full-screen editor player.
+5. Use the round **Play** control on the full-width bottom timeline.
+6. Click **Pause and Experiment** while playback is running.
 7. Edit `example.js`.
 8. Confirm the **Unsaved changes** indicator appears.
 9. Click **Save Experiment** and point out the violet marker on the timeline.
-10. Click **Resume Lecture** and verify the editor returns to the teacher's original timeline.
+10. Click **Return to Lecture** and verify the editor returns to the teacher's original timeline.
 11. Let playback pass the marker; explain that the marker has no automatic effect.
 12. Click the marker and verify the learner experiment reopens at its original lecture timestamp.
 
@@ -107,11 +107,11 @@ Flow:
 1. Seed the demo as Teacher Demo.
 2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
 3. Open and play the Published Lesson.
-4. Click **Try It Yourself** before the teacher's later `/example.js` edit.
+4. Click **Pause and Experiment** before the teacher's later `/example.js` edit.
 5. Add a learner edit to `/example.js`.
 6. Click **Save Experiment**.
 7. Confirm one violet marker and one **My Experiments** entry appear at the paused timestamp.
-8. Click **Resume Lecture** and verify the teacher's later edit becomes visible while learner code disappears from the playback workspace.
+8. Click **Return to Lecture** and verify the teacher's later edit becomes visible while learner code disappears from the playback workspace.
 9. Click the saved marker.
 10. Verify the historical teacher state plus learner edit reappears, without a conflict prompt.
 

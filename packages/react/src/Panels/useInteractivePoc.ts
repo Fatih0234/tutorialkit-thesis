@@ -1004,6 +1004,7 @@ export function useInteractivePoc({
     const mediaElement = playbackMediaAssetRef.current?.blob ? getMediaPlaybackElement() : undefined;
     const playbackEndMs = getPlaybackEndMs(playbackEventsRef.current, recording, playbackMediaAssetRef.current);
 
+    setRecordingDurationMs(playbackEndMs);
     mediaPlaybackEndMsRef.current = playbackEndMs;
 
     if (playbackEndMs <= 0 || startMs >= playbackEndMs) {

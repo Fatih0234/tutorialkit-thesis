@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react';
 import { normalizePath, type TutorialStore } from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { DialogProvider } from '../core/Dialog.js';
@@ -9,6 +9,16 @@ import type { Theme } from '../core/types.js';
 import resizePanelStyles from '../styles/resize-panel.module.css';
 import { classNames } from '../utils/classnames.js';
 import { EditorPanel } from './EditorPanel.js';
+import { InteractiveImmersiveHeader } from './InteractiveImmersiveHeader.js';
+import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
+import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
+import { InteractiveButton } from './InteractivePocUi.js';
+import { InteractiveVideoControls } from './InteractiveVideoControls.js';
+import {
+  initialInteractiveExperienceState,
+  interactiveExperienceReducer,
+  isImmersiveInteractiveScreen,
+} from './interactive-session.js';
 import {
   InteractivePocControls,
   type InteractiveProductTab,
@@ -106,8 +116,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
 
 function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const [helpAction, setHelpAction] = useState<'solve' | 'reset'>('reset');
-  const [activeInteractiveTab, setActiveInteractiveTab] = useState<InteractiveProductTab>('teacher');
-  const [teacherStage, setTeacherStage] = useState<InteractiveTeacherStage>('setup');
+  const [experience, dispatchExperience] = useReducer(interactiveExperienceReducer, initialInteractiveExperienceState);
   const [recordingMode, setRecordingMode] = useState<InteractiveRecordingMode>('none');
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
@@ -131,8 +140,18 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     .map((file) => normalizePath(file.path))
     .sort((a, b) => a.localeCompare(b));
   const initialFile = selectedFile ? normalizePath(selectedFile) : (filePaths[0] ?? '');
-  const showInteractiveEditor = activeInteractiveTab === 'learner' || teacherStage !== 'setup';
-  const isRecordingStudio = activeInteractiveTab === 'teacher' && teacherStage === 'recording';
+  const activeInteractiveTab: InteractiveProductTab = experience.screen.startsWith('learner') ? 'learner' : 'teacher';
+  const teacherStage: InteractiveTeacherStage =
+    experience.screen === 'teacher-materials'
+      ? 'materials'
+      : experience.screen === 'teacher-recording'
+        ? 'recording'
+        : experience.screen === 'teacher-review'
+          ? 'review'
+          : 'setup';
+  const isImmersiveExperience = isImmersiveInteractiveScreen(experience.screen);
+  const showInteractiveEditor = isImmersiveExperience;
+  const isRecordingStudio = experience.screen === 'teacher-recording';
 
   function onHelpClick() {
     if (tutorialStore.hasSolution()) {
@@ -169,7 +188,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
             : await interactivePoc.controls.onStartRecording();
 
       if (started) {
-        setTeacherStage('recording');
+        dispatchExperience({ type: 'START_RECORDING' });
       }
     } finally {
       setIsStartingRecording(false);
@@ -178,22 +197,59 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
 
   async function stopConfiguredRecording() {
     await interactivePoc.controls.onStopRecording();
-    setTeacherStage('review');
+    dispatchExperience({ type: 'REVIEW_RECORDING' });
   }
 
   function previewCurrentDraft() {
-    setTeacherStage('review');
+    dispatchExperience({ type: 'REVIEW_RECORDING' });
     void interactivePoc.controls.onPreviewDraft();
   }
 
   function previewSelectedDraft(recordingId: string) {
-    setTeacherStage('review');
+    dispatchExperience({ type: 'REVIEW_RECORDING', recordingId });
     void interactivePoc.controls.onPreviewDraft(recordingId);
   }
 
   function previewSelectedPublished(recordingId: string) {
-    setTeacherStage('review');
+    dispatchExperience({ type: 'REVIEW_RECORDING', recordingId });
     void interactivePoc.controls.onPreviewPublishedRecording(recordingId);
+  }
+
+  function changeInteractiveTab(tab: InteractiveProductTab) {
+    dispatchExperience({ type: tab === 'teacher' ? 'SHOW_TEACHER_DASHBOARD' : 'SHOW_LEARNER_LIBRARY' });
+  }
+
+  function openLearnerLesson(recordingId: string) {
+    if (!recordingId) {
+      return;
+    }
+
+    interactivePoc.controls.onLoadPublishedRecording(recordingId);
+    dispatchExperience({ type: 'OPEN_LEARNER_RECORDING', recordingId });
+  }
+
+  function exitLearnerPlayer() {
+    if (interactivePoc.controls.mode === 'learner-editing') {
+      interactivePoc.controls.onResumeTeacher();
+
+      if (interactivePoc.controls.isLearnerWorkspaceDirty) {
+        return;
+      }
+    }
+
+    if (interactivePoc.controls.isPlaying) {
+      interactivePoc.controls.onPausePreviewPlayback();
+    }
+
+    dispatchExperience({ type: 'EXIT_LEARNER_PLAYER' });
+  }
+
+  function exitTeacherReview() {
+    if (interactivePoc.controls.isPlaying) {
+      interactivePoc.controls.onPausePreviewPlayback();
+    }
+
+    dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' });
   }
 
   async function onFileTreeChange({ method, type, value }: FileTreeChangeEvent) {
@@ -223,8 +279,8 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   }, [selectedFile, storeRef]);
 
   useEffect(() => {
-    editorPanelRef.current?.resize(showInteractiveEditor ? 85 : 55);
-  }, [activeInteractiveTab, teacherStage, showInteractiveEditor]);
+    editorPanelRef.current?.resize(showInteractiveEditor ? 100 : 55);
+  }, [showInteractiveEditor]);
 
   useEffect(() => {
     if (!isRecordingStudio) {
@@ -241,59 +297,129 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
   }, [isRecordingStudio]);
 
+  const managementControls = (
+    <InteractivePocControls
+      {...interactivePoc.controls}
+      activeTab={activeInteractiveTab}
+      teacherStage={teacherStage}
+      onSelectPublishedRecording={(recordingId) => {
+        interactivePoc.controls.onSelectPublishedRecording(recordingId);
+        dispatchExperience({ type: 'SELECT_LEARNER_RECORDING', recordingId });
+      }}
+      lessonId={lesson.id}
+      filePaths={filePaths}
+      initialFile={initialFile}
+      selectedFile={selectedFile ? normalizePath(selectedFile) : ''}
+      recordingMode={recordingMode}
+      isStartingRecording={isStartingRecording}
+      onActiveTabChange={changeInteractiveTab}
+      onInitialFileChange={(filePath) => tutorialStore.setSelectedFile(filePath)}
+      onRecordingModeChange={setRecordingMode}
+      onPrepareMaterials={() => dispatchExperience({ type: 'PREPARE_MATERIALS' })}
+      onFinishPreparingMaterials={() => dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' })}
+      onStartConfiguredRecording={() => void startConfiguredRecording()}
+      onStopConfiguredRecording={() => void stopConfiguredRecording()}
+      onReturnToSetup={() => dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' })}
+      onPreviewCurrentDraft={previewCurrentDraft}
+      onPreviewSelectedDraft={previewSelectedDraft}
+      onPreviewSelectedPublished={previewSelectedPublished}
+      onOpenLearnerLesson={openLearnerLesson}
+      onContinueLoadedLearnerLesson={() => dispatchExperience({
+        type: 'OPEN_LEARNER_RECORDING',
+        recordingId: interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId || 'loaded-recording',
+      })}
+    />
+  );
+
+  const editorSurface = (
+    <div className={classNames('min-h-0 flex-1', !showInteractiveEditor && 'hidden')}>
+      <EditorPanel
+        id={storeRef}
+        theme={theme}
+        showFileTree={tutorialStore.hasFileTree()}
+        editorDocument={currentDocument}
+        files={files}
+        i18n={lesson.data.i18n as I18n}
+        hideRoot={lesson.data.hideRoot}
+        helpAction={helpAction}
+        onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
+        onFileSelect={interactivePoc.onFileSelect}
+        onFileTreeChange={onFileTreeChange}
+        allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
+        selectedFile={selectedFile}
+        onEditorScroll={interactivePoc.onEditorScroll}
+        onEditorChange={interactivePoc.onEditorChange}
+      />
+    </div>
+  );
+
   const editorExperience = (
     <div
       className={classNames(
         'flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor',
-        isRecordingStudio && theme,
+        theme,
       )}
-      style={
-        isRecordingStudio
-          ? { position: 'fixed', inset: 0, zIndex: 1000, width: '100vw', height: '100vh' }
-          : undefined
-      }
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, width: '100vw', height: '100vh' }}
     >
-      <InteractivePocControls
-        {...interactivePoc.controls}
-        activeTab={activeInteractiveTab}
-        teacherStage={teacherStage}
-        lessonId={lesson.id}
-        filePaths={filePaths}
-        initialFile={initialFile}
-        selectedFile={selectedFile ? normalizePath(selectedFile) : ''}
-        recordingMode={recordingMode}
-        isStartingRecording={isStartingRecording}
-        onActiveTabChange={setActiveInteractiveTab}
-        onInitialFileChange={(filePath) => tutorialStore.setSelectedFile(filePath)}
-        onRecordingModeChange={setRecordingMode}
-        onPrepareMaterials={() => setTeacherStage('materials')}
-        onFinishPreparingMaterials={() => setTeacherStage('setup')}
-        onStartConfiguredRecording={() => void startConfiguredRecording()}
-        onStopConfiguredRecording={() => void stopConfiguredRecording()}
-        onReturnToSetup={() => setTeacherStage('setup')}
-        onPreviewCurrentDraft={previewCurrentDraft}
-        onPreviewSelectedDraft={previewSelectedDraft}
-        onPreviewSelectedPublished={previewSelectedPublished}
-      />
-      <div className={classNames('min-h-0 flex-1', !showInteractiveEditor && 'hidden')}>
-        <EditorPanel
-          id={storeRef}
-          theme={theme}
-          showFileTree={tutorialStore.hasFileTree()}
-          editorDocument={currentDocument}
-          files={files}
-          i18n={lesson.data.i18n as I18n}
-          hideRoot={lesson.data.hideRoot}
-          helpAction={helpAction}
-          onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
-          onFileSelect={interactivePoc.onFileSelect}
-          onFileTreeChange={onFileTreeChange}
-          allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
-          selectedFile={selectedFile}
-          onEditorScroll={interactivePoc.onEditorScroll}
-          onEditorChange={interactivePoc.onEditorChange}
+      {!isImmersiveExperience ? managementControls : null}
+      {experience.screen === 'teacher-materials' ? (
+        <InteractiveMaterialPreparation
+          lessonId={lesson.id}
+          fileCount={filePaths.length}
+          selectedFile={selectedFile ? normalizePath(selectedFile) : ''}
+          onDone={() => dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' })}
+          onStartRecording={() => void startConfiguredRecording()}
+          isStartingRecording={isStartingRecording}
         />
-      </div>
+      ) : null}
+      {experience.screen === 'teacher-recording' ? (
+        <InteractiveRecordingStudio model={interactivePoc.controls} lessonId={lesson.id} initialFile={initialFile} onStop={() => void stopConfiguredRecording()} />
+      ) : null}
+      {experience.screen === 'teacher-review' ? (
+        <InteractiveImmersiveHeader
+          eyebrow="Recording review"
+          title="Recording Review"
+          status="Teacher preview"
+          statusTone="info"
+          currentTimeMs={interactivePoc.controls.playheadMs}
+          onExit={exitTeacherReview}
+          exitLabel="Dashboard"
+          actions={
+            <>
+              <InteractiveButton icon="i-ph-floppy-disk" onClick={interactivePoc.controls.onSaveDraft} disabled={!interactivePoc.controls.canSaveDraft}>Save Draft</InteractiveButton>
+              <InteractiveButton variant="primary" icon="i-ph-upload-simple" onClick={interactivePoc.controls.onPublishRecording} disabled={!interactivePoc.controls.canPublishRecording}>Publish</InteractiveButton>
+            </>
+          }
+        />
+      ) : null}
+      {experience.screen === 'learner-player' ? (
+        <InteractiveImmersiveHeader
+          eyebrow="Interactive lesson"
+          title={lesson.id}
+          status={interactivePoc.controls.mode === 'learner-editing' ? 'My Experiment' : 'Teacher Lecture'}
+          statusTone={interactivePoc.controls.mode === 'learner-editing' ? 'warning' : 'positive'}
+          currentTimeMs={interactivePoc.controls.playheadMs}
+          onExit={exitLearnerPlayer}
+          exitLabel="Lessons"
+        />
+      ) : null}
+      {editorSurface}
+      {experience.screen === 'teacher-review' ? (
+        <InteractiveVideoControls
+          audience="teacher"
+          model={interactivePoc.controls}
+          onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : previewCurrentDraft}
+          onPause={interactivePoc.controls.onPausePreviewPlayback}
+        />
+      ) : null}
+      {experience.screen === 'learner-player' ? (
+        <InteractiveVideoControls
+          audience="learner"
+          model={interactivePoc.controls}
+          onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : interactivePoc.controls.onPlayRecording}
+          onPause={interactivePoc.controls.onPausePreviewPlayback}
+        />
+      ) : null}
     </div>
   );
 
@@ -307,9 +433,7 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
       collapsible={!hasEditor}
       className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
-      {isRecordingStudio && typeof document !== 'undefined'
-        ? createPortal(editorExperience, document.body)
-        : editorExperience}
+      {typeof document !== 'undefined' ? createPortal(editorExperience, document.body) : editorExperience}
     </Panel>
   );
 }

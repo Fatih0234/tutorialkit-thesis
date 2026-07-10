@@ -74,9 +74,9 @@ File remove/rename capture remains unavailable because the current rendered file
 
 ## Learner player
 
-Learner Lesson uses the shared `InteractiveEditorPlayer`. The timeline is a real range control, not a cosmetic progress bar. A learner may play, pause, restart, or seek before selecting **Try It Yourself**. Entering learner mode captures the current teacher timestamp and keeps learner deltas keyed to that materialized teacher state.
+Learner Lesson uses the shared `InteractiveVideoControls` inside a full-viewport editor shell. A custom video-style track spans the bottom of the viewport while an accessible range control supplies keyboard and assistive-technology seek behavior. A learner may play, pause, restart, or seek before selecting **Pause and Experiment**. Entering learner mode captures the current teacher timestamp and keeps learner deltas keyed to that materialized teacher state.
 
-Teacher recordings remain immutable. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Resume Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
+Teacher recordings remain immutable. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Return to Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
 
 ## Main implementation files
 
@@ -86,8 +86,10 @@ packages/react/src/Panels/InteractivePocControls.tsx
 packages/react/src/Panels/InteractiveTeacherDashboard.tsx
 packages/react/src/Panels/InteractiveMaterialPreparation.tsx
 packages/react/src/Panels/InteractiveRecordingStudio.tsx
-packages/react/src/Panels/InteractiveEditorPlayer.tsx
-packages/react/src/Panels/InteractiveLearnerPlayback.tsx
+packages/react/src/Panels/InteractiveImmersiveHeader.tsx
+packages/react/src/Panels/InteractiveVideoControls.tsx
+packages/react/src/Panels/InteractiveLearnerLibrary.tsx
+packages/react/src/Panels/interactive-session.ts
 packages/react/src/Panels/useInteractivePoc.ts
 packages/runtime/src/interactive-timeline/types.ts
 packages/runtime/src/interactive-timeline/recorder.ts

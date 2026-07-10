@@ -50,10 +50,10 @@ git diff --check
 ## Learner evidence
 
 - [ ] **Learner Demo** can sign in and open the seeded published lesson.
-- [ ] **Play Lesson** replays structured teacher events in deterministic order through the shared seekable editor player.
-- [ ] **Try It Yourself** pauses playback and permits learner editing.
+- [ ] **Play** replays structured teacher events in deterministic order through the shared seekable editor player.
+- [ ] **Pause and Experiment** pauses playback and permits learner editing.
 - [ ] **Save Experiment** stores a file-level learner delta without changing the teacher recording and renders a timestamped timeline marker.
-- [ ] **Resume Lecture** reconstructs teacher truth at the experiment anchor before continuing playback.
+- [ ] **Return to Lecture** reconstructs teacher truth at the experiment anchor before continuing playback.
 - [ ] Passing a saved marker during normal playback has no effect on the teacher timeline.
 - [ ] Selecting a marker reconstructs teacher state at its timestamp and applies the learner-owned delta without a later-teacher-edit conflict prompt.
 - [ ] Unsaved work requires **Save and Resume**, **Resume Without Saving**, or **Cancel** before returning to playback.

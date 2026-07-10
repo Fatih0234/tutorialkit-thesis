@@ -309,15 +309,22 @@ async function clickRoleTabUntilVisible(page: Page, tabName: 'Teacher Studio' | 
 }
 
 async function openLearnerSection(page: Page) {
-  await clickRoleTabUntilVisible(page, 'Learner Lesson', /learner lesson/i);
+  await clickRoleTabUntilVisible(page, 'Learner Lesson', /interactive lessons/i);
 }
 
 async function openTeacherSection(page: Page) {
   await clickRoleTabUntilVisible(page, 'Teacher Studio', /teacher studio/i);
 }
 
+async function enterLoadedLearnerPlayer(page: Page) {
+  const continueButton = page.getByRole('button', { name: /continue loaded lesson/i });
+  await expect(continueButton).toBeVisible();
+  await continueButton.click();
+  await expect(page.getByLabel(/interactive lesson controls/i)).toBeVisible();
+}
+
 async function startTeacherRecording(page: Page, mode: 'timeline' | 'audio' | 'camera' = 'timeline') {
-  const backToSetup = page.getByRole('button', { name: /back to lecture setup/i });
+  const backToSetup = page.getByRole('button', { name: /back to lecture setup|dashboard/i });
 
   if (await backToSetup.isVisible().catch(() => false)) {
     await backToSetup.click();
@@ -475,11 +482,12 @@ async function prepareLocalConflictResolutionFlow({
 
   await signInAsLearner(page);
   await openLearnerSection(page);
-  await page.getByRole('button', { name: /play lesson/i }).click();
+  await enterLoadedLearnerPlayer(page);
+  await page.getByRole('button', { name: /^play$/i }).click();
   await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
   await waitForPlayheadToAdvance(page);
-  await page.getByRole('button', { name: /try it yourself/i }).click();
-  await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+  await page.getByRole('button', { name: /pause and experiment/i }).click();
+  await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
 
   const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -488,11 +496,11 @@ async function prepareLocalConflictResolutionFlow({
   await expect(editor).toContainText(learnerEdit);
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: /save experiment/i }).click();
-  await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
-  await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+  await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
+  await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
 
-  await page.getByRole('button', { name: /resume lecture/i }).click();
-  await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: /return to lecture/i }).click();
+  await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
 
   if (futureFilePath === '/example.js') {
     await expect(editor).toContainText('// teacher conflict resolution final edit');
@@ -526,12 +534,10 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('option', { name: /sign in as learner two/i })).toBeAttached();
     await openLearnerSection(page);
 
-    await expect(page.getByRole('button', { name: /try it yourself/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /save experiment/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /resume lecture/i })).toBeVisible();
-    await expect(page.getByText(/work status:/i)).toBeVisible();
-    await expect(page.getByLabel(/my experiments/i)).toBeVisible();
-    await expect(page.getByRole('slider', { name: /editor playback timeline/i })).toHaveValue('0');
+    await expect(page.getByRole('heading', { name: /interactive lessons/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /start lesson/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /save experiment/i })).toHaveCount(0);
+    await expect(page.getByLabel(/lesson timeline/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /pause & try it/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /save learner delta/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /restore learner delta/i })).toHaveCount(0);
@@ -553,7 +559,7 @@ test.describe('interactive timeline POC', () => {
     await editor.click();
     await page.keyboard.type('\n// prepared before recording');
     await expect(editor).toContainText('// prepared before recording');
-    await page.getByRole('button', { name: /use this workspace/i }).click();
+    await page.getByRole('button', { name: /exit preparation/i }).click();
     await expect(page.getByRole('region', { name: /lecture setup/i })).toBeVisible();
     await expect(page.getByLabel(/initial file/i)).toHaveValue('/example.js');
     await expect(editor).toBeHidden();
@@ -561,7 +567,7 @@ test.describe('interactive timeline POC', () => {
     await startTeacherRecording(page);
     await page.getByRole('button', { name: /stop recording/i }).click();
     await page.getByRole('button', { name: /save draft/i }).click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
     const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
 
@@ -594,24 +600,26 @@ test.describe('interactive timeline POC', () => {
 
     await startTeacherRecording(page);
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
     await openRecordingLibrary(page);
     await page.getByRole('button', { name: /^discard draft$/i }).click();
     await expect(page.getByRole('button', { name: /^confirm discard draft$/i })).toBeVisible();
     await expect(page.getByText(/are you sure\? this clears the current draft/i)).toBeVisible();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
     await page.getByRole('button', { name: /^confirm discard draft$/i }).click();
-    await expect(page.getByText(/draft status:\s*discarded/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*discarded/i)).toBeAttached();
 
     await startTeacherRecording(page);
     await page.getByRole('button', { name: /stop recording/i }).click();
     await page.getByRole('button', { name: /save draft/i }).click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
     await openRecordingLibrary(page);
     await page.getByRole('button', { name: /^delete draft$/i }).click();
     await expect(page.getByRole('button', { name: /^confirm delete draft$/i }).first()).toBeVisible();
     await expect(page.getByText(/are you sure\? this deletes the selected local draft/i).first()).toBeVisible();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
   });
 
   test('teacher publish requires teacher identity', async ({ page }) => {
@@ -625,12 +633,13 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// teacher identity publish edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await expect(page.getByRole('button', { name: /publish recording/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^publish$/i })).toBeDisabled();
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
 
     await signInAsTeacher(page);
     await expect(page.getByRole('button', { name: /publish recording/i })).toBeEnabled();
     await page.getByRole('button', { name: /publish recording/i }).click();
-    await expect(page.getByText(/published status:\s*published/i)).toBeVisible();
+    await expect(page.getByText(/published status:\s*published/i)).toBeAttached();
     await expect(page.getByText(/publish identity:\s*teacher allowed/i)).toBeVisible();
 
     const publishedIdText = await page.getByText(/published recording id:\s*teacher-recording-/i).textContent();
@@ -661,7 +670,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('heading', { level: 2, name: /teacher studio/i })).toHaveCount(0);
     await expect(page.getByText(/recording status:\s*active/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /stop recording/i })).toBeEnabled();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
     await page.getByRole('button', { name: 'example.js' }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
 
@@ -670,13 +679,13 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// interactive poc recording edit');
     await expect(editor).toContainText('// interactive poc recording edit');
     await page.waitForTimeout(300);
-    await expect(page.getByText(/event count:\s*[3-9]\d*/i)).toBeVisible();
+    await expect(page.getByText(/event count:\s*[3-9]\d*/i)).toBeAttached();
 
     await stopRecording.click();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
     await expect(saveDraft).toBeEnabled();
     await saveDraft.click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
     const rawRecording = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
@@ -704,7 +713,7 @@ test.describe('interactive timeline POC', () => {
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /stop recording/i }).click();
     await page.getByRole('button', { name: /save draft/i }).click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
     const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
     const firstCompleteEvent = recording.events.find(
@@ -717,19 +726,19 @@ test.describe('interactive timeline POC', () => {
     expect(firstCompleteEvent).toBeTruthy();
     expect(recording.events.some((event: any) => event.type === 'file.opened' && event.tMs === 0)).toBeTruthy();
 
-    await page.getByRole('button', { name: /preview draft/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(editor).toContainText('// progressive first step', { timeout: 1000 });
     await expect(editor).not.toContainText('// progressive second step');
     await expect(editor).toContainText('// progressive second step', { timeout: 3000 });
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();
 
-    await page.getByLabel(/editor playback timeline/i).fill(String(firstCompleteEvent.tMs));
+    await page.getByLabel(/lesson timeline/i).fill(String(firstCompleteEvent.tMs));
 
-    await expect(page.getByText(/playback status:\s*paused/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*paused/i)).toBeAttached();
     await expect(editor).toContainText('// progressive first step');
     await expect(editor).not.toContainText('// progressive second step');
 
-    await page.getByRole('button', { name: /play preview/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(editor).toContainText('// progressive second step', { timeout: 3000 });
   });
 
@@ -745,11 +754,11 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// teacher local draft edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
 
     await page.getByRole('button', { name: /save draft/i }).click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeAttached();
 
     const rawRecording = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
@@ -768,8 +777,8 @@ test.describe('interactive timeline POC', () => {
     await expect(loadDraft).toBeVisible();
     await expect(loadDraft).toBeEnabled();
     await loadDraft.click();
-    await expect(page.getByText(/draft status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/current draft id:\s*teacher-recording-/i)).toBeAttached();
 
     const previewDraft = page.getByRole('button', { name: /preview draft/i });
 
@@ -780,15 +789,15 @@ test.describe('interactive timeline POC', () => {
     const reloadedEditor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await expect(reloadedEditor).toContainText('// teacher local draft edit');
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();
   });
 
   test('teacher can save and load draft with fake audio media', async ({ page }) => {
     await page.evaluate(() => localStorage.setItem('interactive-poc.fakeMediaRecorder', 'true'));
 
     await startTeacherRecording(page, 'audio');
-    await expect(page.getByText(/media status:\s*recording/i)).toBeVisible();
-    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*recording/i)).toBeAttached();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeAttached();
     await page.getByRole('button', { name: 'example.js' }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
@@ -799,14 +808,14 @@ test.describe('interactive timeline POC', () => {
     await page.waitForTimeout(300);
 
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media duration ms:\s*[1-9]\d*/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*unsaved/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media duration ms:\s*[1-9]\d*/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
     await page.getByRole('button', { name: /save draft/i }).click();
-    await expect(page.getByText(/draft status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*saved/i)).toBeAttached();
 
     const mirroredRecording = await page.evaluate(() => {
       const raw = localStorage.getItem('interactive-poc.teacherRecording');
@@ -819,9 +828,9 @@ test.describe('interactive timeline POC', () => {
 
     await page.reload();
     await page.getByRole('button', { name: /load draft/i }).click();
-    await expect(page.getByText(/draft status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
     await page.getByRole('button', { name: /preview draft/i }).click();
@@ -830,7 +839,7 @@ test.describe('interactive timeline POC', () => {
     const reloadedEditor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await expect(reloadedEditor).toContainText('// teacher fake audio draft edit', { timeout: 5000 });
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
   });
 
   test('media playback drives the structured timeline playhead', async ({ page }) => {
@@ -844,12 +853,12 @@ test.describe('interactive timeline POC', () => {
     });
 
     await page.getByRole('button', { name: /load draft/i }).click();
-    await expect(page.getByText(/draft status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/draft status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
     await page.getByRole('button', { name: /preview draft/i }).click();
-    await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*playing/i)).toBeAttached();
 
     await expect
       .poll(async () => {
@@ -869,7 +878,7 @@ test.describe('interactive timeline POC', () => {
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await expect(editor).toContainText('// media currentTime applied edit', { timeout: 5000 });
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
   });
 
   test('Teacher Studio lists a published lesson', async ({ page, request }) => {
@@ -884,7 +893,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('listitem').filter({ hasText: recording.id })).toBeVisible();
 
     await page.getByRole('button', { name: /load selected published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
     await page.getByRole('button', { name: /preview selected published lesson/i }).click();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText(
       '// teacher studio listed published edit',
@@ -904,8 +913,8 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// teacher backend publish edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await page.getByRole('button', { name: /publish recording/i }).click();
-    await expect(page.getByText(/published status:\s*published/i)).toBeVisible();
+    await page.getByRole('button', { name: /^publish$/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeAttached();
 
     const publishedIdText = await page.getByText(/published recording id:\s*teacher-recording-/i).textContent();
     const publishedId = publishedIdText?.match(/published recording id:\s*(teacher-recording-[\w-]+)/i)?.[1];
@@ -922,7 +931,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue(publishedId!);
 
     await page.getByRole('button', { name: /load published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
     await expect(page.getByText(new RegExp(`published recording id:\\s*${publishedId}`, 'i'))).toBeVisible();
     await page.getByRole('button', { name: /preview published lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
@@ -930,7 +939,7 @@ test.describe('interactive timeline POC', () => {
       '// teacher backend publish edit',
       { timeout: 5000 },
     );
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
   });
 
   test('teacher can publish media recording and load media from backend', async ({ page }) => {
@@ -938,7 +947,7 @@ test.describe('interactive timeline POC', () => {
     await page.evaluate(() => localStorage.setItem('interactive-poc.fakeMediaRecorder', 'true'));
 
     await startTeacherRecording(page, 'audio');
-    await expect(page.getByText(/media status:\s*recording/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*recording/i)).toBeAttached();
     await page.getByRole('button', { name: 'example.js' }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
@@ -948,12 +957,12 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// teacher backend media publish edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /stop recording/i }).click();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
-    await page.getByRole('button', { name: /publish recording/i }).click();
-    await expect(page.getByText(/published status:\s*published/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*saved/i)).toBeVisible();
+    await page.getByRole('button', { name: /^publish$/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*saved/i)).toBeAttached();
 
     const publishedIdText = await page.getByText(/published recording id:\s*teacher-recording-/i).textContent();
     const publishedId = publishedIdText?.match(/published recording id:\s*(teacher-recording-[\w-]+)/i)?.[1];
@@ -970,9 +979,9 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue(publishedId!);
 
     await page.getByRole('button', { name: /load published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
     await page.getByRole('button', { name: /preview published lesson/i }).click();
@@ -980,7 +989,7 @@ test.describe('interactive timeline POC', () => {
       '// teacher backend media publish edit',
       { timeout: 5000 },
     );
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
   });
 
   test('unsupported import package version shows a friendly error', async ({ page }, testInfo) => {
@@ -1047,9 +1056,9 @@ test.describe('interactive timeline POC', () => {
     await signInAsLearner(page);
     await openLearnerSection(page);
     await page.getByLabel(/select published lesson/i).selectOption(importedId);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(new RegExp(`published recording id:\\s*${importedId}`, 'i'))).toBeVisible();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(new RegExp(`published recording id:\\s*${importedId}`, 'i'))).toBeAttached();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// teacher demo final edit', {
       timeout: 6000,
     });
@@ -1064,12 +1073,12 @@ test.describe('interactive timeline POC', () => {
     await uploadRecordingPackage(page, packagePath);
     await page.getByRole('button', { name: /import as draft/i }).click();
     await expect(page.getByText(/import package status:\s*imported draft copy demo-interactive-conflict-flow-import/i)).toBeVisible();
-    await expect(page.getByText(/media status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/media kind:\s*audio/i)).toBeVisible();
+    await expect(page.getByText(/media status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/media kind:\s*audio/i)).toBeAttached();
     await expect(page.getByLabel(/recorded audio preview/i)).toBeVisible();
 
     await page.getByRole('button', { name: /^preview draft$/i }).click();
-    await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*playing/i)).toBeAttached();
     await waitForPlayheadToAdvance(page);
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// teacher demo final edit', {
       timeout: 6000,
@@ -1106,12 +1115,12 @@ test.describe('interactive timeline POC', () => {
     await signInAsLearner(page);
     await openLearnerSection(page);
     await expect(page.getByLabel(/select published lesson/i)).toHaveValue('demo-interactive-conflict-flow');
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
-    await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
+    await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1120,14 +1129,14 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText(learnerEdit);
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /save experiment/i }).click();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await expect(editor).toContainText('// teacher demo final edit', { timeout: 6000 });
     await expect(editor).not.toContainText(learnerEdit);
     await page.getByRole('button', { name: /open my experiment at/i }).click();
-    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeAttached();
     await expect(editor).toContainText(learnerEdit);
     await expect(page.getByText(/conflict warning/i)).toHaveCount(0);
   });
@@ -1166,10 +1175,13 @@ test.describe('interactive timeline POC', () => {
     await seedPublishedRecording(request, recording);
     await signInAsLearner(page);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await page.getByRole('button', { name: /play lesson/i }).click();
-    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByLabel(/demo identity/i)).toHaveCount(0);
+    const timelineBounds = await page.getByLabel(/lesson timeline/i).boundingBox();
+    expect(timelineBounds?.width ?? 0).toBeGreaterThan(900);
+    await page.getByRole('button', { name: /^play$/i }).click();
+    await expect(page.getByText(/teacher lecture/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
       .poll(async () => {
@@ -1178,8 +1190,8 @@ test.describe('interactive timeline POC', () => {
       })
       .toBeGreaterThan(0);
 
-    await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
+    await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1188,19 +1200,19 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// remote learner delta edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /save experiment/i }).click();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
     await page.evaluate(() => localStorage.removeItem('interactive-poc.learnerDeltas'));
     await page.reload();
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
 
     await page.getByRole('button', { name: /open my experiment at/i }).click();
-    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeAttached();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// remote learner delta edit');
   });
 
@@ -1212,8 +1224,8 @@ test.describe('interactive timeline POC', () => {
     await seedPublishedRecording(request, recording);
     await signInAsLearner(page, 'Learner Demo');
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
       .poll(async () => {
@@ -1221,7 +1233,7 @@ test.describe('interactive timeline POC', () => {
         return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
       })
       .toBeGreaterThan(0);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1230,25 +1242,27 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText(learnerEdit);
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /save experiment/i }).click();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
 
+    await page.getByRole('button', { name: /^lessons$/i }).click();
     await signOut(page);
     await page.reload();
     await signInAsLearner(page, 'Learner Two');
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
-    await expect(page.getByText(/saved work count:\s*0/i)).toBeVisible();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(/published status:\s*loaded/i)).toBeAttached();
+    await expect(page.getByText(/saved work count:\s*0/i)).toBeAttached();
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toHaveCount(0);
 
+    await page.getByRole('button', { name: /^lessons$/i }).click();
     await signOut(page);
     await signInAsLearner(page, 'Learner Demo');
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
     await page.getByRole('button', { name: /open my experiment at/i }).click();
-    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeAttached();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText(learnerEdit);
   });
 
@@ -1300,8 +1314,8 @@ test.describe('interactive timeline POC', () => {
 
     await signInAsLearner(page);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
       .poll(async () => {
@@ -1309,7 +1323,7 @@ test.describe('interactive timeline POC', () => {
         return Number(playheadText?.match(/playhead ms:\s*(\d+)/i)?.[1] ?? 0);
       })
       .toBeGreaterThan(0);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1318,7 +1332,7 @@ test.describe('interactive timeline POC', () => {
     await expect(editor).toContainText('// immutable remote learner edit');
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: /save experiment/i }).click();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
 
     const rawAfter = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
 
@@ -1339,11 +1353,11 @@ test.describe('interactive timeline POC', () => {
     await seedPublishedRecording(request, recording);
     await signInAsLearner(page);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /open published lesson/i }).click();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await waitForPlayheadToAdvance(page);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1353,17 +1367,17 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /save experiment/i }).click();
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
     await expect(page.getByText(/conflict warning/i)).toHaveCount(0);
-    await expect(page.getByLabel(/learner workspace toolbar/i)).toContainText(/no unsaved changes/i);
+    await expect(page.getByLabel(/interactive lesson controls/i)).toContainText(/experiment saved/i);
 
-    await page.getByRole('button', { name: /resume lecture/i }).click();
-    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
+    await expect(page.getByText(/teacher lecture/i)).toBeVisible();
     await expect(editor).toContainText('// teacher later final edit', { timeout: 5000 });
     await expect(editor).not.toContainText(learnerEdit);
 
     await page.getByRole('button', { name: /open my experiment at/i }).click();
     await expect(editor).toContainText(learnerEdit);
     await expect(editor).not.toContainText('// teacher later final edit');
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
   });
 
   test('multiple saves at one lecture timestamp remain one marker with versions', async ({ page }) => {
@@ -1379,9 +1393,10 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// learner second checkpoint version');
     await page.getByRole('button', { name: /save experiment/i }).click();
 
-    await expect(page.getByText(/saved work count:\s*2/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*2/i)).toBeAttached();
     await expect(page.getByLabel(/my experiment markers/i).getByRole('button')).toHaveCount(1);
-    await expect(page.getByLabel(/my experiments/i)).toContainText('2 saved versions');
+    await page.getByRole('button', { name: /my experiments \(1\)/i }).click();
+    await expect(page.getByLabel(/my experiments drawer/i)).toContainText('2 saved versions');
   });
 
   test('resume lecture protects unsaved experiment changes', async ({ page }) => {
@@ -1392,24 +1407,25 @@ test.describe('interactive timeline POC', () => {
     }, recording);
     await signInAsLearner(page);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await enterLoadedLearnerPlayer(page);
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await waitForPlayheadToAdvance(page);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await editor.click();
     await page.keyboard.type('\n// unsaved learner experiment');
     await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await expect(page.getByRole('alert', { name: /unsaved experiment warning/i })).toBeVisible();
 
     await page.getByRole('button', { name: /^cancel$/i }).click();
     await expect(editor).toContainText('// unsaved learner experiment');
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+    await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await page.getByRole('button', { name: /resume without saving/i }).click();
     await expect(editor).toContainText('// teacher conflict resolution final edit', { timeout: 5000 });
     await expect(editor).not.toContainText('// unsaved learner experiment');
@@ -1423,17 +1439,18 @@ test.describe('interactive timeline POC', () => {
     }, recording);
     await signInAsLearner(page);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await enterLoadedLearnerPlayer(page);
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await waitForPlayheadToAdvance(page);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await editor.click();
     await page.keyboard.type('\n// save and resume learner experiment');
     await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await page.getByRole('button', { name: /save and resume/i }).click();
 
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
@@ -1499,13 +1516,15 @@ test.describe('interactive timeline POC', () => {
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     await openLearnerSection(page);
-    const playRecording = page.getByRole('button', { name: /play lesson/i });
-    const pausePlayback = page.getByRole('button', { name: /try it yourself/i });
+    await enterLoadedLearnerPlayer(page);
+    const playRecording = page.getByRole('button', { name: /^play$/i });
+    const pausePlayback = page.getByRole('button', { name: /pause and experiment/i });
 
     await expect(playRecording).toBeVisible();
     await expect(pausePlayback).toBeVisible();
     await expect(playRecording).toBeEnabled();
 
+    const lessonTimeline = page.getByLabel(/lesson timeline/i);
     await playRecording.click();
 
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
@@ -1513,8 +1532,11 @@ test.describe('interactive timeline POC', () => {
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await expect(editor).toContainText('// teacher playback edit');
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
-    await expect(page.getByText(/playhead ms:\s*25/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();
+    await expect(page.getByText(/playhead ms:\s*25/i)).toBeAttached();
+    await page.getByRole('button', { name: /restart/i }).focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(lessonTimeline).toHaveValue('0');
 
     const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
@@ -1559,7 +1581,8 @@ test.describe('interactive timeline POC', () => {
       localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
     }, recording);
     await openLearnerSection(page);
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await enterLoadedLearnerPlayer(page);
+    await page.getByRole('button', { name: /^play$/i }).click();
 
     await expect(page.getByRole('button', { name: 'created-during-lecture.js', pressed: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// created during lecture');
@@ -1607,9 +1630,10 @@ test.describe('interactive timeline POC', () => {
 
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     await openLearnerSection(page);
+    await enterLoadedLearnerPlayer(page);
 
-    await page.getByRole('button', { name: /play lesson/i }).click();
-    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await page.getByRole('button', { name: /^play$/i }).click();
+    await expect(page.getByText(/teacher lecture/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await expect
       .poll(async () => {
@@ -1618,9 +1642,9 @@ test.describe('interactive timeline POC', () => {
       })
       .toBeGreaterThan(0);
 
-    await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
-    await expect(page.getByText(/playback status:\s*paused/i)).toBeVisible();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
+    await expect(page.getByText('My Experiment', { exact: true })).toBeVisible();
+    await expect(page.getByText(/playback status:\s*paused/i)).toBeAttached();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
@@ -1635,12 +1659,12 @@ test.describe('interactive timeline POC', () => {
     expect(rawDuringLearnerEdit).toBe(rawBefore);
     expect(learnerDeltasDuringLearnerEdit).toBeNull();
 
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await page.getByRole('button', { name: /resume without saving/i }).click();
-    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
-    await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
+    await expect(page.getByText(/teacher lecture/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*playing/i)).toBeAttached();
     await expect(editor).toContainText('// teacher resumed final edit', { timeout: 5000 });
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
+    await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();
 
     const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     const learnerDeltasAfterResume = await page.evaluate(() => localStorage.getItem('interactive-poc.learnerDeltas'));
@@ -1665,13 +1689,14 @@ test.describe('interactive timeline POC', () => {
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     await signInAsLearner(page);
     await openLearnerSection(page);
+    await enterLoadedLearnerPlayer(page);
     const saveExperiment = page.getByRole('button', { name: /save experiment/i });
 
-    await expect(saveExperiment).toBeDisabled();
-    await page.getByRole('button', { name: /play lesson/i }).click();
+    await expect(saveExperiment).toHaveCount(0);
+    await page.getByRole('button', { name: /^play$/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await waitForPlayheadToAdvance(page);
-    await page.getByRole('button', { name: /try it yourself/i }).click();
+    await page.getByRole('button', { name: /pause and experiment/i }).click();
     await expect(saveExperiment).toBeEnabled();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
@@ -1680,8 +1705,8 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// learner delta edit');
     await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
     await saveExperiment.click();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
+    await expect(page.getByText(/saved work count:\s*1/i)).toBeAttached();
+    await expect(page.getByText(/work status:\s*saved/i)).toBeAttached();
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
     const deltas = await page.evaluate(() => {
@@ -1694,7 +1719,7 @@ test.describe('interactive timeline POC', () => {
     expect(typeof deltas[0].teacherTimestampMs).toBe('number');
     expect(deltas[0].addedOrModified['/example.js']).toContain('// learner delta edit');
 
-    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /return to lecture/i }).click();
     await expect(editor).toContainText('// teacher replay overwrite', { timeout: 5000 });
     await expect(editor).not.toContainText('// learner delta edit');
 
@@ -1735,6 +1760,7 @@ test.describe('interactive timeline POC', () => {
     );
     await page.reload();
     await openLearnerSection(page);
+    await enterLoadedLearnerPlayer(page);
     await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
     await page.getByRole('button', { name: /open my experiment at/i }).click();
 

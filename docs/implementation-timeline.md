@@ -92,4 +92,8 @@ The recording-studio refinement separated Lecture Setup, material preparation, f
 
 ## Learner timeline experiment refinement
 
-This refinement replaced later-teacher-event conflict prompts with the product's intended historical-branch model. **Save Experiment** creates a user-scoped checkpoint marker at the paused teacher timestamp; **Resume Lecture** reconstructs teacher truth before continuing; selecting a marker reconstructs that historical teacher state and applies the learner delta. It added marker grouping/version counts, dirty-work save/discard/cancel protection, and trusted learner-added/removed file restoration. The persisted `LearnerDelta` contract and immutable teacher source remain unchanged.
+This refinement replaced later-teacher-event conflict prompts with the product's intended historical-branch model. **Save Experiment** creates a user-scoped checkpoint marker at the paused teacher timestamp; **Return to Lecture** reconstructs teacher truth before continuing; selecting a marker reconstructs that historical teacher state and applies the learner delta. It added marker grouping/version counts, dirty-work save/discard/cancel protection, and trusted learner-added/removed file restoration. The persisted `LearnerDelta` contract and immutable teacher source remain unchanged.
+
+## Immersive product-shell refinement
+
+This refinement separated Teacher Studio and Interactive Lessons management from the active editor surface. An explicit session reducer now controls dashboard, library, preparation, recording, review, and learner-player screens. Preparation and playback use a full-viewport shell around the same real editor; review and learner playback share a full-width bottom video timeline, keyboard seek controls, synchronized media, learner markers, and a My Experiments drawer. The runtime event, recording, learner-delta, storage, and API contracts remain unchanged.
