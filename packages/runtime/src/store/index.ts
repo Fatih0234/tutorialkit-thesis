@@ -364,6 +364,16 @@ export class TutorialStore {
     this._runner.createFolder(folderPath);
   }
 
+  /** Restore or create a file from a trusted programmatic snapshot such as timeline playback. */
+  restoreFile(filePath: string, content: string) {
+    if (!this._editorStore.files.get().some((file) => file.path === filePath)) {
+      this._editorStore.addFileOrFolder({ path: filePath, type: 'file' });
+    }
+
+    this._editorStore.updateFile(filePath, content);
+    this._runner.updateFile(filePath, content);
+  }
+
   /** Update contents of file */
   updateFile(filePath: string, content: string) {
     const hasChanged = this._editorStore.updateFile(filePath, content);

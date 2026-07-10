@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { classNames } from '../utils/classnames.js';
+import { useState, type ReactNode } from 'react';
+import { InteractiveEditorPlayer } from './InteractiveEditorPlayer.js';
 import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import {
   InteractiveButton,
   InteractiveCard,
   InteractiveStatusBadge,
-  formatInteractiveTime,
   interactiveDetailsClassName,
+  interactiveSelectClassName,
   interactiveSummaryClassName,
 } from './InteractivePocUi.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
@@ -63,33 +63,42 @@ function ConfirmActionButton({
   );
 }
 
-function useRecordingElapsedTime(isRecording: boolean) {
-  const startedAtRef = useRef(0);
-  const [elapsedMs, setElapsedMs] = useState(0);
+export type InteractiveRecordingMode = 'none' | 'audio' | 'webcam';
 
-  useEffect(() => {
-    if (!isRecording) {
-      startedAtRef.current = 0;
-      setElapsedMs(0);
-      return undefined;
-    }
-
-    startedAtRef.current = Date.now();
-    const updateElapsedTime = () => setElapsedMs(Date.now() - startedAtRef.current);
-    updateElapsedTime();
-    const intervalId = window.setInterval(updateElapsedTime, 250);
-
-    return () => window.clearInterval(intervalId);
-  }, [isRecording]);
-
-  return elapsedMs;
+interface InteractiveTeacherDashboardProps extends InteractivePocControlsModel {
+  view: 'setup' | 'review';
+  lessonId: string;
+  filePaths: string[];
+  initialFile: string;
+  recordingMode: InteractiveRecordingMode;
+  isStartingRecording: boolean;
+  onInitialFileChange: (filePath: string) => void;
+  onRecordingModeChange: (mode: InteractiveRecordingMode) => void;
+  onPrepareMaterials: () => void;
+  onStartConfiguredRecording: () => void;
+  onReturnToSetup: () => void;
+  onPreviewCurrentDraft: () => void;
+  onPreviewSelectedDraft: (recordingId: string) => void;
+  onPreviewSelectedPublished: (recordingId: string) => void;
 }
 
-export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) {
+export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardProps) {
   const [pendingConfirmation, setPendingConfirmation] = useState<DestructiveActionId | null>(null);
-  const recordingElapsedMs = useRecordingElapsedTime(props.isRecording);
   const {
-    isRecording,
+    view,
+    lessonId,
+    filePaths,
+    initialFile,
+    recordingMode,
+    isStartingRecording,
+    onInitialFileChange,
+    onRecordingModeChange,
+    onPrepareMaterials,
+    onStartConfiguredRecording,
+    onReturnToSetup,
+    onPreviewCurrentDraft,
+    onPreviewSelectedDraft,
+    onPreviewSelectedPublished,
     eventCount,
     draftStatus,
     currentDraftId,
@@ -120,7 +129,6 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     includeLearnerDeltasInExport,
     canStartRecording,
     canStartMediaRecording,
-    canStopRecording,
     canSaveDraft,
     canLoadDraft,
     canPreviewDraft,
@@ -137,18 +145,12 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     onRefreshRecordingLibrary,
     onSelectDraftRecording,
     onSelectPublishedRecording,
-    onStartRecording,
-    onStartMicRecording,
-    onStartCameraRecording,
-    onStopRecording,
     onSaveDraft,
     onLoadDraft,
-    onPreviewDraft,
     onDiscardDraft,
     onDeleteSelectedDraft,
     onPublishRecording,
     onLoadPublishedRecording,
-    onPreviewPublishedRecording,
     onToggleIncludeLearnerDeltasInExport,
     onSelectImportPackageFile,
     onExportRecording,
@@ -159,16 +161,7 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
     onMediaElementRef,
   } = props;
 
-  const recordingStateLabel = isRecording
-    ? 'Recording in progress'
-    : playbackStatus === 'playing'
-      ? 'Preview playing'
-      : draftStatus === 'unsaved'
-        ? 'Recording ready'
-        : draftStatus === 'saved'
-          ? 'Draft saved'
-          : 'Ready to record';
-  const recordingStateTone = isRecording ? 'negative' : draftStatus === 'saved' ? 'positive' : 'neutral';
+  const canStartConfiguredRecording = recordingMode === 'none' ? canStartRecording : canStartMediaRecording;
 
   return (
     <section aria-labelledby="interactive-teacher-heading" className="grid gap-3">
@@ -177,7 +170,11 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
           <h2 id="interactive-teacher-heading" className="m-0 text-base font-600 text-tk-text-primary">
             Teacher Studio
           </h2>
-          <p className="m-0 text-xs text-tk-text-secondary">Capture editor actions, then save, preview, and publish.</p>
+          <p className="m-0 text-xs text-tk-text-secondary">
+            {view === 'review'
+              ? 'Review the interactive editor timeline before saving or publishing.'
+              : 'Prepare the lecture first, then enter a focused recording studio.'}
+          </p>
         </div>
         <InteractiveStatusBadge
           tone={canPublishAsTeacher ? 'positive' : 'warning'}
@@ -187,79 +184,117 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         </InteractiveStatusBadge>
       </div>
 
-      <InteractiveCard
-        aria-label="Recording session"
-        className={classNames(
-          'relative overflow-hidden p-0',
-          isRecording ? 'border-red-500 bg-red-950/20' : 'border-tk-border-primary',
-        )}
-      >
-        {isRecording ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-red-500" /> : null}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span
-              aria-hidden="true"
-              className={classNames(
-                'grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg',
-                isRecording ? 'animate-pulse bg-red-600 text-white' : 'bg-tk-background-active text-tk-text-secondary',
-              )}
-            >
-              <span className={isRecording ? 'i-ph-record-fill' : 'i-ph-record-duotone'} />
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <strong className={classNames('text-sm', isRecording ? 'text-red-200' : 'text-tk-text-primary')}>
-                  {recordingStateLabel}
-                </strong>
-                <InteractiveStatusBadge tone={recordingStateTone}>
-                  Recording status: {isRecording ? 'active' : 'inactive'}
-                </InteractiveStatusBadge>
-              </div>
-              <div aria-live="polite" role="status" className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-tk-text-secondary">
-                <span>Elapsed: {formatInteractiveTime(isRecording ? recordingElapsedMs : recordingDurationMs)}</span>
-                <span>Event count: {eventCount}</span>
-                <span>Draft status: {draftStatus}</span>
-                <span>Media status: {mediaStatus}</span>
-                <span>Media kind: {mediaKind}</span>
-                <span>Media duration ms: {mediaDurationMs}</span>
-              </div>
+      {view === 'setup' ? (
+        <InteractiveCard role="region" aria-label="Lecture setup" className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="m-0 flex items-center gap-2 text-sm font-600 text-tk-text-primary">
+                <span aria-hidden="true" className="i-ph-presentation-chart-duotone text-lg text-tk-text-accent" />
+                Lecture Setup
+              </h3>
+              <p className="mb-0 mt-1 text-xs text-tk-text-secondary">
+                Current lesson: <strong className="text-tk-text-primary">{lessonId}</strong> · {filePaths.length} files
+              </p>
             </div>
+            <InteractiveStatusBadge>Recording status: inactive</InteractiveStatusBadge>
           </div>
 
-          {isRecording ? (
-            <InteractiveButton variant="danger" icon="i-ph-stop-fill" onClick={onStopRecording} disabled={!canStopRecording}>
-              Stop Recording
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1 text-xs font-500 text-tk-text-secondary">
+              Initial file
+              <select
+                aria-label="Initial file"
+                value={initialFile}
+                onChange={(event) => onInitialFileChange(event.currentTarget.value)}
+                className={interactiveSelectClassName}
+              >
+                {filePaths.map((filePath) => (
+                  <option key={filePath} value={filePath}>
+                    {filePath}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <fieldset className="grid gap-1.5 rounded-md border border-tk-border-primary p-2">
+              <legend className="px-1 text-xs font-500 text-tk-text-secondary">Recording mode</legend>
+              {([
+                ['none', 'Editor timeline only'],
+                ['audio', 'Editor + microphone'],
+                ['webcam', 'Editor + camera'],
+              ] as const).map(([value, label]) => (
+                <label key={value} className="inline-flex items-center gap-2 text-xs text-tk-text-primary">
+                  <input
+                    type="radio"
+                    name="interactive-recording-mode"
+                    value={value}
+                    checked={recordingMode === value}
+                    onChange={() => onRecordingModeChange(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+
+          <div className="rounded-md border border-dashed border-tk-border-primary bg-tk-background-primary p-2 text-xs text-tk-text-secondary">
+            <strong className="text-tk-text-primary">Starting workspace</strong>
+            <p className="mb-0 mt-1 line-clamp-2">{filePaths.join(', ') || 'No files available'}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <InteractiveButton icon="i-ph-pencil-line" onClick={onPrepareMaterials}>
+              Edit Materials
             </InteractiveButton>
-          ) : null}
-        </div>
-      </InteractiveCard>
+            <InteractiveButton
+              variant="primary"
+              icon={isStartingRecording ? 'i-ph-spinner-gap' : 'i-ph-record-fill'}
+              onClick={onStartConfiguredRecording}
+              disabled={!canStartConfiguredRecording || isStartingRecording}
+            >
+              {isStartingRecording ? 'Preparing Recording Studio' : 'Start Recording'}
+            </InteractiveButton>
+            <InteractiveButton icon="i-ph-file-plus" variant="ghost" onClick={onDiscardDraft}>
+              New Recording
+            </InteractiveButton>
+          </div>
+        </InteractiveCard>
+      ) : (
+        <>
+          <InteractiveCard aria-label="Recording complete" className="flex flex-wrap items-center justify-between gap-3 border-green-600/50 bg-green-950/15">
+            <div>
+              <h3 className="m-0 flex items-center gap-2 text-sm font-600 text-tk-text-primary">
+                <span aria-hidden="true" className="i-ph-check-circle-fill text-lg text-green-400" />
+                Recording complete
+              </h3>
+              <p className="mb-0 mt-1 text-xs text-tk-text-secondary">
+                Duration: {recordingDurationMs} ms · Event count: {eventCount} · Media: {mediaKind}
+              </p>
+            </div>
+            <InteractiveButton variant="ghost" icon="i-ph-arrow-left" onClick={onReturnToSetup}>
+              Back to Lecture Setup
+            </InteractiveButton>
+          </InteractiveCard>
+
+          <InteractiveEditorPlayer
+            audience="teacher"
+            title="Recording Review"
+            description="The real editor replays the timestamped lecture events; it is not a screen video."
+            model={props}
+            onPlay={playbackStatus === 'paused' ? props.onContinuePlayback : onPreviewCurrentDraft}
+            onPause={props.onPausePreviewPlayback}
+          />
+        </>
+      )}
 
       <div aria-label="Teacher recording toolbar" className="flex flex-wrap items-center gap-1.5">
-        <InteractiveButton icon="i-ph-file-plus" variant="ghost" onClick={onDiscardDraft} disabled={isRecording}>
-          New Recording
-        </InteractiveButton>
-        <InteractiveButton icon="i-ph-record" variant="primary" onClick={onStartRecording} disabled={!canStartRecording}>
-          Record Timeline Only
-        </InteractiveButton>
-        <InteractiveButton icon="i-ph-microphone" onClick={onStartMicRecording} disabled={!canStartMediaRecording}>
-          Record With Mic
-        </InteractiveButton>
-        <InteractiveButton icon="i-ph-video-camera" onClick={onStartCameraRecording} disabled={!canStartMediaRecording}>
-          Record With Camera
-        </InteractiveButton>
-        {!isRecording ? (
-          <InteractiveButton variant="danger" icon="i-ph-stop" onClick={onStopRecording} disabled={!canStopRecording}>
-            Stop Recording
-          </InteractiveButton>
-        ) : null}
-        <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-tk-border-primary" />
         <InteractiveButton icon="i-ph-floppy-disk" onClick={onSaveDraft} disabled={!canSaveDraft}>
           Save Draft
         </InteractiveButton>
         <InteractiveButton icon="i-ph-download-simple" onClick={() => onLoadDraft()} disabled={!canLoadDraft}>
           Load Draft
         </InteractiveButton>
-        <InteractiveButton icon="i-ph-play" onClick={() => onPreviewDraft()} disabled={!canPreviewDraft}>
+        <InteractiveButton icon="i-ph-play" onClick={onPreviewCurrentDraft} disabled={!canPreviewDraft}>
           Preview Draft
         </InteractiveButton>
         <InteractiveButton icon="i-ph-upload-simple" onClick={onPublishRecording} disabled={!canPublishRecording}>
@@ -268,7 +303,11 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
         <InteractiveButton icon="i-ph-cloud-arrow-down" onClick={() => onLoadPublishedRecording()} disabled={!canLoadPublishedRecording}>
           Load Published Lesson
         </InteractiveButton>
-        <InteractiveButton icon="i-ph-play-circle" onClick={() => onPreviewPublishedRecording()} disabled={!canPreviewPublishedRecording}>
+        <InteractiveButton
+          icon="i-ph-play-circle"
+          onClick={() => onPreviewSelectedPublished(selectedPublishedRecordingId)}
+          disabled={!canPreviewPublishedRecording}
+        >
           Preview Published Lesson
         </InteractiveButton>
       </div>
@@ -276,31 +315,38 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
       <div aria-live="polite" role="status" className="grid gap-2 rounded-md border border-tk-border-primary bg-tk-background-secondary p-2 text-xs sm:grid-cols-2">
         <div className="min-w-0">
           <strong className="text-tk-text-primary">Current draft</strong>
-          <p className="m-0 truncate text-tk-text-secondary" title={currentDraftId}>
-            Current draft id: {currentDraftId}
-          </p>
+          <p className="m-0">Draft status: {draftStatus}</p>
+          <p className="m-0 truncate text-tk-text-secondary" title={currentDraftId}>Current draft id: {currentDraftId}</p>
         </div>
         <div className="min-w-0">
           <strong className="text-tk-text-primary">Published lesson</strong>
           <p className="m-0 text-tk-text-secondary">Published status: {publishedStatus}</p>
-          <p className="m-0 truncate text-tk-text-secondary" title={publishedRecordingId}>
-            Published recording id: {publishedRecordingId}
-          </p>
+          <p className="m-0 truncate text-tk-text-secondary" title={publishedRecordingId}>Published recording id: {publishedRecordingId}</p>
         </div>
         <div className="flex flex-wrap gap-x-3 text-tk-text-secondary sm:col-span-2">
-          <span>Playback status: {playbackStatus}</span>
-          <span>Playhead ms: {playheadMs}</span>
+          {view === 'setup' ? <span>Playback status: {playbackStatus}</span> : null}
+          {view === 'setup' ? <span>Playhead ms: {playheadMs}</span> : null}
+          <span>Media status: {mediaStatus}</span>
+          <span>Media kind: {mediaKind}</span>
+          <span>Media duration ms: {mediaDurationMs}</span>
           {publishedError !== 'none' ? <span className="text-red-300">Published error: {publishedError}</span> : null}
           {mediaError !== 'none' ? <span className="text-red-300">Media error: {mediaError}</span> : null}
         </div>
       </div>
 
-      {mediaPreviewUrl && mediaKind === 'audio' ? (
-        <audio className="h-9 max-w-full" aria-label="Recorded audio preview" controls preload="auto" src={mediaPreviewUrl} ref={onMediaElementRef} />
+      {view === 'setup' && mediaPreviewUrl && mediaKind === 'audio' ? (
+        <audio
+          className="h-9 max-w-full"
+          aria-label="Recorded audio preview"
+          controls
+          preload="auto"
+          src={mediaPreviewUrl}
+          ref={onMediaElementRef}
+        />
       ) : null}
-      {mediaPreviewUrl && mediaKind === 'webcam' ? (
+      {view === 'setup' && mediaPreviewUrl && mediaKind === 'webcam' ? (
         <video
-          className="max-h-40 max-w-64 rounded-md border border-tk-border-primary"
+          className="max-h-36 max-w-56 rounded-md border border-tk-border-primary"
           aria-label="Recorded webcam preview"
           controls
           playsInline
@@ -334,7 +380,7 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
               <InteractiveButton icon="i-ph-download-simple" onClick={() => onLoadDraft(selectedDraftId)} disabled={!canLoadDraft}>
                 Load Selected Draft
               </InteractiveButton>
-              <InteractiveButton icon="i-ph-play" onClick={() => onPreviewDraft(selectedDraftId)} disabled={!canPreviewDraft}>
+              <InteractiveButton icon="i-ph-play" onClick={() => onPreviewSelectedDraft(selectedDraftId)} disabled={!canPreviewDraft}>
                 Preview Selected Draft
               </InteractiveButton>
               <ConfirmActionButton
@@ -371,7 +417,7 @@ export function InteractiveTeacherDashboard(props: InteractivePocControlsModel) 
               </InteractiveButton>
               <InteractiveButton
                 icon="i-ph-play"
-                onClick={() => onPreviewPublishedRecording(selectedPublishedRecordingId)}
+                onClick={() => onPreviewSelectedPublished(selectedPublishedRecordingId)}
                 disabled={!canPreviewPublishedRecording}
               >
                 Preview Selected Published Lesson

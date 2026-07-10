@@ -52,7 +52,7 @@ pnpm build
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium TK_POC_URL=http://localhost:4329 PLAYWRIGHT_HTML_OPEN=never pnpm --dir e2e exec playwright test interactive-poc.spec.ts --project=Default
 ```
 
-Expected Milestone I result: **31 passed** in `interactive-poc.spec.ts`.
+Expected result after the recording-studio refinement: **34 passed** in `interactive-poc.spec.ts`.
 
 ## 4. Reset and seed demo data
 
@@ -74,9 +74,11 @@ Reset only removes `demo-` prefixed recordings/media/deltas. Non-demo recordings
 1. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
 2. In **Teacher Studio**, either:
    - expand **Import, Export, and Demo Tools** and click **Demo Seed**, or
-   - create a fresh recording with **Record Timeline Only**, confirm the red **Recording in progress** banner appears, edit `example.js`, and click the prominent **Stop Recording** action.
-3. Click **Save Draft** for local IndexedDB draft storage.
-4. Click **Preview Draft** to show structured replay.
+   - use **Lecture Setup** to choose the initial file and recording mode;
+   - optionally select **Edit Materials**, prepare the starting workspace, and select **Use This Workspace**;
+   - select **Start Recording**, confirm the full-screen red **Recording in progress** studio appears, edit `example.js`, and select the prominent **Stop Recording** action.
+3. In **Recording Review**, click **Save Draft** for local IndexedDB draft storage.
+4. Click **Play Preview**, then demonstrate pause, restart, and the seekable **Editor playback timeline**.
 5. Click **Publish Recording** to write the immutable recording to `.interactive-data/`.
 6. Use **Preview Published Lesson** to show the published replay path.
 7. Expand **Import, Export, and Demo Tools** and use **Export Package** to download a portable JSON package.

@@ -1,14 +1,20 @@
 import { useStore } from '@nanostores/react';
-import type { TutorialStore } from '@tutorialkit/runtime';
+import { normalizePath, type TutorialStore } from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { DialogProvider } from '../core/Dialog.js';
 import type { Theme } from '../core/types.js';
 import resizePanelStyles from '../styles/resize-panel.module.css';
 import { classNames } from '../utils/classnames.js';
 import { EditorPanel } from './EditorPanel.js';
-import { InteractivePocControls } from './InteractivePocControls.js';
+import {
+  InteractivePocControls,
+  type InteractiveProductTab,
+  type InteractiveTeacherStage,
+} from './InteractivePocControls.js';
+import type { InteractiveRecordingMode } from './InteractiveTeacherDashboard.js';
 import { PreviewPanel, type ImperativePreviewHandle } from './PreviewPanel.js';
 import { TerminalPanel } from './TerminalPanel.js';
 import { useInteractivePoc } from './useInteractivePoc.js';
@@ -100,6 +106,11 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
 
 function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
   const [helpAction, setHelpAction] = useState<'solve' | 'reset'>('reset');
+  const [activeInteractiveTab, setActiveInteractiveTab] = useState<InteractiveProductTab>('teacher');
+  const [teacherStage, setTeacherStage] = useState<InteractiveTeacherStage>('setup');
+  const [recordingMode, setRecordingMode] = useState<InteractiveRecordingMode>('none');
+  const [isStartingRecording, setIsStartingRecording] = useState(false);
+  const editorPanelRef = useRef<ImperativePanelHandle>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
   const currentDocument = useStore(tutorialStore.currentDocument);
   const lessonFullyLoaded = useStore(tutorialStore.lessonFullyLoaded);
@@ -114,6 +125,14 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     lessonFullyLoaded,
     storeRef,
   });
+
+  const filePaths = files
+    .filter((file) => file.type === 'file')
+    .map((file) => normalizePath(file.path))
+    .sort((a, b) => a.localeCompare(b));
+  const initialFile = selectedFile ? normalizePath(selectedFile) : (filePaths[0] ?? '');
+  const showInteractiveEditor = activeInteractiveTab === 'learner' || teacherStage !== 'setup';
+  const isRecordingStudio = activeInteractiveTab === 'teacher' && teacherStage === 'recording';
 
   function onHelpClick() {
     if (tutorialStore.hasSolution()) {
@@ -133,9 +152,55 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
   }
 
+  async function startConfiguredRecording() {
+    if (isStartingRecording) {
+      return;
+    }
+
+    setIsStartingRecording(true);
+    tutorialStore.setSelectedFile(initialFile || undefined);
+
+    try {
+      const started =
+        recordingMode === 'audio'
+          ? await interactivePoc.controls.onStartMicRecording()
+          : recordingMode === 'webcam'
+            ? await interactivePoc.controls.onStartCameraRecording()
+            : await interactivePoc.controls.onStartRecording();
+
+      if (started) {
+        setTeacherStage('recording');
+      }
+    } finally {
+      setIsStartingRecording(false);
+    }
+  }
+
+  async function stopConfiguredRecording() {
+    await interactivePoc.controls.onStopRecording();
+    setTeacherStage('review');
+  }
+
+  function previewCurrentDraft() {
+    setTeacherStage('review');
+    void interactivePoc.controls.onPreviewDraft();
+  }
+
+  function previewSelectedDraft(recordingId: string) {
+    setTeacherStage('review');
+    void interactivePoc.controls.onPreviewDraft(recordingId);
+  }
+
+  function previewSelectedPublished(recordingId: string) {
+    setTeacherStage('review');
+    void interactivePoc.controls.onPreviewPublishedRecording(recordingId);
+  }
+
   async function onFileTreeChange({ method, type, value }: FileTreeChangeEvent) {
     if (method === 'add' && type === 'file') {
-      return tutorialStore.addFile(value);
+      await tutorialStore.addFile(value);
+      interactivePoc.onFileCreated(value);
+      return;
     }
 
     if (method === 'add' && type === 'folder') {
@@ -151,17 +216,66 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
     }
   }, [storeRef]);
 
-  return (
-    <Panel
-      id={hasEditor ? 'editor-opened' : 'editor-closed'}
-      defaultSize={hasEditor ? 50 : 0}
-      minSize={10}
-      maxSize={hasEditor ? 100 : 0}
-      collapsible={!hasEditor}
-      className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
+  useEffect(() => {
+    if (!selectedFile && filePaths[0]) {
+      tutorialStore.setSelectedFile(filePaths[0]);
+    }
+  }, [selectedFile, storeRef]);
+
+  useEffect(() => {
+    editorPanelRef.current?.resize(showInteractiveEditor ? 85 : 55);
+  }, [activeInteractiveTab, teacherStage, showInteractiveEditor]);
+
+  useEffect(() => {
+    if (!isRecordingStudio) {
+      return undefined;
+    }
+
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [isRecordingStudio]);
+
+  const editorExperience = (
+    <div
+      className={classNames(
+        'flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor',
+        isRecordingStudio && theme,
+      )}
+      style={
+        isRecordingStudio
+          ? { position: 'fixed', inset: 0, zIndex: 1000, width: '100vw', height: '100vh' }
+          : undefined
+      }
     >
-      <InteractivePocControls {...interactivePoc.controls} />
-      <div className="min-h-0 flex-1">
+      <InteractivePocControls
+        {...interactivePoc.controls}
+        activeTab={activeInteractiveTab}
+        teacherStage={teacherStage}
+        lessonId={lesson.id}
+        filePaths={filePaths}
+        initialFile={initialFile}
+        selectedFile={selectedFile ? normalizePath(selectedFile) : ''}
+        recordingMode={recordingMode}
+        isStartingRecording={isStartingRecording}
+        onActiveTabChange={setActiveInteractiveTab}
+        onInitialFileChange={(filePath) => tutorialStore.setSelectedFile(filePath)}
+        onRecordingModeChange={setRecordingMode}
+        onPrepareMaterials={() => setTeacherStage('materials')}
+        onFinishPreparingMaterials={() => setTeacherStage('setup')}
+        onStartConfiguredRecording={() => void startConfiguredRecording()}
+        onStopConfiguredRecording={() => void stopConfiguredRecording()}
+        onReturnToSetup={() => setTeacherStage('setup')}
+        onPreviewCurrentDraft={previewCurrentDraft}
+        onPreviewSelectedDraft={previewSelectedDraft}
+        onPreviewSelectedPublished={previewSelectedPublished}
+      />
+      <div className={classNames('min-h-0 flex-1', !showInteractiveEditor && 'hidden')}>
         <EditorPanel
           id={storeRef}
           theme={theme}
@@ -180,6 +294,22 @@ function EditorSection({ theme, tutorialStore, hasEditor }: PanelProps) {
           onEditorChange={interactivePoc.onEditorChange}
         />
       </div>
+    </div>
+  );
+
+  return (
+    <Panel
+      ref={editorPanelRef}
+      id={hasEditor ? 'editor-opened' : 'editor-closed'}
+      defaultSize={hasEditor ? 55 : 0}
+      minSize={10}
+      maxSize={hasEditor ? 100 : 0}
+      collapsible={!hasEditor}
+      className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
+    >
+      {isRecordingStudio && typeof document !== 'undefined'
+        ? createPortal(editorExperience, document.body)
+        : editorExperience}
     </Panel>
   );
 }

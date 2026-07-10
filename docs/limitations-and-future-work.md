@@ -46,7 +46,7 @@ The current evidence consists of architecture documentation, deterministic demon
 
 - Export format version 1 is JSON/base64 and is not a stable public package API.
 - There is no archive streaming, checksum manifest, or package migration framework.
-- Media playback has no production-grade speed, drift, caption, or rich seek controls.
+- The editor player supports deterministic seeking, but has no production-grade speed, drift correction, captions, or advanced media controls.
 - Recording selectors and status panels are thesis-demo UI, not a final design system.
 - No transcript generation, screen capture, or persisted conflict audit history exists.
 - LocalStorage parsing and the file-backed backend assume controlled POC data.
@@ -67,7 +67,7 @@ Evaluate patch/hunk-level deltas, side-by-side comparisons, and optional merge a
 
 ### Playback and media controls
 
-Add deterministic seeking, playback speed, drift correction, cancellation, captions/transcripts, media processing, and accessibility evaluation. Structured events should remain the authoritative replay representation even if richer media is attached.
+Build on the deterministic editor seek implementation with playback speed, drift correction, cancellation, captions/transcripts, media processing, and accessibility evaluation. Structured events should remain the authoritative replay representation even if richer media is attached.
 
 ### Broader interaction capture
 

@@ -2,7 +2,7 @@
 
 This repository is a thesis proof of concept built on TutorialKit. It implements the interactivity layer for recording a teacher's editor/file actions, replaying them for a learner, pausing for learner-owned edits, and safely saving/restoring those edits without mutating the teacher timeline.
 
-The release-candidate demo includes Teacher Studio and Learner Lesson flows, optional narration/webcam attachments, local drafts, file-backed published lessons, demo identity and ownership checks, explicit conflict choices, portable recording packages, and deterministic demo seed/reset controls. It is not a production authentication or persistence system.
+The release-candidate demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, optional narration/webcam attachments, local drafts, file-backed published lessons, demo identity and ownership checks, explicit conflict choices, portable recording packages, and deterministic demo seed/reset controls. It is not a production authentication or persistence system.
 
 ## Quick start
 
@@ -58,7 +58,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected Playwright result for Milestone I: **31 passed**.
+Expected interactive POC result after the recording-studio refinement: **34 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 
@@ -80,6 +80,7 @@ For the complete teacher, learner, conflict, and export/import walkthrough, see 
 
 - [Architecture summary](./docs/thesis-architecture-summary.md)
 - [Detailed POC architecture](./docs/interactive-poc-architecture.md)
+- [Interactive recording studio workflow](./docs/interactive-recording-studio.md)
 - [Persistence contract](./docs/interactive-persistence-contract.md)
 - [Thesis demo script](./docs/thesis-demo-script.md)
 - [Evaluation checklist](./docs/evaluation-checklist.md)

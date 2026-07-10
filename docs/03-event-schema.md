@@ -34,14 +34,19 @@ export interface TimelineEvent<TPayload = unknown> {
 export type TimelineEventType =
   | 'recording.started'
   | 'file.opened'
+  | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
   | 'playback.marker';
 ```
 
-## File changed payload
+## File payloads
 
 ```ts
+export interface FileCreatedPayload {
+  content: string;
+}
+
 export interface FileChangedPayload {
   content: string;
   selection?: unknown;

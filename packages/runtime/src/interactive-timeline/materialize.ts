@@ -17,7 +17,7 @@ export function materializeTeacherState(recording: TeacherRecording, untilMs: nu
       break;
     }
 
-    if (event.type === 'file.changed' && event.filePath) {
+    if ((event.type === 'file.created' || event.type === 'file.changed') && event.filePath) {
       const payload = event.payload as FileChangedPayload | undefined;
 
       if (typeof payload?.content === 'string') {

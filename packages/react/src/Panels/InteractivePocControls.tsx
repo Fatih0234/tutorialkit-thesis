@@ -1,15 +1,43 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { classNames } from '../utils/classnames.js';
 import { InteractiveDevIdentityPanel } from './InteractiveDevIdentityPanel.js';
 import { InteractiveLearnerPlayback } from './InteractiveLearnerPlayback.js';
-import { InteractiveTeacherDashboard } from './InteractiveTeacherDashboard.js';
+import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
+import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
+import {
+  InteractiveTeacherDashboard,
+  type InteractiveRecordingMode,
+} from './InteractiveTeacherDashboard.js';
 import {
   interactiveDetailsClassName,
   interactiveSummaryClassName,
 } from './InteractivePocUi.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
-type InteractiveProductTab = 'teacher' | 'learner';
+export type InteractiveProductTab = 'teacher' | 'learner';
+export type InteractiveTeacherStage = 'setup' | 'materials' | 'recording' | 'review';
+
+export interface InteractivePocControlsProps extends InteractivePocControlsModel {
+  activeTab: InteractiveProductTab;
+  teacherStage: InteractiveTeacherStage;
+  lessonId: string;
+  filePaths: string[];
+  initialFile: string;
+  selectedFile: string;
+  recordingMode: InteractiveRecordingMode;
+  isStartingRecording: boolean;
+  onActiveTabChange: (tab: InteractiveProductTab) => void;
+  onInitialFileChange: (filePath: string) => void;
+  onRecordingModeChange: (mode: InteractiveRecordingMode) => void;
+  onPrepareMaterials: () => void;
+  onFinishPreparingMaterials: () => void;
+  onStartConfiguredRecording: () => void;
+  onStopConfiguredRecording: () => void;
+  onReturnToSetup: () => void;
+  onPreviewCurrentDraft: () => void;
+  onPreviewSelectedDraft: (recordingId: string) => void;
+  onPreviewSelectedPublished: (recordingId: string) => void;
+}
 
 function DemoGuidePanel() {
   return (
@@ -56,19 +84,44 @@ function DemoGuidePanel() {
   );
 }
 
-export function InteractivePocControls(props: InteractivePocControlsModel) {
-  const [activeTab, setActiveTab] = useState<InteractiveProductTab>('teacher');
+export function InteractivePocControls(props: InteractivePocControlsProps) {
   const controlsRef = useRef<HTMLDivElement>(null);
+  const { activeTab, teacherStage } = props;
 
   useEffect(() => {
     controlsRef.current?.scrollTo({ top: 0 });
-  }, [activeTab]);
+  }, [activeTab, teacherStage]);
+
+  if (activeTab === 'teacher' && teacherStage === 'recording') {
+    return (
+      <InteractiveRecordingStudio
+        model={props}
+        lessonId={props.lessonId}
+        initialFile={props.initialFile}
+        onStop={props.onStopConfiguredRecording}
+      />
+    );
+  }
+
+  if (activeTab === 'teacher' && teacherStage === 'materials') {
+    return (
+      <InteractiveMaterialPreparation
+        lessonId={props.lessonId}
+        fileCount={props.filePaths.length}
+        selectedFile={props.selectedFile}
+        onDone={props.onFinishPreparingMaterials}
+      />
+    );
+  }
 
   return (
     <div
       ref={controlsRef}
       aria-label="Interactive tutorial controls"
-      className="max-h-[70%] min-h-[10rem] shrink-0 overflow-y-auto border-b border-tk-elements-app-borderColor bg-tk-background-primary p-3 text-sm"
+      className={classNames(
+        'min-h-[10rem] shrink-0 overflow-y-auto border-b border-tk-elements-app-borderColor bg-tk-background-primary p-3 text-sm',
+        activeTab === 'teacher' && teacherStage === 'setup' ? 'max-h-none flex-1' : 'max-h-[70%]',
+      )}
     >
       <div className="mx-auto grid max-w-6xl gap-3">
         <header className="flex flex-wrap items-center justify-between gap-3">
@@ -95,7 +148,7 @@ export function InteractivePocControls(props: InteractivePocControlsModel) {
                   key={tab}
                   type="button"
                   aria-pressed={isActive}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => props.onActiveTabChange(tab)}
                   className={classNames(
                     'inline-flex min-h-8 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-500 transition-colors',
                     'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-tk-border-accent',
@@ -114,7 +167,14 @@ export function InteractivePocControls(props: InteractivePocControlsModel) {
 
         <InteractiveDevIdentityPanel {...props} />
 
-        {activeTab === 'teacher' ? <InteractiveTeacherDashboard {...props} /> : <InteractiveLearnerPlayback {...props} />}
+        {activeTab === 'teacher' ? (
+          <InteractiveTeacherDashboard
+            {...props}
+            view={teacherStage === 'review' ? 'review' : 'setup'}
+          />
+        ) : (
+          <InteractiveLearnerPlayback {...props} />
+        )}
 
         <DemoGuidePanel />
 

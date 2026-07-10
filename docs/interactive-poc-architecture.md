@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the detailed architecture checkpoint for the interactive tutorial thesis demo as of the Milestone I release candidate. Milestone I freezes the Milestone H product behavior and adds a thesis evidence pack; it does not change recording, playback, storage, identity, package, or conflict behavior. This document covers the demo identity/session model, ownership boundaries, role-separated Teacher Studio and Learner Lesson UX, structured recorder, optional teacher mic/webcam media capture, local authoring draft lifecycle, backend/dev publish and load flow, portable export/import packages, deterministic demo seed/reset controls, async IndexedDB and remote storage adapters, media-synced playback, fallback timeline-clock playback, learner work save/restore, explicit conflict resolution UX, demo walkthrough guidance, destructive-action confirmation, and final thesis-demo copy cleanup. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`.
+This document is the detailed architecture checkpoint for the interactive tutorial thesis demo. It includes the release-candidate evidence pack and the later recording-studio UX refinement: separated lecture setup/material preparation, a full-screen structured recording studio, recording review, and a shared seekable editor player. It also covers identity/session boundaries, ownership, optional mic/webcam media, local drafts, development publishing, export/import, deterministic seed/reset, learner save/restore, and explicit conflict resolution. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`; the focused studio flow is documented in `docs/interactive-recording-studio.md`.
 
 ## Scope and invariants
 
@@ -36,7 +36,7 @@ Important invariants:
 
 ## 1. Current user flow
 
-Milestone H keeps the Milestone D product shell, Milestone E demo identity panel, Milestone F conflict UX, and Milestone G export/import/demo controls, then polishes the visible copy for thesis presentation. `packages/react/src/Panels/InteractivePocControls.tsx` now presents a compact, scrollable workspace toolbar with two role views and a collapsed demo walkthrough:
+`packages/react/src/Panels/InteractivePocControls.tsx` presents two role views and a collapsed demo walkthrough. The workspace orchestrator lifts the role and teacher-stage state so management can be physically separated from the editor:
 
 - **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
 - **Learner Lesson** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
@@ -75,15 +75,17 @@ The browser only receives the current user. Session ids are random, meaningless 
 
 ### Teacher Studio
 
-`packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders the teacher product flow.
+`packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders Lecture Setup and Recording Review. `WorkspacePanel.tsx` coordinates four teacher stages: `setup`, `materials`, `recording`, and `review`.
 
-Visible controls:
+Visible controls include:
 
+- initial-file selection;
+- Editor timeline only / Editor + microphone / Editor + camera modes;
+- Edit Materials / Use This Workspace;
+- Start Recording / Stop Recording;
+- Back to Lecture Setup;
+- Play Preview / Pause / Restart / seek timeline;
 - New Recording;
-- Record Timeline Only;
-- Record With Mic;
-- Record With Camera;
-- Stop Recording;
 - Save Draft;
 - Load Draft;
 - Preview Draft;
@@ -167,24 +169,27 @@ Learner-facing labels replace the older debug wording:
 
 The file-level data model is unchanged, but ownership is now enforced: “My Work” is a learner-owned `LearnerDelta` whose `userId` comes from the signed-in learner for new saves. It is still keyed by lesson, teacher recording id/version, teacher timestamp, and base teacher file hash.
 
-### Record Timeline Only / Record With Mic / Record With Camera
+### Start Recording
 
-Starts a local `TimelineRecorder` while the lesson is fully loaded and the mode is `idle`. `Record Timeline Only` keeps the original timeline-only behavior. `Record With Mic` prepares an audio `MediaStream` through `getUserMedia({ audio: true })`; `Record With Camera` prepares a webcam stream through `getUserMedia({ audio: true, video: true })`.
+Lecture Setup selects timeline-only, microphone, or camera mode and then uses one **Start Recording** action. It starts a local `TimelineRecorder` while the lesson is fully loaded and mode is `idle`. Audio mode prepares `getUserMedia({ audio: true })`; camera mode prepares `getUserMedia({ audio: true, video: true })` and exposes the live stream to the studio HUD for a local preview.
 
 Behavior:
 
-- captures the current workspace snapshot as `TeacherRecording.baseFiles`;
+- captures normalized workspace files plus loaded editor documents as `TeacherRecording.baseFiles`, including material-preparation edits;
 - creates a new `TeacherRecording` with `version: 1`;
 - starts media and timeline recording from the same local start timestamp when media preparation succeeds;
-- appends an initial `recording.started` event;
+- appends an initial `recording.started` event and records the selected initial file at `tMs: 0`;
 - begins wrapping editor/file callbacks to record teacher actions;
 - falls back to timeline-only recording with a visible media error/unavailable status when media APIs or permissions fail.
 
 Recorded callback events currently include:
 
 - `file.opened` when a file is selected;
+- `file.created` when the integrated file-tree callback creates a file;
 - `file.changed` when editor content changes;
 - `editor.scrolled` when the editor scroll position changes.
+
+The recording stage uses a fixed full-viewport child around the existing mounted editor rather than a browser popup or second editor instance. A `beforeunload` confirmation guards accidental refresh/navigation.
 
 ### Stop Recording
 
@@ -295,8 +300,11 @@ Behavior:
 Currently applied event types:
 
 - `file.opened`: selects the file;
-- `file.changed`: updates the file content;
+- `file.created`: restores a teacher-created file and its initial content through the trusted programmatic store path;
+- `file.changed`: restores or updates the file content;
 - `editor.scrolled`: restores scroll position and selects the event file when present.
+
+The shared editor player exposes pause, restart, and deterministic seek. Seeking pauses the driver, restores base files, reapplies ordered events through the selected timestamp, and aligns loaded media. Continuing after a seek starts from that materialized state.
 
 ### Try It Yourself
 
@@ -529,6 +537,7 @@ Validation checks supported format version, safe ids, event `tMs`/`seq` number f
 type TimelineEventType =
   | 'recording.started'
   | 'file.opened'
+  | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
   | 'playback.marker';
@@ -917,15 +926,23 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the Milestone H role shell with Demo Identity, the demo walkthrough, Teacher Studio, and Learner Lesson views. It receives a control model from `useInteractivePoc` and does not own persistence, timeline, package, or workspace logic.
+`packages/react/src/Panels/InteractivePocControls.tsx` renders the role shell and the stage-specific setup, material, recording, review, and learner controls. Workspace-level React state owns visible stage transitions; `useInteractivePoc` remains the source of recording, playback, storage, and learner behavior.
 
 ### `InteractiveTeacherDashboard.tsx`
 
-Renders the teacher product dashboard, local draft controls, published recording controls, package export/import controls, demo seed/reset controls, media preview element, and teacher-facing status text.
+Renders Lecture Setup, Recording Review, local/published recording management, package tools, demo controls, media preview, and teacher status text.
+
+### `InteractiveRecordingStudio.tsx`
+
+Renders the focused red recording HUD, elapsed/event/media state, optional live webcam preview, and Stop action above the full-screen editor.
+
+### `InteractiveEditorPlayer.tsx`
+
+Renders the shared teacher/learner transport: play, pause, restart, time display, deterministic range seek, status, and recorded media.
 
 ### `InteractiveLearnerPlayback.tsx`
 
-Renders the learner product playback view with published lessons, Open Published Lesson, Play Lesson, Try It Yourself, Save My Work, Restore My Work, Conflict Warning status, and the conflict resolution panel/actions.
+Renders the learner library, shared editor player, Try It Yourself, Save My Work, Restore My Work, Conflict Warning status, and explicit conflict resolution.
 
 ### `InteractiveRecordingLibrary.tsx`
 
@@ -957,9 +974,8 @@ Known limitations are intentional for the POC:
 - no screen recording;
 - no transcript generation;
 - no analytics;
-- restore only updates existing TutorialKit files in the current UI;
-- file add/remove restore UI is not implemented;
-- media-synced playback supports basic media seeking by resetting/replaying structured events, but does not yet expose production seeking/speed/drift controls;
+- teacher-created files are replayed, but file remove/rename capture is not exposed by the current integrated file-tree UI;
+- deterministic timeline seeking is exposed, but production speed, drift correction, captions, and advanced media controls are not;
 - editor selection is stored opaquely and not restored as a first-class feature;
 - localStorage parsing assumes valid POC JSON;
 - recording libraries are simple selectors/list cards, not a final history drawer or table component.
@@ -969,7 +985,7 @@ Known limitations are intentional for the POC:
 Candidate future phases:
 
 1. **Richer playback clock controls**
-   - support seeking, speed, drift correction, cancellation, and deterministic replay state.
+   - build on deterministic seeking with speed control, drift correction, cancellation, captions, and keyboard/accessibility evaluation.
 
 2. **Production persistence hardening**
    - replace `.interactive-data/` with a real database/object-storage implementation behind the same remote adapter contract.

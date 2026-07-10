@@ -100,6 +100,7 @@ export interface InteractivePocControlsModel {
   mediaError: string;
   mediaPreviewUrl: string;
   mediaMimeType: string;
+  liveMediaStream: MediaStream | null;
   draftRecordings: InteractiveRecordingLibraryItem[];
   publishedRecordings: InteractiveRecordingLibraryItem[];
   selectedDraftId: string;
@@ -134,6 +135,8 @@ export interface InteractivePocControlsModel {
   canResetDemoData: boolean;
   canPlayRecording: boolean;
   canPausePlayback: boolean;
+  canSeekPlayback: boolean;
+  canEnterLearnerWorkspace: boolean;
   canResumeTeacher: boolean;
   canSaveLearnerDelta: boolean;
   canRestoreLearnerDelta: boolean;
@@ -142,10 +145,10 @@ export interface InteractivePocControlsModel {
   onRefreshRecordingLibrary: () => void;
   onSelectDraftRecording: (recordingId: string) => void;
   onSelectPublishedRecording: (recordingId: string) => void;
-  onStartRecording: () => void;
-  onStartMicRecording: () => void;
-  onStartCameraRecording: () => void;
-  onStopRecording: () => void;
+  onStartRecording: () => Promise<boolean>;
+  onStartMicRecording: () => Promise<boolean>;
+  onStartCameraRecording: () => Promise<boolean>;
+  onStopRecording: () => Promise<void>;
   onSaveDraft: () => void;
   onLoadDraft: (recordingId?: string) => void;
   onPreviewDraft: (recordingId?: string) => void;
@@ -162,7 +165,11 @@ export interface InteractivePocControlsModel {
   onDemoSeed: () => void;
   onResetDemoData: () => void;
   onPlayRecording: () => void;
+  onContinuePlayback: () => void;
   onPausePlayback: () => void;
+  onPausePreviewPlayback: () => void;
+  onRestartPlayback: () => void;
+  onSeekPlayback: (timestampMs: number) => void;
   onResumeTeacher: () => void;
   onSaveLearnerDelta: () => void;
   onRestoreLearnerDelta: () => void;
@@ -184,6 +191,7 @@ export interface UseInteractivePocOptions {
 export interface UseInteractivePocResult {
   controls: InteractivePocControlsModel;
   onFileSelect: (filePath: string | undefined) => void;
+  onFileCreated: (filePath: string, content?: string) => void;
   onEditorScroll: (position: EditorScrollPosition) => void;
   onEditorChange: (update: EditorChangeUpdate) => void;
 }
@@ -278,6 +286,7 @@ export function useInteractivePoc({
   const [mediaKind, setMediaKind] = useState<MediaKindStatus>('none');
   const [mediaDurationMs, setMediaDurationMs] = useState(0);
   const [mediaError, setMediaError] = useState('none');
+  const [liveMediaStream, setLiveMediaStream] = useState<MediaStream | null>(null);
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
   const [mediaMimeType, setMediaMimeType] = useState('');
   const [draftRecordings, setDraftRecordings] = useState<InteractiveRecordingLibraryItem[]>([]);
@@ -731,6 +740,16 @@ export function useInteractivePoc({
     }, PLAYBACK_GUARD_RELEASE_DELAY_MS);
   }
 
+  function releaseRecordingTransitionGuard() {
+    const token = playbackGuardTokenRef.current;
+
+    window.setTimeout(() => {
+      if (playbackGuardTokenRef.current === token) {
+        isApplyingPlaybackRef.current = false;
+      }
+    }, 0);
+  }
+
   function stopPlayback(status: PlaybackStatus, nextMode: InteractiveMode = 'idle') {
     stopPlaybackDrivers({ pauseMedia: true });
     setIsPlaying(false);
@@ -764,13 +783,10 @@ export function useInteractivePoc({
   function applyRecordingBaseFiles(recording: TeacherRecording) {
     tutorialStore.reset();
 
-    const existingFilePaths = new Set(tutorialStore.files.get().map((file) => normalizePath(file.path)));
     const baseFiles: FilesSnapshot = normalizeFiles(recording.baseFiles);
 
     for (const [filePath, content] of Object.entries(baseFiles)) {
-      if (existingFilePaths.has(filePath)) {
-        tutorialStore.updateFile(filePath, content);
-      }
+      tutorialStore.restoreFile(filePath, content);
     }
   }
 
@@ -786,11 +802,21 @@ export function useInteractivePoc({
       return;
     }
 
+    if (event.type === 'file.created') {
+      const payload = event.payload as { content?: string } | undefined;
+
+      if (event.filePath) {
+        tutorialStore.restoreFile(normalizePath(event.filePath), payload?.content ?? '');
+      }
+
+      return;
+    }
+
     if (event.type === 'file.changed') {
       const payload = event.payload as FileChangedPayload | undefined;
 
       if (event.filePath && typeof payload?.content === 'string') {
-        tutorialStore.updateFile(normalizePath(event.filePath), payload.content);
+        tutorialStore.restoreFile(normalizePath(event.filePath), payload.content);
       }
 
       return;
@@ -1018,7 +1044,7 @@ export function useInteractivePoc({
     playRecordingFrom(-1, { resetToBase: true }, recording ?? undefined);
   }
 
-  function onPausePlayback() {
+  function pausePlayback(nextMode: InteractiveMode, rememberLearnerTimestamp: boolean) {
     if (!isPlaying) {
       return;
     }
@@ -1033,8 +1059,84 @@ export function useInteractivePoc({
 
     setPlaybackTimestampMs(pausedMs);
     setPausedTimestampMs(pausedMs);
+    setHasPausedTeacherTimestamp(rememberLearnerTimestamp);
+    stopPlayback('paused', nextMode);
+  }
+
+  function onContinuePlayback() {
+    const recording = playbackRecordingRef.current;
+
+    if (!recording || isRecording || modeRef.current !== 'idle') {
+      return;
+    }
+
+    playRecordingFrom(playheadMsRef.current, { resetToBase: false }, recording);
+  }
+
+  function onPausePlayback() {
+    if (isPlaying) {
+      pausePlayback('learner-editing', true);
+      return;
+    }
+
+    if (!playbackRecordingRef.current || modeRef.current !== 'idle') {
+      return;
+    }
+
+    const pausedMs = playheadMsRef.current;
+
+    setPausedTimestampMs(pausedMs);
     setHasPausedTeacherTimestamp(true);
-    stopPlayback('paused', 'learner-editing');
+    setPlaybackStatus('paused');
+    setInteractiveMode('learner-editing');
+  }
+
+  function onPausePreviewPlayback() {
+    pausePlayback('idle', false);
+  }
+
+  function onRestartPlayback() {
+    const recording = playbackRecordingRef.current;
+
+    if (!recording || isRecording) {
+      return;
+    }
+
+    setHasPausedTeacherTimestamp(false);
+    setPausedTimestampMs(0);
+    playRecordingFrom(-1, { resetToBase: true }, recording);
+  }
+
+  function onSeekPlayback(timestampMs: number) {
+    const recording = playbackRecordingRef.current;
+
+    if (!recording || isRecording || modeRef.current === 'learner-editing') {
+      return;
+    }
+
+    const events = getSortedPlaybackEvents(recording);
+    const playbackEndMs = getPlaybackEndMs(events, recording, playbackMediaAssetRef.current);
+    const targetMs = Math.max(0, Math.min(playbackEndMs, Math.round(timestampMs)));
+
+    stopPlaybackDrivers({ pauseMedia: true });
+    playbackEventsRef.current = events;
+    playbackRecordingRef.current = recording;
+    setInteractiveMode('teacher-playback');
+    replayEventsAt(targetMs, recording);
+
+    const mediaElement = playbackMediaAssetRef.current?.blob ? getMediaPlaybackElement() : undefined;
+
+    if (mediaElement) {
+      mediaElement.currentTime = targetMs / 1000;
+    }
+
+    setIsPlaying(false);
+    setPlaybackStatus('paused');
+    setPlaybackTimestampMs(targetMs);
+    setPausedTimestampMs(targetMs);
+    setHasPausedTeacherTimestamp(false);
+    setInteractiveMode('idle');
+    releasePlaybackGuardSoon();
   }
 
   function onResumeTeacher() {
@@ -1045,17 +1147,18 @@ export function useInteractivePoc({
     playRecordingFrom(pausedTeacherTimestampMsRef.current, { resetToBase: false });
   }
 
-  async function startRecording(mediaKindToRecord: MediaKindStatus) {
+  async function startRecording(mediaKindToRecord: MediaKindStatus): Promise<boolean> {
     if (!lessonFullyLoaded || modeRef.current !== 'idle') {
-      return;
+      return false;
     }
 
     stopPlaybackDrivers({ pauseMedia: true });
-    const baseFiles: FilesSnapshot = normalizeFiles(tutorialStore.takeSnapshot().files);
+    const baseFiles: FilesSnapshot = getCurrentLearnerFiles();
     const recorder = new TimelineRecorder();
     let mediaRecorder: InteractiveMediaRecorder | null = null;
     let mediaPrepareError = '';
 
+    setLiveMediaStream(null);
     setNoMedia(mediaKindToRecord === 'none' ? getInitialMediaStatus() : 'permission-needed');
 
     if (mediaKindToRecord !== 'none') {
@@ -1074,8 +1177,17 @@ export function useInteractivePoc({
     const startedAtMs = Date.now();
     const recording = getRecordingWithOwner(recorder.start({ lessonId, version: 1, baseFiles, startedAtMs }));
 
+    if (selectedFile) {
+      recorder.append('file.opened', {
+        filePath: selectedFile,
+        payload: { filePath: normalizePath(selectedFile) },
+        tMs: 0,
+      });
+    }
+
     if (mediaRecorder) {
       mediaRecorder.start({ recordingId: recording.id, startedAtMs });
+      setLiveMediaStream(mediaRecorder.mediaStream ?? null);
       setMediaStatus('recording');
       setMediaKind(mediaKindToRecord);
       mediaKindRef.current = mediaKindToRecord;
@@ -1098,18 +1210,25 @@ export function useInteractivePoc({
     setRecordingDurationMs(0);
     setIsRecording(true);
     setEventCount(recording.events.length);
+
+    // Moving the mounted editor into the full-screen portal may emit setup callbacks.
+    // Suppress that short transition so only deliberate teacher actions enter the timeline.
+    startPlaybackGuard();
+    releaseRecordingTransitionGuard();
+
+    return true;
   }
 
   function onStartRecording() {
-    void startRecording('none');
+    return startRecording('none');
   }
 
   function onStartMicRecording() {
-    void startRecording('audio');
+    return startRecording('audio');
   }
 
   function onStartCameraRecording() {
-    void startRecording('webcam');
+    return startRecording('webcam');
   }
 
   async function onStopRecording() {
@@ -1118,6 +1237,7 @@ export function useInteractivePoc({
 
     recorderRef.current = null;
     mediaRecorderRef.current = null;
+    setLiveMediaStream(null);
 
     if (!stopped) {
       mediaRecorder?.abort();
@@ -1832,6 +1952,15 @@ export function useInteractivePoc({
     syncEventCount();
   }
 
+  function onFileCreated(filePath: string, content = '') {
+    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+      return;
+    }
+
+    recorderRef.current.recordFileCreated(filePath, { content });
+    syncEventCount();
+  }
+
   function onEditorScroll(position: EditorScrollPosition) {
     tutorialStore.setCurrentDocumentScrollPosition(position);
 
@@ -1930,6 +2059,7 @@ export function useInteractivePoc({
       mediaError,
       mediaPreviewUrl,
       mediaMimeType,
+      liveMediaStream,
       draftRecordings,
       publishedRecordings,
       selectedDraftId,
@@ -1973,6 +2103,8 @@ export function useInteractivePoc({
       canResetDemoData: !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
       canPlayRecording: !isRecording && mode === 'idle',
       canPausePlayback: isPlaying,
+      canSeekPlayback: Boolean(playbackRecordingRef.current) && !isRecording && mode !== 'learner-editing',
+      canEnterLearnerWorkspace: Boolean(playbackRecordingRef.current) && !isRecording && mode !== 'learner-editing',
       canResumeTeacher: mode === 'learner-editing',
       canSaveLearnerDelta,
       canRestoreLearnerDelta,
@@ -2001,7 +2133,11 @@ export function useInteractivePoc({
       onDemoSeed,
       onResetDemoData,
       onPlayRecording,
+      onContinuePlayback,
       onPausePlayback,
+      onPausePreviewPlayback,
+      onRestartPlayback,
+      onSeekPlayback,
       onResumeTeacher,
       onSaveLearnerDelta,
       onRestoreLearnerDelta,
@@ -2012,6 +2148,7 @@ export function useInteractivePoc({
       onMediaElementRef,
     },
     onFileSelect,
+    onFileCreated,
     onEditorScroll,
     onEditorChange,
   };

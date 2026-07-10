@@ -94,6 +94,7 @@
     "nanostores": "^0.10.3",
     "picomatch": "^4.0.2",
     "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-resizable-panels": "^2.0.19"
   },
   "devDependencies": {
@@ -101,6 +102,7 @@
     "@tutorialkit/types": "workspace:*",
     "@types/picomatch": "^3.0.1",
     "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "chokidar": "3.6.0",
     "execa": "^9.2.0",
     "typescript": "^5.4.5",

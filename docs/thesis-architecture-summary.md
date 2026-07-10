@@ -54,18 +54,19 @@ Only `RemoteInteractiveTimelineStorage` performs interactivity-layer `fetch` cal
 
 ## Teacher Studio flow
 
-1. The teacher signs in using the demo identity panel.
-2. Recording captures the initial normalized file snapshot and timestamped `file.opened`, `file.changed`, and `editor.scrolled` events.
-3. Optional microphone or webcam media begins from the same local start time and remains an attachment to the structured recording.
-4. Stopping creates an in-memory `TeacherRecording`; saving writes a local IndexedDB draft and media blobs.
-5. Preview uses the same replay engine as the learner flow.
-6. Publishing sends immutable recording JSON and associated media to the development backend. Reposting changed JSON under the same recording id is rejected.
-7. Export can package the recording, media, and optionally the current user's learner work without altering the source.
+1. The teacher signs in and uses **Lecture Setup** to choose the initial file and timeline/microphone/camera mode.
+2. **Edit Materials** exposes the editor while recording is explicitly off; the prepared workspace becomes the normalized base snapshot.
+3. **Start Recording** enters a focused full-screen studio and captures timestamped `file.opened`, `file.created`, `file.changed`, and `editor.scrolled` events.
+4. Optional microphone or webcam media begins from the same local start time and remains an attachment to the structured recording.
+5. Stopping enters **Recording Review**; the shared editor player provides play, pause, restart, and deterministic seek before save/publish.
+6. Saving writes a local IndexedDB draft and media blobs.
+7. Publishing sends immutable recording JSON and associated media to the development backend. Reposting changed JSON under the same recording id is rejected.
+8. Export can package the recording, media, and optionally the current user's learner work without altering the source.
 
 ## Learner Lesson flow
 
 1. The learner signs in and opens a published lesson.
-2. Playback resets the workspace to `baseFiles` and applies ordered events by `tMs`, then `seq`.
+2. The shared editor player resets the workspace to `baseFiles`, applies ordered events by `tMs` then `seq`, and supports deterministic pause/restart/seek.
 3. **Try It Yourself** pauses the playback source and captures the teacher timestamp.
 4. **Save My Work** compares the learner workspace with teacher state materialized at that timestamp and stores only the file-level delta.
 5. **Resume Teacher** continues teacher events without deleting the saved delta.

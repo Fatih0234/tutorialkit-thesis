@@ -260,6 +260,7 @@ One timestamped teacher/system event in a teacher timeline.
 type TimelineEventType =
   | 'recording.started'
   | 'file.opened'
+  | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
   | 'playback.marker';
@@ -285,6 +286,10 @@ Ordering contract:
 Known payloads:
 
 ```ts
+interface FileCreatedPayload {
+  content: string;
+}
+
 interface FileChangedPayload {
   content: string;
   selection?: unknown;
@@ -365,7 +370,7 @@ interface ConflictSummary {
 Current conflict rule:
 
 - collect learner-changed files from `addedOrModified` keys and `removed` paths;
-- find teacher `file.changed` events where `event.tMs > delta.teacherTimestampMs`;
+- find teacher `file.created` or `file.changed` events where `event.tMs > delta.teacherTimestampMs`;
 - report a conflict when the later teacher event path is in the learner-changed file set.
 
 Conflict detection is non-destructive. Milestone H keeps it as the gate for explicit conflicted restore choices, but the choices still do not write any conflict result or merged delta.
@@ -990,7 +995,7 @@ When computing conflicts:
 
 - use normalized file paths;
 - compare against teacher events with `tMs > learnerDelta.teacherTimestampMs`;
-- consider `file.changed` as the only teacher-modifying event for the current POC;
+- consider `file.created` and `file.changed` teacher-modifying events for the current POC;
 - return an empty summary rather than failing when no conflicts exist.
 
 ## 6. Migration path from local browser storage

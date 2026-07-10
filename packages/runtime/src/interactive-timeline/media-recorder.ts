@@ -119,6 +119,10 @@ export class InteractiveMediaRecorder {
     return this.startedAtMs;
   }
 
+  get mediaStream(): MediaStream | undefined {
+    return this.stream;
+  }
+
   isAvailable(): boolean {
     return this.fake || canUseBrowserMediaRecorder();
   }

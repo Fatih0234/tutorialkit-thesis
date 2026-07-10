@@ -1,5 +1,6 @@
 import type {
   FileChangedPayload,
+  FileCreatedPayload,
   TeacherRecording,
   TimelineEvent,
   TimelineEventType,
@@ -84,6 +85,13 @@ export class TimelineRecorder {
     this.append('file.opened', {
       filePath,
       payload: { filePath: normalizePath(filePath) },
+    });
+  }
+
+  recordFileCreated(filePath: string, payload: FileCreatedPayload = { content: '' }): void {
+    this.append('file.created', {
+      filePath,
+      payload,
     });
   }
 

@@ -5,6 +5,7 @@ export type FilesSnapshot = Record<string, string>;
 export type TimelineEventType =
   | 'recording.started'
   | 'file.opened'
+  | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
   | 'playback.marker';
@@ -19,6 +20,10 @@ export interface TimelineEvent<TPayload = unknown> {
   filePath?: string;
   payload?: TPayload;
   origin: TimelineEventOrigin;
+}
+
+export interface FileCreatedPayload {
+  content: string;
 }
 
 export interface FileChangedPayload {

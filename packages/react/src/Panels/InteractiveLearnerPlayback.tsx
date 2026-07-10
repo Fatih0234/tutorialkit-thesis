@@ -1,58 +1,53 @@
-import { classNames } from '../utils/classnames.js';
+import { InteractiveEditorPlayer } from './InteractiveEditorPlayer.js';
 import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import {
   InteractiveButton,
   InteractiveCard,
   InteractiveStatusBadge,
-  formatInteractiveTime,
   interactiveDetailsClassName,
   interactiveSummaryClassName,
 } from './InteractivePocUi.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
-export function InteractiveLearnerPlayback({
-  mode,
-  playbackStatus,
-  playheadMs,
-  pausedTeacherTimestampMs,
-  recordingDurationMs,
-  learnerDeltaCount,
-  learnerDeltaStatus,
-  conflictStatus,
-  conflictedFiles,
-  conflictDetails,
-  isConflictResolutionVisible,
-  areConflictDetailsVisible,
-  publishedStatus,
-  publishedRecordingId,
-  recordingStorageSource,
-  publishedRecordings,
-  selectedPublishedRecordingId,
-  currentUser,
-  canUseLearnerWork,
-  canLoadPublishedRecording,
-  canPlayRecording,
-  canPausePlayback,
-  canResumeTeacher,
-  canSaveLearnerDelta,
-  canRestoreLearnerDelta,
-  onSelectPublishedRecording,
-  onLoadPublishedRecording,
-  onPlayRecording,
-  onPausePlayback,
-  onResumeTeacher,
-  onSaveLearnerDelta,
-  onRestoreLearnerDelta,
-  onRestoreLearnerDeltaAnyway,
-  onKeepTeacherVersion,
-  onViewConflictDetails,
-  onCancelConflictResolution,
-}: InteractivePocControlsModel) {
+export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
+  const {
+    mode,
+    playbackStatus,
+    pausedTeacherTimestampMs,
+    learnerDeltaCount,
+    learnerDeltaStatus,
+    conflictStatus,
+    conflictedFiles,
+    conflictDetails,
+    isConflictResolutionVisible,
+    areConflictDetailsVisible,
+    publishedStatus,
+    publishedRecordingId,
+    recordingStorageSource,
+    publishedRecordings,
+    selectedPublishedRecordingId,
+    currentUser,
+    canUseLearnerWork,
+    canLoadPublishedRecording,
+    canResumeTeacher,
+    canSaveLearnerDelta,
+    canRestoreLearnerDelta,
+    onSelectPublishedRecording,
+    onLoadPublishedRecording,
+    onPlayRecording,
+    onContinuePlayback,
+    onPausePlayback,
+    onResumeTeacher,
+    onSaveLearnerDelta,
+    onRestoreLearnerDelta,
+    onRestoreLearnerDeltaAnyway,
+    onKeepTeacherVersion,
+    onViewConflictDetails,
+    onCancelConflictResolution,
+    onPausePreviewPlayback,
+  } = props;
   const hasConflicts = conflictStatus === 'conflict';
   const isLearnerEditing = mode === 'learner-editing';
-  const progressMax = Math.max(1, recordingDurationMs, playheadMs);
-  const progressValue = Math.min(progressMax, playheadMs);
-
   return (
     <section aria-labelledby="interactive-learner-heading" className="grid gap-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -91,81 +86,32 @@ export function InteractiveLearnerPlayback({
             Open Published Lesson
           </InteractiveButton>
           <span className="min-w-0 truncate text-xs text-tk-text-secondary" title={publishedRecordingId}>
-            Published recording id: {publishedRecordingId}
+            Published status: {publishedStatus} · Published recording id: {publishedRecordingId}
           </span>
         </div>
       </InteractiveCard>
 
-      <InteractiveCard
-        aria-label="Lesson player"
-        className={classNames('grid gap-3', isLearnerEditing ? 'border-blue-500/60 bg-blue-950/15' : '')}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className={classNames(
-                'grid h-9 w-9 place-items-center rounded-full text-lg',
-                playbackStatus === 'playing'
-                  ? 'animate-pulse bg-blue-600 text-white'
-                  : isLearnerEditing
-                    ? 'bg-blue-950/50 text-blue-200'
-                    : 'bg-tk-background-active text-tk-text-secondary',
-              )}
-            >
-              <span className={isLearnerEditing ? 'i-ph-pencil-simple-duotone' : 'i-ph-play-duotone'} />
-            </span>
-            <div>
-              <strong className="text-sm text-tk-text-primary">
-                {isLearnerEditing
-                  ? 'Your workspace is active'
-                  : playbackStatus === 'playing'
-                    ? 'Teacher playback in progress'
-                    : playbackStatus === 'finished'
-                      ? 'Lesson playback finished'
-                      : 'Ready to play'}
-              </strong>
-              <div aria-live="polite" role="status" className="flex flex-wrap gap-x-3 text-xs text-tk-text-secondary">
-                <span>Mode: {mode}</span>
-                <span>Playback status: {playbackStatus}</span>
-                <span>Published status: {publishedStatus}</span>
-              </div>
-            </div>
-          </div>
-          <span className="font-mono text-xs text-tk-text-secondary">
-            {formatInteractiveTime(playheadMs)} / {formatInteractiveTime(recordingDurationMs)}
-          </span>
-        </div>
+      <InteractiveEditorPlayer
+        audience="learner"
+        title={isLearnerEditing ? 'Your workspace is active' : 'Interactive lesson player'}
+        description="The editor is the playback surface: pause or seek without converting the lesson into video."
+        model={props}
+        onPlay={playbackStatus === 'paused' ? onContinuePlayback : onPlayRecording}
+        onPause={onPausePreviewPlayback}
+        onTryItYourself={onPausePlayback}
+      />
 
-        <div>
-          <progress
-            aria-label="Lesson playback progress"
-            className="h-1.5 w-full accent-blue-500"
-            max={progressMax}
-            value={progressValue}
-          />
-          <p className="m-0 text-right text-xs text-tk-text-secondary">Playhead ms: {playheadMs}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5">
-          <InteractiveButton variant="primary" icon="i-ph-play-fill" onClick={onPlayRecording} disabled={!canPlayRecording}>
-            Play Lesson
-          </InteractiveButton>
-          <InteractiveButton icon="i-ph-pencil-simple" onClick={onPausePlayback} disabled={!canPausePlayback}>
-            Try It Yourself
-          </InteractiveButton>
-          <InteractiveButton icon="i-ph-arrow-counter-clockwise" onClick={onResumeTeacher} disabled={!canResumeTeacher}>
-            Resume Teacher
-          </InteractiveButton>
-          <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-tk-border-primary" />
-          <InteractiveButton icon="i-ph-floppy-disk" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
-            Save My Work
-          </InteractiveButton>
-          <InteractiveButton icon="i-ph-clock-counter-clockwise" onClick={onRestoreLearnerDelta} disabled={!canRestoreLearnerDelta}>
-            Restore My Work
-          </InteractiveButton>
-        </div>
-      </InteractiveCard>
+      <div aria-label="Learner workspace toolbar" className="flex flex-wrap gap-1.5">
+        <InteractiveButton icon="i-ph-arrow-counter-clockwise" onClick={onResumeTeacher} disabled={!canResumeTeacher}>
+          Resume Teacher
+        </InteractiveButton>
+        <InteractiveButton icon="i-ph-floppy-disk" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
+          Save My Work
+        </InteractiveButton>
+        <InteractiveButton icon="i-ph-clock-counter-clockwise" onClick={onRestoreLearnerDelta} disabled={!canRestoreLearnerDelta}>
+          Restore My Work
+        </InteractiveButton>
+      </div>
 
       <InteractiveCard aria-label="My work status" className="grid gap-2 p-2">
         <div className="flex flex-wrap items-center justify-between gap-2">

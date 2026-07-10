@@ -79,7 +79,11 @@ export function getLearnerDeltaConflicts(recording: TeacherRecording, delta: Lea
   }
 
   for (const event of recording.events) {
-    if (event.type !== 'file.changed' || event.tMs <= delta.teacherTimestampMs || !event.filePath) {
+    if (
+      (event.type !== 'file.created' && event.type !== 'file.changed') ||
+      event.tMs <= delta.teacherTimestampMs ||
+      !event.filePath
+    ) {
       continue;
     }
 

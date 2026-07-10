@@ -1,6 +1,6 @@
 # Implementation timeline
 
-This timeline summarizes the incremental evidence built from Phase 0 through Milestone H. Each step preserved the central invariant that learner activity must not mutate the teacher timeline.
+This timeline summarizes the incremental evidence built from Phase 0 through the release-candidate recording-studio refinement. Each step preserved the central invariant that learner activity must not mutate the teacher timeline.
 
 ## Phase 0 — Baseline
 
@@ -84,4 +84,8 @@ Milestone H refined Teacher Studio, Learner Lesson, Demo Identity, status/error 
 
 ## Milestone I — Release candidate and evidence pack
 
-Milestone I freezes product behavior and assembles the release-candidate evidence: quick-start instructions, architecture summary and diagram, evaluation criteria, limitations/future work, this implementation history, and a reproducible release checklist. Its purpose is not to prove another feature, but to make all prior claims reviewable and repeatable.
+Milestone I froze the existing product behavior and assembled the release-candidate evidence: quick-start instructions, architecture summary and diagram, evaluation criteria, limitations/future work, this implementation history, and a reproducible release checklist.
+
+## Recording Studio UX refinement
+
+The recording-studio refinement separated Lecture Setup, material preparation, full-screen recording, and review. It added a shared seekable editor player, deterministic replay from arbitrary timestamps, explicit initial-file capture, live webcam preview, trusted restoration of teacher-created files, and navigation protection while recording. It proved the structured timeline could feel like video while remaining a real editor and while preserving immutable teacher recordings and learner-owned deltas.
