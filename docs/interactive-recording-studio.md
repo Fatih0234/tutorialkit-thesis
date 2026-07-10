@@ -76,7 +76,7 @@ File remove/rename capture remains unavailable because the current rendered file
 
 Learner Lesson uses the shared `InteractiveEditorPlayer`. The timeline is a real range control, not a cosmetic progress bar. A learner may play, pause, restart, or seek before selecting **Try It Yourself**. Entering learner mode captures the current teacher timestamp and keeps learner deltas keyed to that materialized teacher state.
 
-Teacher recordings remain immutable. Learner save/restore, ownership checks, and explicit conflict choices are unchanged.
+Teacher recordings remain immutable. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Resume Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
 
 ## Main implementation files
 

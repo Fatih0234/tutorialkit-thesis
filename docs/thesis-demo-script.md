@@ -92,18 +92,15 @@ Reset only removes `demo-` prefixed recordings/media/deltas. Non-demo recordings
 5. Click **Play Lesson**.
 6. Click **Try It Yourself** while playback is running.
 7. Edit `example.js`.
-8. Click **Save My Work**.
-9. Click **Resume Teacher**.
-10. Click **Restore My Work** after teacher playback finishes or overwrites the visible workspace.
+8. Confirm the **Unsaved changes** indicator appears.
+9. Click **Save Experiment** and point out the violet marker on the timeline.
+10. Click **Resume Lecture** and verify the editor returns to the teacher's original timeline.
+11. Let playback pass the marker; explain that the marker has no automatic effect.
+12. Click the marker and verify the learner experiment reopens at its original lecture timestamp.
 
-## 7. Conflict walkthrough
+## 7. Timestamped learner-experiment walkthrough
 
-The seeded demo is deterministic:
-
-- recording id: `demo-interactive-conflict-flow`;
-- conflict file: `/example.js`;
-- teacher later edit: `// teacher demo final edit`;
-- fake stable media: silent `audio/wav`.
+The seeded demo is deterministic. Its retained legacy id is `demo-interactive-conflict-flow`, and it includes a later teacher edit (`// teacher demo final edit`) plus stable fake `audio/wav` media.
 
 Flow:
 
@@ -112,17 +109,13 @@ Flow:
 3. Open and play the Published Lesson.
 4. Click **Try It Yourself** before the teacher's later `/example.js` edit.
 5. Add a learner edit to `/example.js`.
-6. Click **Save My Work**.
-7. Confirm **Conflict Warning** shows a conflict.
-8. Click **Resume Teacher** so the teacher edit becomes visible.
-9. Click **Restore My Work**.
-10. Demonstrate the explicit choices:
-    - **Restore My Work Anyway**;
-    - **Keep Teacher Version**;
-    - **View Conflict Details**;
-    - **Cancel**.
+6. Click **Save Experiment**.
+7. Confirm one violet marker and one **My Experiments** entry appear at the paused timestamp.
+8. Click **Resume Lecture** and verify the teacher's later edit becomes visible while learner code disappears from the playback workspace.
+9. Click the saved marker.
+10. Verify the historical teacher state plus learner edit reappears, without a conflict prompt.
 
-No automatic merge runs. Teacher recordings and learner deltas are not mutated by these choices.
+No merge runs. The teacher recording and learner checkpoint remain separate immutable-source artifacts.
 
 ## 8. Export/import walkthrough
 
@@ -148,5 +141,5 @@ Import always creates a copy with a new recording id. Unsupported package versio
 - Export packages are thesis-demo JSON/base64 artifacts, not a stable public archive format.
 - Structured replay is not replaced by screen video.
 - No automatic merge or patch/hunk merge engine exists.
-- Conflict choices do not persist separate conflict-resolution decision records.
+- Checkpoint version history is grouped at one marker per timestamp; there is not yet a dedicated version-history chooser.
 - Terminal recording, iframe internals recording, transcript generation, analytics, and production auth are out of scope.

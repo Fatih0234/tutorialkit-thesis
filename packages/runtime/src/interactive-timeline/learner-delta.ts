@@ -1,31 +1,9 @@
-import type { FilesSnapshot, LearnerDelta, TeacherRecording } from './types.js';
+import type { FilesSnapshot, LearnerDelta } from './types.js';
 import { normalizeFiles, normalizePath } from './path.js';
 
 export interface FilesDiff {
   addedOrModified: FilesSnapshot;
   removed: string[];
-}
-
-export interface LearnerDeltaConflictEvent {
-  filePath: string;
-  eventId: string;
-  eventSeq?: number;
-  teacherTimestampMs: number;
-}
-
-export interface LearnerDeltaConflictDetail {
-  filePath: string;
-  learnerChangedFile: true;
-  teacherChangedSameFileAfterLearnerTimestamp: true;
-  teacherEventId: string;
-  teacherEventSeq?: number;
-  teacherEventTimestampMs: number;
-}
-
-export interface LearnerDeltaConflicts {
-  filePaths: string[];
-  events: LearnerDeltaConflictEvent[];
-  details: LearnerDeltaConflictDetail[];
 }
 
 export function diffFiles(beforeInput: FilesSnapshot, afterInput: FilesSnapshot): FilesDiff {
@@ -63,67 +41,6 @@ export function applyLearnerDelta(baseInput: FilesSnapshot, delta: LearnerDelta)
   }
 
   return result;
-}
-
-export function getLearnerDeltaConflicts(recording: TeacherRecording, delta: LearnerDelta): LearnerDeltaConflicts {
-  const learnerChangedFiles = new Set([
-    ...Object.keys(delta.addedOrModified).map((filePath) => normalizePath(filePath)),
-    ...delta.removed.map((filePath) => normalizePath(filePath)),
-  ]);
-  const conflictedFiles = new Set<string>();
-  const events: LearnerDeltaConflictEvent[] = [];
-  const details: LearnerDeltaConflictDetail[] = [];
-
-  if (learnerChangedFiles.size === 0) {
-    return { filePaths: [], events: [], details: [] };
-  }
-
-  for (const event of recording.events) {
-    if (
-      (event.type !== 'file.created' && event.type !== 'file.changed') ||
-      event.tMs <= delta.teacherTimestampMs ||
-      !event.filePath
-    ) {
-      continue;
-    }
-
-    const filePath = normalizePath(event.filePath);
-
-    if (!learnerChangedFiles.has(filePath)) {
-      continue;
-    }
-
-    conflictedFiles.add(filePath);
-    events.push({ filePath, eventId: event.id, eventSeq: event.seq, teacherTimestampMs: event.tMs });
-    details.push({
-      filePath,
-      learnerChangedFile: true,
-      teacherChangedSameFileAfterLearnerTimestamp: true,
-      teacherEventId: event.id,
-      teacherEventSeq: event.seq,
-      teacherEventTimestampMs: event.tMs,
-    });
-  }
-
-  const sortConflictEvents = (a: LearnerDeltaConflictEvent, b: LearnerDeltaConflictEvent) => {
-    if (a.teacherTimestampMs !== b.teacherTimestampMs) {
-      return a.teacherTimestampMs - b.teacherTimestampMs;
-    }
-
-    return a.filePath.localeCompare(b.filePath);
-  };
-  const detailToConflictEvent = (detail: LearnerDeltaConflictDetail): LearnerDeltaConflictEvent => ({
-    filePath: detail.filePath,
-    eventId: detail.teacherEventId,
-    eventSeq: detail.teacherEventSeq,
-    teacherTimestampMs: detail.teacherEventTimestampMs,
-  });
-
-  return {
-    filePaths: [...conflictedFiles].sort((a, b) => a.localeCompare(b)),
-    events: events.sort(sortConflictEvents),
-    details: details.sort((a, b) => sortConflictEvents(detailToConflictEvent(a), detailToConflictEvent(b))),
-  };
 }
 
 export function simpleHashFiles(filesInput: FilesSnapshot): string {

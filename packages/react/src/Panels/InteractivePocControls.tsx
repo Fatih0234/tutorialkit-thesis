@@ -75,7 +75,7 @@ function DemoGuidePanel() {
               <li>Sign in as Learner Demo</li>
               <li>Open and play a published lesson</li>
               <li>Try it yourself and save your work</li>
-              <li>Resume, restore, and resolve conflicts</li>
+              <li>Save a timeline experiment, resume the lecture, and reopen its marker</li>
             </ol>
           </div>
         </div>

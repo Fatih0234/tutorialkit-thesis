@@ -87,17 +87,17 @@ pnpm --dir e2e run dev
 - [ ] Import the package as a draft and confirm the status reports a new copied recording id.
 - [ ] Import it as published and confirm it appears as a separate published copy.
 
-## 6. Learner and conflict demonstration check
+## 6. Learner experiment demonstration check
 
 - [ ] Switch to **Learner Lesson** and choose **Sign in as Learner Demo** in the **Demo Identity** selector.
-- [ ] Open and play `demo-interactive-conflict-flow`.
+- [ ] Open and play `demo-interactive-conflict-flow` (legacy deterministic seed id).
 - [ ] Choose **Try It Yourself** before the future teacher `/example.js` edit.
-- [ ] Edit `/example.js` and select **Save My Work**.
-- [ ] Resume teacher playback and verify learner work remains saved.
-- [ ] Select **Restore My Work** and demonstrate the conflict panel.
-- [ ] Verify **View Conflict Details** identifies `/example.js` and the later teacher event.
-- [ ] Demonstrate at least one resolution action; explain that no automatic merge or source mutation occurs.
-- [ ] If evaluating all choices, reseed/repeat as described in [`thesis-demo-script.md`](./thesis-demo-script.md).
+- [ ] Edit `/example.js` and select **Save Experiment**.
+- [ ] Verify a violet marker and **My Experiments** entry appear at the paused timestamp.
+- [ ] Select **Resume Lecture** and verify teacher truth is restored before playback continues.
+- [ ] Verify playback passes the marker without applying learner work.
+- [ ] Select the marker and verify the learner experiment reopens from its historical teacher state without a conflict prompt.
+- [ ] Repeat with unsaved work and demonstrate **Save and Resume**, **Resume Without Saving**, and **Cancel**.
 
 ## 7. Evidence capture
 

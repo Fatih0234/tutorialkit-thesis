@@ -52,11 +52,11 @@ git diff --check
 - [ ] **Learner Demo** can sign in and open the seeded published lesson.
 - [ ] **Play Lesson** replays structured teacher events in deterministic order through the shared seekable editor player.
 - [ ] **Try It Yourself** pauses playback and permits learner editing.
-- [ ] **Save My Work** stores a file-level learner delta without changing the teacher recording.
-- [ ] **Resume Teacher** continues playback while saved learner work remains recoverable.
-- [ ] **Restore My Work** restores matching no-conflict work in one action.
-- [ ] A conflict restore displays **Restore My Work Anyway**, **Keep Teacher Version**, **View Conflict Details**, and **Cancel**.
-- [ ] The four conflict actions preserve the immutable teacher recording and the saved learner delta.
+- [ ] **Save Experiment** stores a file-level learner delta without changing the teacher recording and renders a timestamped timeline marker.
+- [ ] **Resume Lecture** reconstructs teacher truth at the experiment anchor before continuing playback.
+- [ ] Passing a saved marker during normal playback has no effect on the teacher timeline.
+- [ ] Selecting a marker reconstructs teacher state at its timestamp and applies the learner-owned delta without a later-teacher-edit conflict prompt.
+- [ ] Unsaved work requires **Save and Resume**, **Resume Without Saving**, or **Cancel** before returning to playback.
 - [ ] Learner Two cannot read or restore Learner Demo work.
 - [ ] The server replaces a mismatched client learner `userId` with the signed-in session user, proving ownership scoping.
 

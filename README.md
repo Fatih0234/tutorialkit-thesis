@@ -2,7 +2,7 @@
 
 This repository is a thesis proof of concept built on TutorialKit. It implements the interactivity layer for recording a teacher's editor/file actions, replaying them for a learner, pausing for learner-owned edits, and safely saving/restoring those edits without mutating the teacher timeline.
 
-The release-candidate demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, optional narration/webcam attachments, local drafts, file-backed published lessons, demo identity and ownership checks, explicit conflict choices, portable recording packages, and deterministic demo seed/reset controls. It is not a production authentication or persistence system.
+The release-candidate demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, timestamped learner-experiment markers, optional narration/webcam attachments, local drafts, file-backed published lessons, demo identity and ownership checks, portable recording packages, and deterministic demo seed/reset controls. It is not a production authentication or persistence system.
 
 ## Quick start
 
@@ -74,13 +74,14 @@ Expected interactive POC result after the recording-studio refinement: **34 pass
 
 Reset removes only demo-prefixed recordings, linked media, and linked learner deltas. `.interactive-data/` is gitignored local demo persistence; deleting that directory manually also produces a clean local server state.
 
-For the complete teacher, learner, conflict, and export/import walkthrough, see [the thesis demo script](./docs/thesis-demo-script.md).
+For the complete teacher, learner-experiment, and export/import walkthrough, see [the thesis demo script](./docs/thesis-demo-script.md).
 
 ## Documentation
 
 - [Architecture summary](./docs/thesis-architecture-summary.md)
 - [Detailed POC architecture](./docs/interactive-poc-architecture.md)
 - [Interactive recording studio workflow](./docs/interactive-recording-studio.md)
+- [Learner timeline experiments](./docs/learner-timeline-experiments.md)
 - [Persistence contract](./docs/interactive-persistence-contract.md)
 - [Thesis demo script](./docs/thesis-demo-script.md)
 - [Evaluation checklist](./docs/evaluation-checklist.md)
@@ -94,7 +95,8 @@ For the complete teacher, learner, conflict, and export/import walkthrough, see 
 - Learner work is stored separately and scoped to the signed-in learner.
 - Playback-applied changes are guarded from recording.
 - Internal file paths use leading-slash form.
-- Conflict resolution is explicit; no automatic merge occurs.
+- Lecture playback always reconstructs teacher truth; learner experiments reopen only from their timestamped markers.
+- No automatic learner/teacher merge occurs.
 - Local drafts use IndexedDB, while published demo data uses `.interactive-data/` through the remote storage adapter.
 
 ## Upstream project

@@ -1,6 +1,7 @@
 import type { FileDescriptor, Files, FilesystemError, Lesson } from '@tutorialkit/types';
 import type { WebContainer } from '@webcontainer/api';
 import { atom, type ReadableAtom } from 'nanostores';
+import { normalizePath } from '../interactive-timeline/path.js';
 import { LessonFilesFetcher } from '../lesson-files.js';
 import { newTask, type Task } from '../tasks.js';
 import type { ITerminal } from '../utils/terminal.js';
@@ -372,6 +373,18 @@ export class TutorialStore {
 
     this._editorStore.updateFile(filePath, content);
     this._runner.updateFile(filePath, content);
+  }
+
+  /** Remove a file from a trusted programmatic snapshot such as learner-checkpoint restoration. */
+  removeFile(filePath: string) {
+    const normalizedFilePath = normalizePath(filePath);
+
+    if (this.selectedFile.get() === normalizedFilePath) {
+      this.setSelectedFile(undefined);
+    }
+
+    this._editorStore.deleteFile(normalizedFilePath);
+    this._runner.removeFile(normalizedFilePath);
   }
 
   /** Update contents of file */

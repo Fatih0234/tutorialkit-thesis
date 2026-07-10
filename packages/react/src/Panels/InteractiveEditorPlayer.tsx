@@ -38,8 +38,12 @@ export function InteractiveEditorPlayer({
     canPausePlayback,
     canSeekPlayback,
     canEnterLearnerWorkspace,
+    learnerCheckpoints,
+    activeLearnerCheckpointId,
+    isLearnerWorkspaceDirty,
     onRestartPlayback,
     onSeekPlayback,
+    onOpenLearnerCheckpoint,
     onMediaElementRef,
   } = model;
   const isLearnerEditing = mode === 'learner-editing';
@@ -78,6 +82,11 @@ export function InteractiveEditorPlayer({
                 Playback status: {playbackStatus}
               </InteractiveStatusBadge>
               <InteractiveStatusBadge tone={isLearnerEditing ? 'info' : 'neutral'}>Mode: {mode}</InteractiveStatusBadge>
+              {audience === 'learner' && isLearnerEditing ? (
+                <InteractiveStatusBadge tone={isLearnerWorkspaceDirty ? 'warning' : 'positive'}>
+                  {isLearnerWorkspaceDirty ? 'Unsaved experiment changes' : 'Experiment saved'}
+                </InteractiveStatusBadge>
+              ) : null}
             </div>
           </div>
         </div>
@@ -113,20 +122,50 @@ export function InteractiveEditorPlayer({
       ) : null}
 
       <div className="grid gap-1">
-        <input
-          aria-label="Editor playback timeline"
-          type="range"
-          min={0}
-          max={timelineEndMs}
-          step={1}
-          value={timelineValueMs}
-          disabled={!canSeekPlayback}
-          onChange={(event) => onSeekPlayback(Number(event.currentTarget.value))}
-          className="w-full cursor-pointer accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-        />
+        <div className="relative pt-3">
+          <input
+            aria-label="Editor playback timeline"
+            type="range"
+            min={0}
+            max={timelineEndMs}
+            step={1}
+            value={timelineValueMs}
+            disabled={!canSeekPlayback}
+            onChange={(event) => onSeekPlayback(Number(event.currentTarget.value))}
+            className="w-full cursor-pointer accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          {audience === 'learner' ? (
+            <div aria-label="My experiment markers" className="pointer-events-none absolute inset-x-0 top-0 h-4">
+              {learnerCheckpoints.map((checkpoint) => {
+                const markerPosition = Math.min(100, Math.max(0, (checkpoint.teacherTimestampMs / timelineEndMs) * 100));
+                const isActive = checkpoint.id === activeLearnerCheckpointId;
+                const markerLabel = `Open my experiment at ${formatInteractiveTime(checkpoint.teacherTimestampMs)}`;
+
+                return (
+                  <button
+                    key={checkpoint.id}
+                    type="button"
+                    aria-label={markerLabel}
+                    title={`${markerLabel} · ${checkpoint.changedFileCount} changed files · ${checkpoint.versionCount} saved version${checkpoint.versionCount === 1 ? '' : 's'}`}
+                    disabled={isLearnerEditing}
+                    onClick={() => onOpenLearnerCheckpoint(checkpoint.id)}
+                    className={classNames(
+                      'pointer-events-auto absolute top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 shadow-sm transition-transform hover:scale-125 disabled:cursor-not-allowed disabled:opacity-60',
+                      isActive ? 'border-violet-100 bg-violet-400 ring-2 ring-violet-400/30' : 'border-violet-200 bg-violet-500',
+                    )}
+                    style={{ left: `${markerPosition}%` }}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
         <div className="flex items-center justify-between font-mono text-[11px] text-tk-text-secondary">
           <span>00:00</span>
-          <span>Playhead ms: {playheadMs}</span>
+          <span>
+            Playhead ms: {playheadMs}
+            {audience === 'learner' ? ` · ${learnerCheckpoints.length} saved experiment markers` : ''}
+          </span>
           <span>{formatInteractiveTime(recordingDurationMs)}</span>
         </div>
       </div>

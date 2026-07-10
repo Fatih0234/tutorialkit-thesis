@@ -386,6 +386,17 @@ async function getImportedPublishedId(page: Page) {
   return importedId!;
 }
 
+function simpleHashFilesForTest(files: Record<string, string>) {
+  const serialized = JSON.stringify(Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))));
+  let hash = 0;
+
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash = (hash * 31 + serialized.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash).toString(36);
+}
+
 function createConflictResolutionRecording({
   recordingId,
   futureFilePath = '/example.js',
@@ -476,11 +487,11 @@ async function prepareLocalConflictResolutionFlow({
   await page.keyboard.type(`\n${learnerEdit}`);
   await expect(editor).toContainText(learnerEdit);
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /save my work/i }).click();
+  await page.getByRole('button', { name: /save experiment/i }).click();
   await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
   await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /resume teacher/i }).click();
+  await page.getByRole('button', { name: /resume lecture/i }).click();
   await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
 
   if (futureFilePath === '/example.js') {
@@ -491,11 +502,6 @@ async function prepareLocalConflictResolutionFlow({
   return { editor, learnerEdit, rawBefore, recording };
 }
 
-async function openConflictResolutionPrompt(page: Page) {
-  await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
-  await page.getByRole('button', { name: /restore my work/i }).click();
-  await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
-}
 
 test.describe('interactive timeline POC', () => {
   test.beforeEach(async ({ page, baseURL }) => {
@@ -512,7 +518,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('heading', { name: /interactive thesis demo/i })).toBeVisible();
     await expandDetails(page, 'Thesis demo walkthrough');
     await expect(page.getByText(/seed a lesson or create a recording/i)).toBeVisible();
-    await expect(page.getByText(/resume, restore, and resolve conflicts/i)).toBeVisible();
+    await expect(page.getByText(/save a timeline experiment, resume the lecture, and reopen its marker/i)).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: /teacher studio/i })).toBeVisible();
     await expect(page.getByLabel(/choose demo identity/i)).toBeVisible();
     await expect(page.getByRole('option', { name: /sign in as teacher demo/i })).toBeAttached();
@@ -521,10 +527,10 @@ test.describe('interactive timeline POC', () => {
     await openLearnerSection(page);
 
     await expect(page.getByRole('button', { name: /try it yourself/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /save my work/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /restore my work/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /save experiment/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /resume lecture/i })).toBeVisible();
     await expect(page.getByText(/work status:/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:/i)).toBeVisible();
+    await expect(page.getByLabel(/my experiments/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /pause & try it/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /save learner delta/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /restore learner delta/i })).toHaveCount(0);
@@ -1112,18 +1118,17 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type(`\n${learnerEdit}`);
     await expect(editor).toContainText(learnerEdit);
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save my work/i }).click();
+    await page.getByRole('button', { name: /save experiment/i }).click();
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
-    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await page.getByRole('button', { name: /resume lecture/i }).click();
     await expect(editor).toContainText('// teacher demo final edit', { timeout: 6000 });
     await expect(editor).not.toContainText(learnerEdit);
-    await page.getByRole('button', { name: /restore my work/i }).click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
-    await page.getByRole('button', { name: /restore my work anyway/i }).click();
-    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
     await expect(editor).toContainText(learnerEdit);
+    await expect(page.getByText(/conflict warning/i)).toHaveCount(0);
   });
 
   test('reset demo data only removes demo records and does not break app', async ({ page, request }) => {
@@ -1181,10 +1186,10 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// remote learner delta edit');
     await expect(editor).toContainText('// remote learner delta edit');
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save my work/i }).click();
+    await page.getByRole('button', { name: /save experiment/i }).click();
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
     await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
     await page.evaluate(() => localStorage.removeItem('interactive-poc.learnerDeltas'));
     await page.reload();
@@ -1193,10 +1198,8 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
     await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
 
-    await page.getByRole('button', { name: /restore my work/i }).click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
-    await page.getByRole('button', { name: /restore my work anyway/i }).click();
-    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// remote learner delta edit');
   });
 
@@ -1225,7 +1228,7 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type(`\n${learnerEdit}`);
     await expect(editor).toContainText(learnerEdit);
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save my work/i }).click();
+    await page.getByRole('button', { name: /save experiment/i }).click();
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
     await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
 
@@ -1236,17 +1239,15 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /open published lesson/i }).click();
     await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
     await expect(page.getByText(/saved work count:\s*0/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /restore my work/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toHaveCount(0);
 
     await signOut(page);
     await signInAsLearner(page, 'Learner Demo');
     await openLearnerSection(page);
     await page.getByRole('button', { name: /open published lesson/i }).click();
     await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
-    await page.getByRole('button', { name: /restore my work/i }).click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
-    await page.getByRole('button', { name: /restore my work anyway/i }).click();
-    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+    await expect(page.getByText(/work status:\s*experiment opened/i)).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText(learnerEdit);
   });
 
@@ -1315,7 +1316,7 @@ test.describe('interactive timeline POC', () => {
     await page.keyboard.type('\n// immutable remote learner edit');
     await expect(editor).toContainText('// immutable remote learner edit');
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /save my work/i }).click();
+    await page.getByRole('button', { name: /save experiment/i }).click();
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
 
     const rawAfter = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
@@ -1329,123 +1330,130 @@ test.describe('interactive timeline POC', () => {
     expect(readFileSync(getPublishedRecordingFile(recording.id), 'utf8')).toBe(rawBefore);
   });
 
-  test('conflict restore prompts learner', async ({ page, request }) => {
-    const learnerEdit = '// learner conflict prompt edit';
-    const finalContent = 'console.log("remote learner base");\n// teacher conflict prompt final edit\n';
-    const recording = createPublishedRecording('teacher-recording-conflict-prompt-test', finalContent, 3000);
+  test('later teacher edits do not conflict with a timestamped learner experiment', async ({ page, request }) => {
+    const learnerEdit = '// learner timestamped experiment';
+    const finalContent = 'console.log("remote learner base");\n// teacher later final edit\n';
+    const recording = createPublishedRecording('teacher-recording-timestamped-experiment-test', finalContent, 3000);
 
     await seedPublishedRecording(request, recording);
     await signInAsLearner(page);
     await openLearnerSection(page);
     await page.getByRole('button', { name: /open published lesson/i }).click();
-    await expect(page.getByText(/published status:\s*loaded/i)).toBeVisible();
     await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
     await waitForPlayheadToAdvance(page);
     await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await editor.click();
     await page.keyboard.type(`\n${learnerEdit}`);
-    await expect(editor).toContainText(learnerEdit);
-    await page.waitForTimeout(600);
-    await page.getByRole('button', { name: /save my work/i }).click();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
-    await expect(page.getByText(/conflicted files:\s*\/example\.js/i)).toBeVisible();
-    await expect(page.getByText(/your saved work touches files the teacher changed later/i)).toBeVisible();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /save experiment/i }).click();
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
+    await expect(page.getByText(/conflict warning/i)).toHaveCount(0);
+    await expect(page.getByLabel(/learner workspace toolbar/i)).toContainText(/no unsaved changes/i);
 
-    await page.getByRole('button', { name: /resume teacher/i }).click();
-    await expect(editor).toContainText('// teacher conflict prompt final edit', { timeout: 5000 });
+    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
+    await expect(editor).toContainText('// teacher later final edit', { timeout: 5000 });
     await expect(editor).not.toContainText(learnerEdit);
 
-    await openConflictResolutionPrompt(page);
-    await expect(page.getByRole('button', { name: /restore my work anyway/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /keep teacher version/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /view conflict details/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^cancel$/i })).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+    await expect(editor).toContainText(learnerEdit);
+    await expect(editor).not.toContainText('// teacher later final edit');
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
   });
 
-  test('restore anyway applies learner work', async ({ page }) => {
-    const learnerEdit = '// learner restore anyway edit';
-    const { editor, rawBefore } = await prepareLocalConflictResolutionFlow({
+  test('multiple saves at one lecture timestamp remain one marker with versions', async ({ page }) => {
+    const learnerEdit = '// learner first checkpoint version';
+    const { editor } = await prepareLocalConflictResolutionFlow({
       page,
-      recordingId: 'teacher-recording-restore-anyway-test',
+      recordingId: 'teacher-recording-checkpoint-versions-test',
       learnerEdit,
     });
 
-    await openConflictResolutionPrompt(page);
-    await page.getByRole('button', { name: /restore my work anyway/i }).click();
-    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+    await editor.click();
+    await page.keyboard.type('\n// learner second checkpoint version');
+    await page.getByRole('button', { name: /save experiment/i }).click();
+
+    await expect(page.getByText(/saved work count:\s*2/i)).toBeVisible();
+    await expect(page.getByLabel(/my experiment markers/i).getByRole('button')).toHaveCount(1);
+    await expect(page.getByLabel(/my experiments/i)).toContainText('2 saved versions');
+  });
+
+  test('resume lecture protects unsaved experiment changes', async ({ page }) => {
+    const recording = createConflictResolutionRecording({ recordingId: 'teacher-recording-unsaved-warning-test' });
+
+    await page.evaluate((teacherRecording) => {
+      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+    }, recording);
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /play lesson/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await waitForPlayheadToAdvance(page);
+    await page.getByRole('button', { name: /try it yourself/i }).click();
+
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+
+    await editor.click();
+    await page.keyboard.type('\n// unsaved learner experiment');
+    await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
+    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await expect(page.getByRole('alert', { name: /unsaved experiment warning/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+    await expect(editor).toContainText('// unsaved learner experiment');
+    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /resume without saving/i }).click();
+    await expect(editor).toContainText('// teacher conflict resolution final edit', { timeout: 5000 });
+    await expect(editor).not.toContainText('// unsaved learner experiment');
+  });
+
+  test('save and resume creates a marker before restoring lecture truth', async ({ page }) => {
+    const recording = createConflictResolutionRecording({ recordingId: 'teacher-recording-save-resume-test' });
+
+    await page.evaluate((teacherRecording) => {
+      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+    }, recording);
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /play lesson/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await waitForPlayheadToAdvance(page);
+    await page.getByRole('button', { name: /try it yourself/i }).click();
+
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+
+    await editor.click();
+    await page.keyboard.type('\n// save and resume learner experiment');
+    await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
+    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /save and resume/i }).click();
+
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
+    await expect(editor).toContainText('// teacher conflict resolution final edit', { timeout: 5000 });
+    await expect(editor).not.toContainText('// save and resume learner experiment');
+  });
+
+  test('opening a checkpoint preserves the immutable teacher recording', async ({ page }) => {
+    const learnerEdit = '// immutable checkpoint edit';
+    const { editor, rawBefore } = await prepareLocalConflictResolutionFlow({
+      page,
+      recordingId: 'teacher-recording-checkpoint-immutable-test',
+      learnerEdit,
+    });
+
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
     await expect(editor).toContainText(learnerEdit);
 
     const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
     expect(rawAfterRestore).toBe(rawBefore);
-  });
-
-  test('keep teacher version does not restore learner work', async ({ page }) => {
-    const learnerEdit = '// learner keep teacher version edit';
-    const { editor } = await prepareLocalConflictResolutionFlow({
-      page,
-      recordingId: 'teacher-recording-keep-teacher-version-test',
-      learnerEdit,
-    });
-
-    await openConflictResolutionPrompt(page);
-    await page.getByRole('button', { name: /keep teacher version/i }).click();
-    await expect(page.getByText(/work status:\s*kept teacher version/i)).toBeVisible();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
-    await expect(editor).toContainText('// teacher conflict resolution final edit');
-    await expect(editor).not.toContainText(learnerEdit);
-
-    const deltas = await page.evaluate(() => {
-      const raw = localStorage.getItem('interactive-poc.learnerDeltas');
-      return raw ? JSON.parse(raw) : [];
-    });
-
-    expect(deltas).toHaveLength(1);
-    expect(deltas[0].addedOrModified['/example.js']).toContain(learnerEdit);
-  });
-
-  test('view conflict details expands event information', async ({ page }) => {
-    const learnerEdit = '// learner conflict details edit';
-    const { editor } = await prepareLocalConflictResolutionFlow({
-      page,
-      recordingId: 'teacher-recording-conflict-details-test',
-      learnerEdit,
-    });
-
-    await openConflictResolutionPrompt(page);
-    await page.getByRole('button', { name: /view conflict details/i }).click();
-    await expect(page.getByLabel(/conflict details/i)).toBeVisible();
-    await expect(page.getByLabel(/conflict details/i)).toContainText('/example.js');
-    await expect(page.getByLabel(/conflict details/i)).toContainText('teacher event timestamp ms: 2000');
-    await expect(page.getByLabel(/conflict details/i)).toContainText('teacher event id: event-future-change');
-    await expect(page.getByLabel(/conflict details/i)).toContainText('teacher event seq: 2');
-    await expect(editor).toContainText('// teacher conflict resolution final edit');
-    await expect(editor).not.toContainText(learnerEdit);
-  });
-
-  test('cancel conflict resolution does nothing', async ({ page }) => {
-    const learnerEdit = '// learner cancel conflict edit';
-    const { editor } = await prepareLocalConflictResolutionFlow({
-      page,
-      recordingId: 'teacher-recording-cancel-conflict-test',
-      learnerEdit,
-    });
-    const editorTextBeforeCancel = await editor.textContent();
-
-    await openConflictResolutionPrompt(page);
-    await page.getByRole('button', { name: /^cancel$/i }).click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
-    await expect(page.getByText(/work status:\s*restore canceled/i)).toBeVisible();
-    await expect(editor).toContainText('// teacher conflict resolution final edit');
-    await expect(editor).not.toContainText(learnerEdit);
-    await expect.poll(async () => editor.textContent()).toBe(editorTextBeforeCancel);
   });
 
   test('plays a stored teacher recording without mutating it', async ({ page }) => {
@@ -1626,7 +1634,8 @@ test.describe('interactive timeline POC', () => {
     expect(rawDuringLearnerEdit).toBe(rawBefore);
     expect(learnerDeltasDuringLearnerEdit).toBeNull();
 
-    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await page.getByRole('button', { name: /resume lecture/i }).click();
+    await page.getByRole('button', { name: /resume without saving/i }).click();
     await expect(page.getByText(/mode:\s*teacher-playback/i)).toBeVisible();
     await expect(page.getByText(/playback status:\s*playing/i)).toBeVisible();
     await expect(editor).toContainText('// teacher resumed final edit', { timeout: 5000 });
@@ -1639,41 +1648,14 @@ test.describe('interactive timeline POC', () => {
     expect(learnerDeltasAfterResume).toBeNull();
   });
 
-  test('saves and restores learner delta after pause and edit', async ({ page }) => {
+  test('saves a learner experiment marker and reopens its exact historical branch', async ({ page }) => {
     const baseContent = "export default 'Lesson file example.js content';\n";
     const teacherReplayContent = `${baseContent}// teacher replay overwrite\n`;
-    const recording = {
-      id: 'teacher-recording-delta-test',
-      lessonId: 'lesson-and-solution',
-      version: 1,
-      startedAt: '2026-01-01T00:00:00.000Z',
-      durationMs: 2000,
-      baseFiles: {
-        '/example.html': '<h1>Teacher delta base</h1>\n',
-        '/example.js': baseContent,
-      },
-      events: [
-        { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
-        {
-          id: 'event-opened',
-          seq: 1,
-          tMs: 0,
-          type: 'file.opened',
-          filePath: '/example.js',
-          payload: { filePath: '/example.js' },
-          origin: 'teacher',
-        },
-        {
-          id: 'event-future-change',
-          seq: 2,
-          tMs: 2000,
-          type: 'file.changed',
-          filePath: '/example.js',
-          payload: { content: teacherReplayContent },
-          origin: 'teacher',
-        },
-      ],
-    };
+    const recording = createConflictResolutionRecording({
+      recordingId: 'teacher-recording-delta-marker-test',
+      jsBaseContent: baseContent,
+      futureContent: teacherReplayContent,
+    });
 
     await page.evaluate((teacherRecording) => {
       localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
@@ -1682,155 +1664,82 @@ test.describe('interactive timeline POC', () => {
     const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
     await signInAsLearner(page);
     await openLearnerSection(page);
-    const saveLearnerDelta = page.getByRole('button', { name: /save my work/i });
-    const restoreLearnerDelta = page.getByRole('button', { name: /restore my work/i });
+    const saveExperiment = page.getByRole('button', { name: /save experiment/i });
 
-    await expect(saveLearnerDelta).toBeVisible();
-    await expect(saveLearnerDelta).toBeDisabled();
-    await expect(restoreLearnerDelta).toBeVisible();
-    await expect(restoreLearnerDelta).toBeDisabled();
-
+    await expect(saveExperiment).toBeDisabled();
     await page.getByRole('button', { name: /play lesson/i }).click();
     await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+    await waitForPlayheadToAdvance(page);
     await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
-    await expect(saveLearnerDelta).toBeEnabled();
+    await expect(saveExperiment).toBeEnabled();
 
     const editor = page.getByRole('textbox', { name: 'Editor' }).first();
 
     await editor.click();
     await page.keyboard.type('\n// learner delta edit');
-    await expect(editor).toContainText('// learner delta edit');
-    await page.waitForTimeout(600);
-
-    await saveLearnerDelta.click();
+    await expect(page.getByText(/^unsaved changes$/i)).toBeVisible();
+    await saveExperiment.click();
     await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
     await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
-    await expect(page.getByText(/conflicted files:\s*\/example\.js/i)).toBeVisible();
-    await expect(restoreLearnerDelta).toBeEnabled();
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
 
     const deltas = await page.evaluate(() => {
       const raw = localStorage.getItem('interactive-poc.learnerDeltas');
       return raw ? JSON.parse(raw) : [];
     });
-    const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
-    expect(Array.isArray(deltas)).toBeTruthy();
     expect(deltas).toHaveLength(1);
     expect(deltas[0].userId).toBe(DEV_LEARNER_USER_ID);
     expect(typeof deltas[0].teacherTimestampMs).toBe('number');
     expect(deltas[0].addedOrModified['/example.js']).toContain('// learner delta edit');
-    expect(Array.isArray(deltas[0].removed)).toBeTruthy();
-    expect(rawAfter).toBe(rawBefore);
 
-    await page.getByRole('button', { name: /resume teacher/i }).click();
+    await page.getByRole('button', { name: /resume lecture/i }).click();
     await expect(editor).toContainText('// teacher replay overwrite', { timeout: 5000 });
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible();
     await expect(editor).not.toContainText('// learner delta edit');
-    await expect(restoreLearnerDelta).toBeEnabled();
 
-    await restoreLearnerDelta.click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toBeVisible();
-    await page.getByRole('button', { name: /restore my work anyway/i }).click();
-    await expect(page.getByText(/work status:\s*restored with conflicts/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*conflict/i)).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
     await expect(editor).toContainText('// learner delta edit');
+    await expect(editor).not.toContainText('// teacher replay overwrite');
+    await expect(page.getByText(/conflict warning/i)).toHaveCount(0);
 
-    const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-
-    expect(rawAfterRestore).toBe(rawBefore);
-  });
-
-  test('no-conflict restore remains one-click', async ({ page }) => {
-    const baseContent = "export default 'Lesson file example.js content';\n";
-    const futureHtmlContent = '<h1>Teacher changed unrelated HTML later</h1>\n';
-    const recording = {
-      id: 'teacher-recording-unrelated-conflict-test',
-      lessonId: 'lesson-and-solution',
-      version: 1,
-      startedAt: '2026-01-01T00:00:00.000Z',
-      durationMs: 2000,
-      baseFiles: {
-        '/example.html': '<h1>Teacher unrelated base</h1>\n',
-        '/example.js': baseContent,
-      },
-      events: [
-        { id: 'event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
-        {
-          id: 'event-opened',
-          seq: 1,
-          tMs: 0,
-          type: 'file.opened',
-          filePath: '/example.js',
-          payload: { filePath: '/example.js' },
-          origin: 'teacher',
-        },
-        {
-          id: 'event-future-html-change',
-          seq: 2,
-          tMs: 2000,
-          type: 'file.changed',
-          filePath: '/example.html',
-          payload: { content: futureHtmlContent },
-          origin: 'teacher',
-        },
-      ],
-    };
-
-    await page.evaluate((teacherRecording) => {
-      localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
-    }, recording);
-
-    const rawBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-    await signInAsLearner(page);
-    await openLearnerSection(page);
-    const saveLearnerDelta = page.getByRole('button', { name: /save my work/i });
-    const restoreLearnerDelta = page.getByRole('button', { name: /restore my work/i });
-
-    await page.getByRole('button', { name: /play lesson/i }).click();
-    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
-    await page.getByRole('button', { name: /try it yourself/i }).click();
-    await expect(page.getByText(/mode:\s*learner-editing/i)).toBeVisible();
-    await expect(saveLearnerDelta).toBeEnabled();
-
-    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
-
-    await editor.click();
-    await page.keyboard.type('\n// learner unrelated edit');
-    await expect(editor).toContainText('// learner unrelated edit');
-    await page.waitForTimeout(600);
-
-    await saveLearnerDelta.click();
-    await expect(page.getByText(/saved work count:\s*1/i)).toBeVisible();
-    await expect(page.getByText(/work status:\s*saved/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*none/i)).toBeVisible();
-    await expect(page.getByText(/conflicted files:\s*none/i)).toBeVisible();
-    await expect(restoreLearnerDelta).toBeEnabled();
-
-    const deltas = await page.evaluate(() => {
-      const raw = localStorage.getItem('interactive-poc.learnerDeltas');
-      return raw ? JSON.parse(raw) : [];
-    });
     const rawAfter = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
 
-    expect(Array.isArray(deltas)).toBeTruthy();
-    expect(deltas).toHaveLength(1);
-    expect(deltas[0].userId).toBe(DEV_LEARNER_USER_ID);
-    expect(deltas[0].addedOrModified['/example.js']).toContain('// learner unrelated edit');
     expect(rawAfter).toBe(rawBefore);
-
-    await page.getByRole('button', { name: /resume teacher/i }).click();
-    await expect(page.getByText(/playback status:\s*finished/i)).toBeVisible({ timeout: 5000 });
-
-    await restoreLearnerDelta.click();
-    await expect(page.getByRole('region', { name: /conflict resolution/i })).toHaveCount(0);
-    await expect(page.getByText(/work status:\s*restored/i)).toBeVisible();
-    await expect(page.getByText(/conflict warning:\s*none/i)).toBeVisible();
-    await expect(editor).toContainText('// learner unrelated edit');
-
-    const rawAfterRestore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-
-    expect(rawAfterRestore).toBe(rawBefore);
   });
+
+  test('checkpoint restoration applies learner-added and removed files', async ({ page }) => {
+    const recording = createConflictResolutionRecording({ recordingId: 'teacher-recording-added-file-checkpoint-test' });
+    const checkpointTimestampMs = 500;
+    const delta = {
+      id: 'learner-delta-added-file-checkpoint-test',
+      userId: DEV_LEARNER_USER_ID,
+      lessonId: recording.lessonId,
+      teacherRecordingId: recording.id,
+      teacherRecordingVersion: recording.version,
+      teacherTimestampMs: checkpointTimestampMs,
+      baseTeacherFilesHash: simpleHashFilesForTest(recording.baseFiles),
+      addedOrModified: { '/learner-experiment.js': '// learner-created checkpoint file\n' },
+      removed: ['/example.html'],
+      selectedFile: '/learner-experiment.js',
+      createdAt: '2026-01-01T00:01:00.000Z',
+    };
+
+    await signInAsLearner(page);
+    await page.evaluate(
+      ({ teacherRecording, learnerDelta }) => {
+        localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(teacherRecording));
+        localStorage.setItem('interactive-poc.learnerDeltas', JSON.stringify([learnerDelta]));
+      },
+      { teacherRecording: recording, learnerDelta: delta },
+    );
+    await page.reload();
+    await openLearnerSection(page);
+    await expect(page.getByRole('button', { name: /open my experiment at/i })).toBeVisible();
+    await page.getByRole('button', { name: /open my experiment at/i }).click();
+
+    await expect(page.getByRole('button', { name: 'learner-experiment.js', pressed: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'example.html' })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// learner-created checkpoint file');
+  });
+
 });

@@ -2,7 +2,7 @@
 
 This document defines the persistence contract for the interactive tutorial thesis demo. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E added a minimal demo identity/session layer and ownership enforcement on top of the same storage contract. Milestone F added explicit conflict resolution UX without changing persistence writes. Milestone G added portable export/import packages plus deterministic demo seed/reset hardening. Milestone H polished product copy, demo guidance, destructive-action confirmation, friendly import errors, missing-media import fallback, and thesis demo documentation without changing the storage architecture. Milestone I freezes that behavior and adds release/evaluation documentation only. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
 
-The contract preserves the Milestone H local-draft plus remote-published behavior in the Milestone I release candidate described in `docs/interactive-poc-architecture.md` and keeps a future replacement path for the file-based `.interactive-data/` backend/dev storage.
+The contract preserves the local-draft plus remote-published storage behavior. The current learner UX interprets each `LearnerDelta` as a timestamped experiment checkpoint, as described in `docs/learner-timeline-experiments.md`; this changes restoration semantics and presentation without changing the persisted delta shape or adapter boundary.
 
 ## Non-goals
 
@@ -22,9 +22,9 @@ This document does not specify or implement:
 - screen recording persistence;
 - analytics or telemetry.
 
-## Milestone H local-draft, remote-published, identity, conflict UX, and package status
+## Local-draft, remote-published, identity, experiment, and package status
 
-Milestone H keeps `InteractiveTimelineStorage` as the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, demo auth calls, and demo seed/reset calls. Conflict resolution is currently client-side UI behavior over already-loaded teacher recordings and learner deltas; it does not add new persistence writes. Export/import package helpers are layered above the same adapters and do not introduce external services. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
+`InteractiveTimelineStorage` remains the async adapter boundary. `IndexedDBInteractiveTimelineStorage` remains the local draft/offline adapter for teacher drafts, learner deltas, and local media assets. `RemoteInteractiveTimelineStorage` remains the published/demo adapter for teacher recordings, learner deltas, server-backed media assets, demo auth calls, and demo seed/reset calls. Timeline-marker grouping and historical checkpoint reconstruction are client-side behavior over already-loaded recordings and deltas; they add no persistence writes. Export/import package helpers remain layered above the same adapters. Both local and remote paths continue to mirror the legacy POC localStorage keys for manual inspection:
 
 ```text
 interactive-poc.teacherRecording
@@ -46,16 +46,17 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
 `RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the demo session cookie. Media upload uses `FormData`/`multipart/form-data`. Package downloads are browser Blob downloads and package media is serialized as base64 JSON. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone H. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 
-## Milestone H product UX, ownership, conflict, and demo behavior
+## Current product UX, ownership, experiment, and demo behavior
 
-Milestone H keeps the Milestone D recording lists/selectors/product labels, Milestone E demo identity/ownership behavior, Milestone F conflict choices, and Milestone G export/import/demo controls over the existing adapters, then polishes thesis-demo wording and safety:
+The current product UI uses the existing adapters and ownership boundary as follows:
 
 - the **Teacher Studio** lists local drafts from IndexedDB and Published Lessons from `/api/interactive/teacher-recordings`;
 - the **Learner Lesson** view lists Published Lessons only;
-- product labels such as **Save My Work** and **Restore My Work** still persist and restore `LearnerDelta` records, now scoped to the signed-in learner;
-- **Conflict Warning** is still computed from immutable teacher events and learner delta paths;
-- when a conflicted restore is attempted, the learner chooses **Restore My Work Anyway**, **Keep Teacher Version**, **View Conflict Details**, or **Cancel**;
-- these choices do not mutate `TeacherRecording`, do not mutate/delete `LearnerDelta`, and do not create a merged delta or resolution record;
+- **Save Experiment** persists a user-scoped `LearnerDelta` and presents it as a timestamped marker;
+- **Resume Lecture** reconstructs teacher truth at the anchor timestamp before playback continues;
+- selecting a marker reconstructs the historical teacher base and applies the latest learner checkpoint at that timestamp;
+- later teacher edits do not create a normal conflict because no merge with a later state is attempted;
+- unsaved work uses save/discard/cancel loss protection without adding persistence writes;
 - **Export Package** creates a thesis-demo JSON package with teacher recording JSON, media metadata, and base64 media data;
 - **Import as Draft** writes a package copy to IndexedDB local draft storage;
 - **Import as Published** writes a package copy to remote/dev storage and requires a teacher/both demo session;
@@ -149,9 +150,9 @@ This is the minimum context needed to know which teacher file state the learner 
 
 Persistence must support the current safety model:
 
-- teacher playback may overwrite the visible workspace;
-- saved learner deltas remain recoverable;
-- conflicts are detectable before/while restoring;
+- resuming lecture playback reconstructs teacher truth instead of continuing over learner files;
+- saved learner deltas remain recoverable from their timestamped markers;
+- recording id/version and historical base hash are validated before opening a marker;
 - backend writes must not silently replace an existing learner delta unless an explicit update/versioning policy is introduced later.
 
 For the first backend phase, prefer append-only learner delta creation over in-place update.
@@ -367,13 +368,13 @@ interface ConflictSummary {
 }
 ```
 
-Current conflict rule:
+Legacy Milestone F conflict-summary shape:
 
-- collect learner-changed files from `addedOrModified` keys and `removed` paths;
-- find teacher `file.created` or `file.changed` events where `event.tMs > delta.teacherTimestampMs`;
-- report a conflict when the later teacher event path is in the learner-changed file set.
+- collected learner-changed paths;
+- compared them with later teacher events;
+- reported matching paths as conflicts.
 
-Conflict detection is non-destructive. Milestone H keeps it as the gate for explicit conflicted restore choices, but the choices still do not write any conflict result or merged delta.
+This shape remains documented for persistence-history compatibility but is not a gate in the current learner flow. Current checkpoint opening materializes teacher state at the delta's own timestamp, validates its base hash, and applies the learner branch. Later events are irrelevant until lecture playback reaches them.
 
 ## 3. API shape
 
@@ -541,7 +542,7 @@ Recommended ordering:
 
 ### `GET /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=`
 
-Fetch the latest matching learner delta for restore, scoped to the signed-in learner.
+Fetch the latest matching learner checkpoint, scoped to the signed-in learner. The current UI normally loads all deltas to render markers and groups the latest version per timestamp.
 
 Example:
 

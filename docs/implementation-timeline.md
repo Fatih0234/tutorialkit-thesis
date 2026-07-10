@@ -89,3 +89,7 @@ Milestone I froze the existing product behavior and assembled the release-candid
 ## Recording Studio UX refinement
 
 The recording-studio refinement separated Lecture Setup, material preparation, full-screen recording, and review. It added a shared seekable editor player, deterministic replay from arbitrary timestamps, explicit initial-file capture, live webcam preview, trusted restoration of teacher-created files, and navigation protection while recording. It proved the structured timeline could feel like video while remaining a real editor and while preserving immutable teacher recordings and learner-owned deltas.
+
+## Learner timeline experiment refinement
+
+This refinement replaced later-teacher-event conflict prompts with the product's intended historical-branch model. **Save Experiment** creates a user-scoped checkpoint marker at the paused teacher timestamp; **Resume Lecture** reconstructs teacher truth before continuing; selecting a marker reconstructs that historical teacher state and applies the learner delta. It added marker grouping/version counts, dirty-work save/discard/cancel protection, and trusted learner-added/removed file restoration. The persisted `LearnerDelta` contract and immutable teacher source remain unchanged.

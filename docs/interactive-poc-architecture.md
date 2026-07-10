@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the detailed architecture checkpoint for the interactive tutorial thesis demo. It includes the release-candidate evidence pack and the later recording-studio UX refinement: separated lecture setup/material preparation, a full-screen structured recording studio, recording review, and a shared seekable editor player. It also covers identity/session boundaries, ownership, optional mic/webcam media, local drafts, development publishing, export/import, deterministic seed/reset, learner save/restore, and explicit conflict resolution. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`; the focused studio flow is documented in `docs/interactive-recording-studio.md`.
+This document is the detailed architecture checkpoint for the interactive tutorial thesis demo. It includes separated lecture setup/material preparation, a full-screen structured recording studio, recording review, a shared seekable editor player, and timestamped learner experiments. It also covers identity/session boundaries, ownership, optional mic/webcam media, local drafts, development publishing, export/import, and deterministic seed/reset. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`; focused flows are documented in `docs/interactive-recording-studio.md` and `docs/learner-timeline-experiments.md`.
 
 ## Scope and invariants
 
@@ -15,9 +15,9 @@ The POC implements only the interactivity layer:
 - learners can replay that timeline;
 - signed-in learner/both users can use product-facing controls to try the lesson, edit their own workspace, and save a file-level delta;
 - learner work is scoped to the signed-in learner;
-- saved learner work can be restored after teacher playback continues;
-- conflict warnings report when later teacher timeline edits touch the same learner-changed files;
-- conflicted restores require an explicit learner choice: restore anyway, keep teacher version, view details, or cancel;
+- saved learner work appears as user-scoped markers at its exact teacher timestamp;
+- normal playback always reconstructs teacher truth and ignores markers unless the learner explicitly opens one;
+- opening a marker reconstructs its historical teacher state and applies the learner delta without treating later teacher edits as conflicts;
 - teachers/demo operators can export/import portable recording packages with structured timeline JSON and media blobs encoded as base64 JSON;
 - teachers/demo operators can seed and reset deterministic demo data without deleting non-demo records.
 
@@ -39,13 +39,13 @@ Important invariants:
 `packages/react/src/Panels/InteractivePocControls.tsx` presents two role views and a collapsed demo walkthrough. The workspace orchestrator lifts the role and teacher-stage state so management can be physically separated from the editor:
 
 - **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
-- **Learner Lesson** for opening published lessons, playing the teacher timeline, trying work, saving work, restoring work, and resolving conflicted restores with explicit choices.
+- **Learner Lesson** for opening published lessons, playing the teacher timeline, creating timestamped experiments, resuming teacher truth, and reopening experiments from timeline markers.
 
 A small `Debug details` disclosure remains for generated ids, compatibility localStorage keys, and raw validation notes, but primary tests and user flows use visible product controls.
 
 ### Thesis demo walkthrough panel
 
-`InteractivePocControls.tsx` renders a collapsed **Thesis demo walkthrough** disclosure for the live thesis demo. Expanding it shows the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save/restore work, and resolve conflicts). The guide is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
+`InteractivePocControls.tsx` renders a collapsed **Thesis demo walkthrough** disclosure for the live thesis demo. Expanding it shows the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save a timeline experiment, resume, and reopen its marker). The guide is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
 
 ### Demo Identity panel
 
@@ -152,22 +152,12 @@ Visible controls:
 - Open Published Lesson;
 - Play Lesson;
 - Try It Yourself;
-- Resume Teacher;
-- Save My Work (requires learner/both demo identity);
-- Restore My Work (requires learner/both demo identity).
+- Resume Lecture;
+- Save Experiment (requires learner/both demo identity);
+- timestamped experiment markers and **My Experiments** entries;
+- Save and Resume, Resume Without Saving, and Cancel when work is dirty.
 
-Learner-facing labels replace the older debug wording:
-
-| Previous POC label | Milestone D product label |
-| --- | --- |
-| Pause & Try It | Try It Yourself |
-| Save Learner Delta | Save My Work |
-| Restore Learner Delta | Restore My Work |
-| Learner delta status | Work status |
-| Learner delta count | Saved work count |
-| Conflict status | Conflict warning |
-
-The file-level data model is unchanged, but ownership is now enforced: “My Work” is a learner-owned `LearnerDelta` whose `userId` comes from the signed-in learner for new saves. It is still keyed by lesson, teacher recording id/version, teacher timestamp, and base teacher file hash.
+The file-level data model is unchanged, but presentation and restoration follow a historical-branch model. Each learner-owned `LearnerDelta` is keyed by lesson, teacher recording id/version, teacher timestamp, base teacher file hash, and server-derived learner identity. One visible marker groups saves at each timestamp.
 
 ### Start Recording
 
@@ -250,7 +240,7 @@ Behavior:
 - loads the latest recording by id;
 - loads associated media metadata and Blob data through `/api/interactive/media-assets`;
 - sets the current recording source to `published`;
-- recomputes remote saved work count, restore availability, and conflict warning state.
+- recomputes user-scoped experiment markers and saved-version counts.
 
 ### Preview Published Lesson
 
@@ -318,101 +308,19 @@ Behavior:
 - sets playback status to `paused`;
 - does not mutate the saved teacher recording.
 
-### Resume Teacher
+### Resume Lecture
 
-Continues teacher playback from the paused teacher timestamp.
+Returning from `learner-editing` never continues over the learner workspace. The player reconstructs the immutable teacher state at `pausedTeacherTimestampMs`, aligns media to that timestamp, and then continues ordered teacher events. Saved learner experiments remain separate and recoverable. If the learner workspace is dirty, the UI requires **Save and Resume**, **Resume Without Saving**, or **Cancel**.
 
-Behavior:
+### Save Experiment
 
-- resumes only while mode is `learner-editing`;
-- resumes media from `pausedTeacherTimestampMs / 1000` when media is loaded;
-- otherwise advances the fallback playback clock from `pausedTeacherTimestampMs`;
-- applies teacher events with `tMs > pausedTeacherTimestampMs` as they become due;
-- does **not** reset the workspace to base files on resume;
-- later teacher `file.changed` events can overwrite the visible workspace;
-- saved learner deltas remain recoverable from IndexedDB and the localStorage compatibility mirror.
+`Save Experiment` materializes teacher files at the experiment anchor, diffs them against the learner workspace, and stores a user-scoped `LearnerDelta` through the active adapter. The delta remains keyed by lesson, teacher recording id/version, teacher timestamp, historical base hash, and learner identity. Saving creates a violet timeline marker and **My Experiments** entry. Multiple saves at one timestamp are retained but grouped behind one marker whose latest version opens by default.
 
-### Save My Work
+### Open experiment marker
 
-`Save My Work` saves learner-owned file-level changes while paused in learner edit mode. This action is disabled unless the current dev user has role `learner` or `both`.
+Selecting a marker validates recording id/version and the historical base hash, reconstructs teacher state at `teacherTimestampMs`, applies the full learner file delta, restores selected file, aligns media, and enters `learner-editing`. Trusted programmatic file operations restore learner-added files and remove files absent from the checkpoint result while playback guards suppress recording.
 
-Behavior:
-
-1. loads the immutable teacher recording;
-2. materializes teacher files at the paused timestamp;
-3. reads the current learner workspace files;
-4. diffs teacher-at-pause files against learner files;
-5. saves a `LearnerDelta` through the active async storage adapter using the signed-in learner id: local drafts use IndexedDB, published recordings use `RemoteInteractiveTimelineStorage`; both paths keep the `interactive-poc.learnerDeltas` compatibility mirror;
-6. recomputes saved work count, restore availability, and conflict warning state.
-
-The delta is keyed by:
-
-- lesson id;
-- teacher recording id;
-- teacher recording version;
-- teacher timestamp;
-- base teacher files hash.
-
-### Restore My Work
-
-`Restore My Work` restores the latest matching learner delta for the signed-in learner without changing the teacher recording. Learner Two cannot restore Learner Demo work.
-
-A delta is considered restorable when:
-
-- its `teacherRecordingId` matches the loaded teacher recording;
-- its `teacherRecordingVersion` matches the loaded teacher recording;
-- its `baseTeacherFilesHash` matches the materialized teacher state at `teacherTimestampMs`.
-
-No-conflict behavior remains one click:
-
-- materializes teacher files at the delta timestamp;
-- applies the learner file-level delta over that base;
-- updates existing TutorialKit files in the workspace;
-- restores `selectedFile` when it still exists;
-- does not add/remove file-tree entries in the current UI.
-
-If conflicts exist, `Restore My Work` does not immediately apply the delta. It opens the Milestone F conflict resolution panel instead.
-
-### Conflict warning and resolution
-
-Phase 6 added non-destructive conflict detection. Milestone F keeps that detection client-side and adds explicit learner choices.
-
-Visible learner fields:
-
-```text
-Conflict warning: none | conflict
-Conflicted files: /example.js, ...
-```
-
-When conflicts exist, Learner Lesson also shows:
-
-```text
-Conflict warning: your saved work touches files the teacher changed later.
-```
-
-A conflict exists when:
-
-- the learner delta changes a file path in `addedOrModified` or `removed`;
-- the teacher recording has a later event with `tMs > delta.teacherTimestampMs`;
-- the later teacher event modifies the same file path;
-- conflict detection considers only `file.changed` as a teacher-modifying event type.
-
-When the learner attempts a conflicted restore, the conflict resolution panel offers:
-
-- **Restore My Work Anyway**: applies the saved learner delta exactly as before and sets status to `restored with conflicts`;
-- **Keep Teacher Version**: closes the panel, leaves the current teacher/materialized workspace state visible, and sets status to `kept teacher version`;
-- **View Conflict Details**: expands per-file details with file path, learner-changed-file marker, later teacher event timestamp, teacher event id, and teacher event seq when present;
-- **Cancel**: closes the panel without changing files.
-
-Conflict resolution is explicit and non-merge:
-
-- it does not run automatic merge;
-- it does not compute text patches or hunk merges;
-- it does not mutate `TeacherRecording`;
-- it does not mutate or delete the saved `LearnerDelta`;
-- it does not create a merged delta or conflict-resolution record yet.
-
-Conflict state is recomputed on component initialization, teacher recording play/load, learner delta save, and learner delta restore.
+A later teacher event on the same path is not a conflict: it belongs to a later lecture timestamp and is shown only during normal playback. The old later-event conflict panel is no longer part of the learner flow. A base-hash/version mismatch instead reports an exceptional incompatible lecture version; no automatic merge is attempted.
 
 ## 2. Data model
 
@@ -610,41 +518,24 @@ Meaning:
 - `selectedFile`: selected editor file when the delta was saved;
 - `createdAt`: ISO timestamp for save time.
 
-### Conflict detection result
+### Learner checkpoint view
 
-Source type lives in `packages/runtime/src/interactive-timeline/learner-delta.ts`.
+The React hook derives a presentation model from persisted learner deltas:
 
 ```ts
-interface LearnerDeltaConflictEvent {
-  filePath: string;
-  eventId: string;
-  eventSeq?: number;
+interface LearnerCheckpointView {
+  id: string;
   teacherTimestampMs: number;
-}
-
-interface LearnerDeltaConflictDetail {
-  filePath: string;
-  learnerChangedFile: true;
-  teacherChangedSameFileAfterLearnerTimestamp: true;
-  teacherEventId: string;
-  teacherEventSeq?: number;
-  teacherEventTimestampMs: number;
-}
-
-interface LearnerDeltaConflicts {
-  filePaths: string[];
-  events: LearnerDeltaConflictEvent[];
-  details: LearnerDeltaConflictDetail[];
+  createdAt: string;
+  changedFileCount: number;
+  addedOrModifiedCount: number;
+  removedCount: number;
+  versionCount: number;
+  selectedFile?: string;
 }
 ```
 
-`getLearnerDeltaConflicts(recording, delta)` returns:
-
-- `filePaths`: sorted normalized paths with conflicts;
-- `events`: matching later teacher `file.changed` events with ids, seq values when present, and timestamps;
-- `details`: per-file/event details used by the conflict resolution panel.
-
-The React hook displays `filePaths` as `Conflict warning` and `Conflicted files`, and passes `details` to the Milestone F resolution panel.
+Deltas are grouped by normalized teacher timestamp. The latest `createdAt` version supplies the marker id and changed-file summary, while `versionCount` reports all retained saves at that anchor.
 
 ## 3. Storage
 
@@ -736,7 +627,7 @@ Stores a serialized array of `LearnerDelta` objects:
 localStorage.setItem('interactive-poc.learnerDeltas', JSON.stringify(deltas));
 ```
 
-The IndexedDB adapter mirrors the full learner-delta array to this key after saves. The remote adapter mirrors remote learner delta query results after remote saves/loads so existing debug inspection remains useful. Loading returns an empty array when no deltas exist. Restore currently considers the latest matching delta. Media blobs are intentionally excluded from localStorage.
+The IndexedDB adapter mirrors the full learner-delta array to this key after saves. The remote adapter mirrors remote learner delta query results after remote saves/loads so existing debug inspection remains useful. Loading returns an empty array when no deltas exist. The player groups deltas by timestamp and opens the latest saved version behind the selected marker. Media blobs are intentionally excluded from localStorage.
 
 ## 4. Runtime modules
 
@@ -777,7 +668,7 @@ Reconstructs teacher file state from a recording:
 
 - starts from `recording.baseFiles`;
 - sorts events by `tMs` and `seq`;
-- applies `file.changed` payload content up to `untilMs`;
+- applies `file.created` and `file.changed` payload content up to `untilMs`;
 - exposes `materializeTeacherState(recording, untilMs)` and `getFinalTeacherState(recording)`.
 
 ### `learner-delta.ts`
@@ -786,8 +677,7 @@ Owns file-level learner delta helpers:
 
 - `diffFiles(before, after)`: computes `addedOrModified` and `removed`;
 - `applyLearnerDelta(base, delta)`: overlays learner changes onto a base file map;
-- `simpleHashFiles(files)`: creates the POC base-state hash;
-- `getLearnerDeltaConflicts(recording, delta)`: reports later teacher `file.changed` events that touch learner-changed files.
+- `simpleHashFiles(files)`: creates the POC base-state hash used to validate a historical checkpoint base.
 
 ### `playback-clock.ts`
 
@@ -905,11 +795,11 @@ Responsibilities:
 - storage selection between local draft and remote published adapters;
 - async storage calls and compatibility state sync;
 - media-synced playback and fallback clock playback lifecycle;
-- pause/resume mode transitions;
+- pause/resume mode transitions with deterministic teacher-state reconstruction;
 - playback guard;
-- learner delta save/restore;
-- latest matching delta detection;
-- conflict warning recomputation;
+- learner experiment save/open and marker grouping;
+- historical recording/version/base-hash validation;
+- learner workspace dirty-state protection;
 - product control model returned to the UI.
 
 Current modes:
@@ -942,7 +832,7 @@ Renders the shared teacher/learner transport: play, pause, restart, time display
 
 ### `InteractiveLearnerPlayback.tsx`
 
-Renders the learner library, shared editor player, Try It Yourself, Save My Work, Restore My Work, Conflict Warning status, and explicit conflict resolution.
+Renders the learner library, shared editor player, Try It Yourself, Save Experiment, Resume Lecture, dirty-work protection, timestamp markers, and the My Experiments list.
 
 ### `InteractiveRecordingLibrary.tsx`
 
@@ -996,10 +886,10 @@ Candidate future phases:
 4. **Production auth/user ownership hardening**
    - replace dev sessions with production authentication, authorization, ownership transfer, and audit rules.
 
-5. **Richer conflict resolution persistence**
-   - persist learner conflict-resolution decisions if product needs audit/history;
-   - add richer side-by-side file views without automatic merge;
-   - keep detection separate from any future resolution records.
+5. **Richer learner experiment history**
+   - add experiment names, deletion, and a chooser for older versions grouped behind one marker;
+   - add richer side-by-side views against the historical teacher base;
+   - keep any future merge workflow separate from normal lecture playback.
 
 6. **Production UI polish**
    - improve layout, history drawers, empty states, and workspace mode affordances beyond the Milestone H thesis-demo shell.

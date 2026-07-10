@@ -4,6 +4,7 @@ import {
   InteractiveButton,
   InteractiveCard,
   InteractiveStatusBadge,
+  formatInteractiveTime,
   interactiveDetailsClassName,
   interactiveSummaryClassName,
 } from './InteractivePocUi.js';
@@ -16,11 +17,10 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
     pausedTeacherTimestampMs,
     learnerDeltaCount,
     learnerDeltaStatus,
-    conflictStatus,
-    conflictedFiles,
-    conflictDetails,
-    isConflictResolutionVisible,
-    areConflictDetailsVisible,
+    learnerCheckpoints,
+    activeLearnerCheckpointId,
+    isLearnerWorkspaceDirty,
+    isResumeConfirmationVisible,
     publishedStatus,
     publishedRecordingId,
     recordingStorageSource,
@@ -31,7 +31,6 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
     canLoadPublishedRecording,
     canResumeTeacher,
     canSaveLearnerDelta,
-    canRestoreLearnerDelta,
     onSelectPublishedRecording,
     onLoadPublishedRecording,
     onPlayRecording,
@@ -39,15 +38,14 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
     onPausePlayback,
     onResumeTeacher,
     onSaveLearnerDelta,
-    onRestoreLearnerDelta,
-    onRestoreLearnerDeltaAnyway,
-    onKeepTeacherVersion,
-    onViewConflictDetails,
-    onCancelConflictResolution,
+    onOpenLearnerCheckpoint,
+    onSaveAndResumeTeacher,
+    onDiscardAndResumeTeacher,
+    onCancelResumeTeacher,
     onPausePreviewPlayback,
   } = props;
-  const hasConflicts = conflictStatus === 'conflict';
   const isLearnerEditing = mode === 'learner-editing';
+
   return (
     <section aria-labelledby="interactive-learner-heading" className="grid gap-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -55,7 +53,9 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
           <h2 id="interactive-learner-heading" className="m-0 text-base font-600 text-tk-text-primary">
             Learner Lesson
           </h2>
-          <p className="m-0 text-xs text-tk-text-secondary">Follow the teacher recording, pause, and make the workspace your own.</p>
+          <p className="m-0 text-xs text-tk-text-secondary">
+            Follow the lecture, pause to experiment with its exact editor state, then return to the original timeline.
+          </p>
         </div>
         <InteractiveStatusBadge
           tone={canUseLearnerWork ? 'positive' : 'warning'}
@@ -93,116 +93,103 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
 
       <InteractiveEditorPlayer
         audience="learner"
-        title={isLearnerEditing ? 'Your workspace is active' : 'Interactive lesson player'}
-        description="The editor is the playback surface: pause or seek without converting the lesson into video."
+        title={isLearnerEditing ? 'My Experiment' : 'Interactive lesson player'}
+        description={
+          isLearnerEditing
+            ? `Working from the original lecture state at ${formatInteractiveTime(pausedTeacherTimestampMs)}.`
+            : 'Playback always follows the teacher recording. Saved dots reopen your experiments.'
+        }
         model={props}
         onPlay={playbackStatus === 'paused' ? onContinuePlayback : onPlayRecording}
         onPause={onPausePreviewPlayback}
         onTryItYourself={onPausePlayback}
       />
 
-      <div aria-label="Learner workspace toolbar" className="flex flex-wrap gap-1.5">
+      <div aria-label="Learner workspace toolbar" className="flex flex-wrap items-center gap-1.5">
         <InteractiveButton icon="i-ph-arrow-counter-clockwise" onClick={onResumeTeacher} disabled={!canResumeTeacher}>
-          Resume Teacher
+          Resume Lecture
         </InteractiveButton>
-        <InteractiveButton icon="i-ph-floppy-disk" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
-          Save My Work
+        <InteractiveButton variant="primary" icon="i-ph-floppy-disk" onClick={onSaveLearnerDelta} disabled={!canSaveLearnerDelta}>
+          Save Experiment
         </InteractiveButton>
-        <InteractiveButton icon="i-ph-clock-counter-clockwise" onClick={onRestoreLearnerDelta} disabled={!canRestoreLearnerDelta}>
-          Restore My Work
-        </InteractiveButton>
+        {isLearnerEditing ? (
+          <InteractiveStatusBadge tone={isLearnerWorkspaceDirty ? 'warning' : 'positive'}>
+            {isLearnerWorkspaceDirty ? 'Unsaved changes' : 'No unsaved changes'}
+          </InteractiveStatusBadge>
+        ) : null}
       </div>
 
-      <InteractiveCard aria-label="My work status" className="grid gap-2 p-2">
+      {isResumeConfirmationVisible ? (
+        <section aria-label="Unsaved experiment warning" role="alert" className="rounded-lg border-2 border-amber-500 bg-amber-950/20 p-3">
+          <h3 className="m-0 text-sm font-600 text-amber-100">Save this experiment before resuming?</h3>
+          <p className="mb-3 mt-1 text-xs text-amber-100/80">
+            Lecture playback will restore the teacher’s original state. Unsaved experiment changes will otherwise be discarded.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <InteractiveButton variant="primary" icon="i-ph-floppy-disk" onClick={onSaveAndResumeTeacher}>
+              Save and Resume
+            </InteractiveButton>
+            <InteractiveButton icon="i-ph-play" onClick={onDiscardAndResumeTeacher}>
+              Resume Without Saving
+            </InteractiveButton>
+            <InteractiveButton variant="ghost" icon="i-ph-x" onClick={onCancelResumeTeacher}>
+              Cancel
+            </InteractiveButton>
+          </div>
+        </section>
+      ) : null}
+
+      <InteractiveCard aria-label="My experiments" className="grid gap-2 p-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <strong className="flex items-center gap-1.5 text-sm text-tk-text-primary">
-            <span aria-hidden="true" className="i-ph-files-duotone text-base text-tk-text-accent" />
-            My Work
+            <span aria-hidden="true" className="i-ph-map-pin-duotone text-base text-violet-400" />
+            My Experiments
           </strong>
           <div className="flex flex-wrap gap-1">
-            <InteractiveStatusBadge tone={learnerDeltaStatus === 'saved' || learnerDeltaStatus.startsWith('restored') ? 'positive' : 'neutral'}>
+            <InteractiveStatusBadge tone={learnerDeltaStatus.includes('saved') || learnerDeltaStatus.includes('opened') ? 'positive' : 'neutral'}>
               Work status: {learnerDeltaStatus}
             </InteractiveStatusBadge>
             <InteractiveStatusBadge>Saved work count: {learnerDeltaCount}</InteractiveStatusBadge>
-            <InteractiveStatusBadge tone={hasConflicts ? 'warning' : 'positive'}>
-              Conflict Warning: {conflictStatus}
-            </InteractiveStatusBadge>
+            <InteractiveStatusBadge>{learnerCheckpoints.length} timeline markers</InteractiveStatusBadge>
           </div>
         </div>
-        <p className="m-0 text-xs text-tk-text-secondary">
-          Conflicted files: {conflictedFiles.length > 0 ? conflictedFiles.join(', ') : 'none'}
-        </p>
+
+        {learnerCheckpoints.length === 0 ? (
+          <p className="m-0 text-xs text-tk-text-secondary">
+            No saved experiments yet. Pause the lecture, choose Try It Yourself, edit, and save.
+          </p>
+        ) : (
+          <ul className="m-0 grid list-none gap-1.5 p-0">
+            {learnerCheckpoints.map((checkpoint) => (
+              <li key={checkpoint.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenLearnerCheckpoint(checkpoint.id)}
+                  disabled={isLearnerEditing}
+                  className="flex w-full items-center justify-between gap-3 rounded-md border border-tk-border-primary bg-tk-background-primary px-2.5 py-2 text-left hover:border-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full border-2 border-violet-200 bg-violet-500" />
+                    <span className="min-w-0">
+                      <strong className="block text-xs text-tk-text-primary">
+                        Experiment at {formatInteractiveTime(checkpoint.teacherTimestampMs)}
+                      </strong>
+                      <span className="block truncate text-[11px] text-tk-text-secondary">
+                        {checkpoint.changedFileCount} changed files · {checkpoint.versionCount} saved version
+                        {checkpoint.versionCount === 1 ? '' : 's'} · {new Date(checkpoint.createdAt).toLocaleString()}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-violet-300">
+                    {checkpoint.id === activeLearnerCheckpointId ? 'Active' : 'Open'}
+                    <span aria-hidden="true" className="i-ph-arrow-right" />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </InteractiveCard>
-
-      {hasConflicts ? (
-        <section
-          aria-label="Conflict Warning"
-          role="alert"
-          className="rounded-lg border border-amber-500/60 bg-amber-950/20 p-3"
-        >
-          <div className="flex gap-2">
-            <span aria-hidden="true" className="i-ph-warning-duotone mt-0.5 shrink-0 text-xl text-amber-300" />
-            <div>
-              <h3 className="m-0 text-sm font-600 text-amber-100">Conflict Warning</h3>
-              <p className="mb-1 mt-0 text-xs text-amber-100/80">
-                Your saved work touches files the teacher changed later. Nothing will be overwritten until you choose.
-              </p>
-              <ul aria-label="Conflicted files" className="m-0 pl-5 text-xs text-amber-100">
-                {conflictedFiles.map((filePath) => (
-                  <li key={filePath}>{filePath}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {isConflictResolutionVisible ? (
-        <section
-          aria-label="Conflict resolution"
-          className="rounded-lg border-2 border-amber-500 bg-tk-background-secondary p-3 shadow-lg"
-        >
-          <div className="flex gap-2">
-            <span aria-hidden="true" className="i-ph-git-diff-duotone mt-0.5 shrink-0 text-2xl text-amber-300" />
-            <div className="min-w-0 flex-1">
-              <h3 className="m-0 text-base font-600 text-tk-text-primary">Conflict Resolution</h3>
-              <p className="mb-3 mt-1 text-xs text-tk-text-secondary">
-                Choose how to handle your saved work. No automatic merge will run, and both source artifacts remain unchanged.
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                <InteractiveButton variant="primary" icon="i-ph-arrow-counter-clockwise" onClick={onRestoreLearnerDeltaAnyway}>
-                  Restore My Work Anyway
-                </InteractiveButton>
-                <InteractiveButton icon="i-ph-chalkboard-teacher" onClick={onKeepTeacherVersion}>
-                  Keep Teacher Version
-                </InteractiveButton>
-                <InteractiveButton icon="i-ph-list-magnifying-glass" onClick={onViewConflictDetails}>
-                  View Conflict Details
-                </InteractiveButton>
-                <InteractiveButton variant="ghost" icon="i-ph-x" onClick={onCancelConflictResolution}>
-                  Cancel
-                </InteractiveButton>
-              </div>
-              {areConflictDetailsVisible ? (
-                <div aria-label="Conflict details" className="mt-3 rounded-md border border-tk-border-primary bg-tk-background-primary p-2">
-                  <h4 className="m-0 text-sm font-600 text-tk-text-primary">Conflict details</h4>
-                  <ul className="mb-0 mt-2 grid gap-2 pl-5 text-xs text-tk-text-secondary">
-                    {conflictDetails.map((detail) => (
-                      <li key={`${detail.filePath}-${detail.teacherEventId}-${detail.teacherEventTimestampMs}`}>
-                        <strong className="text-tk-text-primary">{detail.filePath}</strong>: learner changed file:{' '}
-                        {detail.learnerChangedFile ? 'yes' : 'no'}; teacher changed same file after learner timestamp:{' '}
-                        {detail.teacherChangedSameFileAfterLearnerTimestamp ? 'yes' : 'no'}; teacher event timestamp ms:{' '}
-                        {detail.teacherEventTimestampMs}; teacher event id: {detail.teacherEventId}; teacher event seq:{' '}
-                        {detail.teacherEventSeq ?? 'none'}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      ) : null}
 
       <details className={interactiveDetailsClassName}>
         <summary className={interactiveSummaryClassName}>
@@ -213,7 +200,7 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
           <span aria-hidden="true" className="i-ph-caret-down-bold transition-transform group-open:rotate-180" />
         </summary>
         <dl className="mb-0 mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-tk-border-primary pt-3 text-xs text-tk-text-secondary">
-          <dt>Paused teacher timestamp ms</dt>
+          <dt>Experiment anchor timestamp ms</dt>
           <dd className="m-0">{pausedTeacherTimestampMs}</dd>
           <dt>Recording storage source</dt>
           <dd className="m-0">{recordingStorageSource}</dd>

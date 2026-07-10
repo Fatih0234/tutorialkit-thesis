@@ -68,9 +68,9 @@ Only `RemoteInteractiveTimelineStorage` performs interactivity-layer `fetch` cal
 1. The learner signs in and opens a published lesson.
 2. The shared editor player resets the workspace to `baseFiles`, applies ordered events by `tMs` then `seq`, and supports deterministic pause/restart/seek.
 3. **Try It Yourself** pauses the playback source and captures the teacher timestamp.
-4. **Save My Work** compares the learner workspace with teacher state materialized at that timestamp and stores only the file-level delta.
-5. **Resume Teacher** continues teacher events without deleting the saved delta.
-6. **Restore My Work** validates the recording id/version and base-state hash before applying the latest matching learner-owned delta.
+4. **Save Experiment** compares the learner workspace with teacher state materialized at that timestamp, stores the file-level delta, and creates a timeline marker.
+5. **Resume Lecture** reconstructs teacher truth at the anchor timestamp before continuing teacher events; the saved experiment remains separate.
+6. Selecting a marker validates recording id/version and base-state hash, reconstructs the historical teacher state, and applies the latest learner-owned checkpoint at that timestamp.
 
 ## Structured timeline and media attachment model
 
@@ -97,16 +97,11 @@ Media is never mirrored into localStorage. If IndexedDB is unavailable, timeline
 
 A `LearnerDelta` stores full contents for `addedOrModified` files and normalized paths for `removed` files. It is keyed by learner, lesson, teacher recording id/version, paused teacher timestamp, and the hash of teacher files at that timestamp. The remote server derives learner ownership from the current session rather than trusting a client-supplied user id. Saving or restoring a delta never mutates the teacher recording.
 
-## Conflict resolution model
+## Learner experiment model
 
-Conflict detection compares learner-changed paths with later teacher `file.changed` events. A no-conflict restore stays one click. A conflicted restore requires one explicit choice:
+Learner deltas are historical branches, not merge candidates. Later teacher changes to the same path do not conflict with a checkpoint anchored earlier. The player groups saves by timestamp, renders one violet marker per anchor, and opens the latest version from that marker. Passing a marker during ordinary playback has no effect. Unsaved edits receive a separate save/discard/cancel warning before returning to teacher playback.
 
-- **Restore My Work Anyway** applies the saved delta;
-- **Keep Teacher Version** leaves the visible teacher state;
-- **View Conflict Details** exposes matching path/event evidence;
-- **Cancel** makes no file change.
-
-The prototype does not automatically merge, compute text hunks, modify the saved delta, or persist a resolution decision.
+An exceptional recording-version or historical-base-hash mismatch reports that the experiment belongs to another lecture version. The prototype does not automatically merge or compute text hunks.
 
 ## Import/export package model
 

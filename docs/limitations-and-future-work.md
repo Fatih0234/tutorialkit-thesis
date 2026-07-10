@@ -48,7 +48,7 @@ The current evidence consists of architecture documentation, deterministic demon
 - There is no archive streaming, checksum manifest, or package migration framework.
 - The editor player supports deterministic seeking, but has no production-grade speed, drift correction, captions, or advanced media controls.
 - Recording selectors and status panels are thesis-demo UI, not a final design system.
-- No transcript generation, screen capture, or persisted conflict audit history exists.
+- No transcript generation, screen capture, experiment naming, marker deletion, or dedicated checkpoint-version chooser exists.
 - LocalStorage parsing and the file-backed backend assume controlled POC data.
 
 ## Future work
@@ -63,7 +63,7 @@ Implement a production adapter behind `InteractiveTimelineStorage`: durable data
 
 ### Richer but still safe learner change handling
 
-Evaluate patch/hunk-level deltas, side-by-side comparisons, and optional merge assistance. Any merge feature should remain explicit, preserve both source artifacts, record provenance, and be tested separately from conflict detection. A first step could persist the learner's chosen resolution without changing recording immutability.
+Add experiment naming, marker deletion, checkpoint-version selection, changed-file summaries, and side-by-side comparison with the historical teacher base. Patch/hunk deltas or optional merge assistance should be evaluated only as separate advanced workflows; normal lecture playback must continue to ignore learner branches and preserve both source artifacts.
 
 ### Playback and media controls
 
@@ -79,7 +79,7 @@ If packages become a product feature, define schema migration, content checksums
 
 ### Formal evaluation
 
-Design a user study with separate teacher and learner tasks. Candidate measures include recording completion, replay comprehension, learner confidence that work is recoverable, conflict-choice comprehension, task time, error rates, usability scales, and qualitative feedback. Establish consent, privacy, data minimization, participant sampling, and analysis methods before collecting study data.
+Design a user study with separate teacher and learner tasks. Candidate measures include recording completion, replay comprehension, learner confidence that experiments are recoverable, timeline-marker comprehension, task time, error rates, usability scales, and qualitative feedback. Establish consent, privacy, data minimization, participant sampling, and analysis methods before collecting study data.
 
 ### Product and accessibility refinement
 
