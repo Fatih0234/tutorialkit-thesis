@@ -14,7 +14,7 @@ Use this checklist to evaluate the Milestone I release candidate. Record the dat
 ## Automated acceptance
 
 - [ ] `pnpm build` completes successfully.
-- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **34 passed**.
+- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **36 passed**.
 - [ ] `git diff --check` reports no whitespace errors.
 - [ ] Playwright product actions use user-facing role/text/label locators; CSS scoping is limited to the embedded editor integration where no stable product role identifies the container.
 - [ ] The localStorage compatibility shapes can be inspected at `interactive-poc.teacherRecording` and `interactive-poc.learnerDeltas`.

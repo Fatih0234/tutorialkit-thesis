@@ -547,6 +547,12 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('heading', { name: /learner playback/i })).toHaveCount(0);
     await expect(page.getByText(/raw debug controls/i)).toHaveCount(0);
     await expect(page.getByText(/compatibility localStorage keys/i)).toBeHidden();
+    await expect(page.locator('#interactive-experience-root > [data-interactive-experience-root]')).toBeVisible();
+    await expect(page.locator('[data-tutorialkit-standard-layout]')).toHaveAttribute('inert', '');
+    await expect(page.locator('[data-tutorialkit-standard-layout]')).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('[data-interactive-management-shell]')).toBeVisible();
+    await expect(page.locator('[data-interactive-workspace-shell]')).toBeHidden();
+    await expect(page.getByRole('tab', { name: /output|terminal/i })).toHaveCount(0);
   });
 
   test('teacher prepares materials separately before recording', async ({ page }) => {
@@ -611,6 +617,35 @@ test.describe('interactive timeline POC', () => {
     expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
     expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
     expect(savedLayout.terminalSize).toBeGreaterThanOrEqual(18);
+  });
+
+  test('terminal stays in the immersive recording and review workspace only', async ({ page }) => {
+    await startTeacherRecording(page);
+    await expect(page.locator('[data-interactive-management-shell]')).toHaveCount(0);
+    await expect(page.locator('[data-interactive-workspace-shell]')).toBeVisible();
+
+    const terminalToggle = page.getByRole('button', { name: /^terminal$/i });
+    const explanationToggle = page.getByRole('button', { name: /^explanation$/i });
+    const eventCount = page.getByText(/event count:\s*\d+/i);
+    const beforeToggle = await eventCount.textContent();
+
+    await terminalToggle.click();
+    await explanationToggle.click();
+    await expect(page.getByRole('tab', { name: /output/i })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /lesson explanation/i })).toBeVisible();
+    await page.waitForTimeout(150);
+    await expect(eventCount).toHaveText(beforeToggle || '');
+
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await expect(page.getByRole('heading', { name: /recording review/i })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /output/i })).toBeVisible();
+    await expect(page.getByLabel(/lesson timeline/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
+    await expect(page.locator('[data-interactive-management-shell]')).toBeVisible();
+    await expect(page.locator('[data-interactive-workspace-shell]')).toBeHidden();
+    await expect(page.getByRole('tab', { name: /output/i })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toBeHidden();
   });
 
   test('demo sign-in works', async ({ page }) => {

@@ -192,6 +192,7 @@ export interface UseInteractivePocResult {
   controls: InteractivePocControlsModel;
   onFileSelect: (filePath: string | undefined) => void;
   onFileCreated: (filePath: string, content?: string) => void;
+  onWorkspaceLayoutChange: () => void;
   onEditorScroll: (position: EditorScrollPosition) => void;
   onEditorChange: (update: EditorChangeUpdate) => void;
 }
@@ -255,6 +256,7 @@ export function useInteractivePoc({
   const learnerWorkspaceDirtyRef = useRef(false);
   const learnerWorkspaceSavedHashRef = useRef('');
   const learnerSaveGuardUntilRef = useRef(0);
+  const workspaceLayoutGuardUntilRef = useRef(0);
   const importPackageFileRef = useRef<File | null>(null);
   const currentUserRef = useRef<InteractiveUser | null>(null);
   const [currentUser, setCurrentUserState] = useState<InteractiveUser | null>(null);
@@ -2032,12 +2034,22 @@ export function useInteractivePoc({
     syncEventCount();
   }
 
+  function onWorkspaceLayoutChange() {
+    workspaceLayoutGuardUntilRef.current = Date.now() + 400;
+  }
+
   function onEditorScroll(position: EditorScrollPosition) {
     tutorialStore.setCurrentDocumentScrollPosition(position);
 
     const filePath = getCurrentFilePath();
 
-    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+    if (
+      !filePath ||
+      modeRef.current !== 'idle' ||
+      isApplyingPlaybackRef.current ||
+      Date.now() < workspaceLayoutGuardUntilRef.current ||
+      !recorderRef.current?.isRecording()
+    ) {
       return;
     }
 
@@ -2224,6 +2236,7 @@ export function useInteractivePoc({
     },
     onFileSelect,
     onFileCreated,
+    onWorkspaceLayoutChange,
     onEditorScroll,
     onEditorChange,
   };

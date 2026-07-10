@@ -43,7 +43,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
   pnpm --dir e2e exec playwright test interactive-poc.spec.ts --project=Default
 ```
 
-Expected result after the recording-studio refinement: **34 passed**.
+Expected result after the isolated application-root refinement: **36 passed**.
 
 - [ ] Check whitespace and repository state:
 
@@ -102,7 +102,7 @@ pnpm --dir e2e run dev
 ## 7. Evidence capture
 
 - [ ] Record the release commit hash and environment in [`evaluation-checklist.md`](./evaluation-checklist.md).
-- [ ] Retain the terminal output showing build success and **34 passed**.
+- [ ] Retain the terminal output showing build success and **36 passed**.
 - [ ] Capture screenshots or video only if required by the thesis evidence protocol; do not treat screenshots as a replacement for automated assertions.
 - [ ] Note any deviation from the scripted flow and whether it changes an architectural claim.
 
@@ -116,7 +116,7 @@ ExperimentalWarning: localStorage is not available because --localstorage-file w
 [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
 ```
 
-These are currently non-blocking only when the build command exits successfully, the preview server becomes ready, and the full suite reports **34 passed**. Treat any different error, server startup failure, test timeout, failed assertion, or non-zero final command as a release blocker until investigated.
+These are currently non-blocking only when the build command exits successfully, the preview server becomes ready, and the full suite reports **36 passed**. Treat any different error, server startup failure, test timeout, failed assertion, or non-zero final command as a release blocker until investigated.
 
 ## 9. Cleanup
 

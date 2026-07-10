@@ -4,21 +4,23 @@ The interactive POC now separates management from the editor playback surface. S
 
 ## Product shells
 
+`MainContainer.astro` now provides a dedicated `#interactive-experience-root` outside the normal TutorialKit resizable layout. The React application portals into that named mount instead of `document.body`. While active, the standard TutorialKit layout stays mounted for store/WebContainer continuity but is marked `inert` and `aria-hidden`, so its legacy controls cannot receive focus or appear to assistive technology.
+
 The full-viewport product root has two kinds of screens:
 
 - **management screens**: Teacher Studio and Interactive Lessons;
 - **immersive workspace screens**: material preparation, recording, recording review, and learner playback.
 
-The normal TutorialKit lesson remains the source of files, explanation content, terminal, and the real editor, but it is covered by the product shell. Management controls are never rendered inside an active player.
+The normal TutorialKit lesson remains the source of files, explanation content, terminal configuration, and the real editor. Management screens are rendered only in `InteractiveManagementShell`; the persistently mounted editor and terminal live only in `InteractiveWorkspaceShell`. Management controls are unmounted during an active workspace, while the workspace is hidden and inaccessible during management.
 
 ## Optional context panels
 
 The immersive workspace remains editor-first, with two optional and resizable context panels:
 
-- **Explanation** opens the trusted Markdown rendered by `TutorialContent.astro` as a collapsible left pane;
-- **Terminal** moves the existing `TerminalPanel` into a collapsible pane below the editor without mounting a second terminal or WebContainer.
+- **Explanation** opens trusted Markdown from a lesson-specific Astro `<template>` bridge as a collapsible left pane;
+- **Terminal** has one stable `TerminalPanel` owner portaled into a persistent pane below the editor, without a management-screen fallback or a second terminal/WebContainer.
 
-Both are closed by default. Their visibility and last sizes are stored under `interactive-poc.workspaceLayout`. This preference is UI-only: toggling or resizing panels never creates teacher events, learner deltas, or dirty-work state. The terminal stays mounted while collapsed so output and process attachment survive. Terminal activity is live context and remains outside the recording and replay schema.
+Both are closed by default. Their visibility and last sizes are stored under `interactive-poc.workspaceLayout`. This preference is UI-only: toggling or resizing panels never creates teacher events, learner deltas, or dirty-work state. A short layout guard prevents CodeMirror resize-induced scroll callbacks from becoming teacher events. The terminal stays mounted while collapsed and while management is visible, so output and process attachment survive. Terminal activity is live context and remains outside the recording and replay schema.
 
 ## Session lifecycle
 

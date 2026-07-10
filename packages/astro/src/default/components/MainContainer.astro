@@ -17,31 +17,39 @@ interface Props {
 const { lesson, navList } = Astro.props;
 
 const showWorkspacePanel = hasWorkspace(lesson);
+const { Markdown } = lesson;
 ---
 
-<ResizablePanel
-  class="h-full overflow-hidden"
-  id={RESIZABLE_PANELS.Main}
-  type="horizontal"
-  min="30%"
-  pos="40%"
-  max="60%"
->
-  <div
-    class="h-full flex flex-col transition-theme bg-tk-elements-app-backgroundColor text-tk-elements-app-textColor"
-    slot="a"
+<div id="interactive-experience-root" data-interactive-experience-mount></div>
+<template id={`interactive-explanation-${lesson.id}`} data-interactive-explanation-template>
+  <div class="markdown-content text-tk-elements-content-textColor"><Markdown /></div>
+</template>
+
+<div data-tutorialkit-standard-layout>
+  <ResizablePanel
+    class="h-full overflow-hidden"
+    id={RESIZABLE_PANELS.Main}
+    type="horizontal"
+    min="30%"
+    pos="40%"
+    max="60%"
   >
-    <Nav client:load lesson={lesson} navList={navList} />
-    <TutorialContent lesson={lesson} />
-  </div>
-  <div
-    class="h-full sm:border-l transition-theme border-tk-elements-app-borderColor"
-    slot={showWorkspacePanel ? 'b' : 'hide'}
-  >
-    <WorkspacePanel lesson={lesson} client:load transition:persist />
-  </div>
-</ResizablePanel>
-<MobileContentToggle />
+    <div
+      class="h-full flex flex-col transition-theme bg-tk-elements-app-backgroundColor text-tk-elements-app-textColor"
+      slot="a"
+    >
+      <Nav client:load lesson={lesson} navList={navList} />
+      <TutorialContent lesson={lesson} />
+    </div>
+    <div
+      class="h-full sm:border-l transition-theme border-tk-elements-app-borderColor"
+      slot={showWorkspacePanel ? 'b' : 'hide'}
+    >
+      <WorkspacePanel lesson={lesson} client:load transition:persist />
+    </div>
+  </ResizablePanel>
+  <MobileContentToggle />
+</div>
 <script>
   import { viewStore } from '../stores/view-store';
   import { RESIZABLE_PANELS } from '../utils/constants';
@@ -51,8 +59,35 @@ const showWorkspacePanel = hasWorkspace(lesson);
 
   let subscriber: (() => void) | undefined;
 
+  function setInteractiveShellState(active: boolean) {
+    if (active) {
+      document.documentElement.dataset.interactiveShellActive = 'true';
+    } else {
+      delete document.documentElement.dataset.interactiveShellActive;
+    }
+
+    const standardLayout = document.querySelector<HTMLElement>('[data-tutorialkit-standard-layout]');
+
+    if (!standardLayout) {
+      return;
+    }
+
+    if (active) {
+      standardLayout.setAttribute('inert', '');
+      standardLayout.setAttribute('aria-hidden', 'true');
+    } else {
+      standardLayout.removeAttribute('inert');
+      standardLayout.removeAttribute('aria-hidden');
+    }
+  }
+
+  window.addEventListener('tutorialkit:interactive-shell', ((event: CustomEvent<{ active: boolean }>) => {
+    setInteractiveShellState(event.detail.active);
+  }) as EventListener);
+
   document.addEventListener('astro:page-load', () => {
     subscriber?.();
+    setInteractiveShellState(document.documentElement.dataset.interactiveShellActive === 'true');
 
     const resizablePanel = document.querySelector(`[data-id=${RESIZABLE_PANELS.Main}]`) as unknown as IResizablePanel;
     const contentPanel = resizablePanel.mainPanel();

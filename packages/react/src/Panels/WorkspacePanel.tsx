@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react';
 import { normalizePath, type TutorialStore } from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
-import { useCallback, useEffect, useReducer, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { DialogProvider } from '../core/Dialog.js';
@@ -10,16 +10,18 @@ import resizePanelStyles from '../styles/resize-panel.module.css';
 import { classNames } from '../utils/classnames.js';
 import { EditorPanel } from './EditorPanel.js';
 import { InteractiveImmersiveHeader } from './InteractiveImmersiveHeader.js';
+import {
+  InteractiveExperienceRoot,
+  InteractiveManagementShell,
+  InteractiveWorkspaceShell,
+} from './InteractiveExperienceShells.js';
 import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
 import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
 import { InteractiveButton } from './InteractivePocUi.js';
 import { InteractiveVideoControls } from './InteractiveVideoControls.js';
 import { InteractiveWorkspaceSurface } from './InteractiveWorkspaceSurface.js';
-import {
-  initialInteractiveExperienceState,
-  interactiveExperienceReducer,
-  isImmersiveInteractiveScreen,
-} from './interactive-session.js';
+import { isImmersiveInteractiveScreen } from './interactive-session.js';
+import { InteractiveExperienceProvider, useInteractiveExperienceState } from './InteractiveExperienceState.js';
 import {
   InteractivePocControls,
   type InteractiveProductTab,
@@ -78,14 +80,16 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
   return (
     <PanelGroup className={resizePanelStyles.PanelGroup} id="right-panel-group" direction="vertical">
       <DialogProvider value={dialog}>
-        <EditorSection
-          theme={theme}
-          tutorialStore={tutorialStore}
-          hasEditor={hasEditor}
-          hasPreviews={hasPreviews}
-          hideTerminalPanel={hideTerminalPanel}
-          onImmersiveTerminalHostChange={setImmersiveTerminalHost}
-        />
+        <InteractiveExperienceProvider>
+          <EditorSection
+            theme={theme}
+            tutorialStore={tutorialStore}
+            hasEditor={hasEditor}
+            hasPreviews={hasPreviews}
+            hideTerminalPanel={hideTerminalPanel}
+            onImmersiveTerminalHostChange={setImmersiveTerminalHost}
+          />
+        </InteractiveExperienceProvider>
       </DialogProvider>
 
       <PanelResizeHandle
@@ -127,7 +131,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
 
 function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onImmersiveTerminalHostChange }: EditorSectionProps) {
   const [helpAction, setHelpAction] = useState<'solve' | 'reset'>('reset');
-  const [experience, dispatchExperience] = useReducer(interactiveExperienceReducer, initialInteractiveExperienceState);
+  const { experience, dispatchExperience } = useInteractiveExperienceState();
   const [recordingMode, setRecordingMode] = useState<InteractiveRecordingMode>('none');
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [explanationOpen, setExplanationOpen] = useState(false);
@@ -136,6 +140,7 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
   const [terminalSize, setTerminalSize] = useState(30);
   const [explanationHtml, setExplanationHtml] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
+  const [experienceMount, setExperienceMount] = useState<HTMLElement | null>(null);
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
   const currentDocument = useStore(tutorialStore.currentDocument);
@@ -167,8 +172,27 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
           ? 'review'
           : 'setup';
   const isImmersiveExperience = isImmersiveInteractiveScreen(experience.screen);
-  const showInteractiveEditor = isImmersiveExperience;
   const isRecordingStudio = experience.screen === 'teacher-recording';
+
+  function setExplanationPanelOpen(open: boolean) {
+    interactivePoc.onWorkspaceLayoutChange();
+    setExplanationOpen(open);
+  }
+
+  function setTerminalPanelOpen(open: boolean) {
+    interactivePoc.onWorkspaceLayoutChange();
+    setTerminalOpen(open);
+  }
+
+  function setExplanationPanelSize(size: number) {
+    interactivePoc.onWorkspaceLayoutChange();
+    setExplanationSize(size);
+  }
+
+  function setTerminalPanelSize(size: number) {
+    interactivePoc.onWorkspaceLayoutChange();
+    setTerminalSize(size);
+  }
 
   function onHelpClick() {
     if (tutorialStore.hasSolution()) {
@@ -283,8 +307,12 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
 
   useEffect(() => {
     setIsClientReady(true);
-    const source = document.querySelector<HTMLElement>('[data-tutorial-content] .markdown-content');
-    setExplanationHtml(source?.innerHTML ?? '');
+    setExperienceMount(document.getElementById('interactive-experience-root'));
+    const template = document.getElementById(`interactive-explanation-${lesson.id}`) as HTMLTemplateElement | null;
+    const explanation = template?.content.querySelector<HTMLElement>('.markdown-content');
+    setExplanationHtml(explanation?.innerHTML ?? '');
+
+    window.dispatchEvent(new CustomEvent('tutorialkit:interactive-shell', { detail: { active: true } }));
 
     try {
       const saved = JSON.parse(localStorage.getItem(INTERACTIVE_WORKSPACE_LAYOUT_KEY) ?? '{}') as {
@@ -301,6 +329,9 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
       setExplanationOpen(false);
       setTerminalOpen(false);
     }
+    return () => {
+      window.dispatchEvent(new CustomEvent('tutorialkit:interactive-shell', { detail: { active: false } }));
+    };
   }, [lesson.id, hideTerminalPanel]);
 
   useEffect(() => {
@@ -325,10 +356,6 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
       tutorialStore.setSelectedFile(filePaths[0]);
     }
   }, [selectedFile, storeRef]);
-
-  useEffect(() => {
-    editorPanelRef.current?.resize(showInteractiveEditor ? 100 : 55);
-  }, [showInteractiveEditor]);
 
   useEffect(() => {
     if (!isRecordingStudio) {
@@ -401,7 +428,7 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
     </div>
   );
 
-  const editorSurface = showInteractiveEditor ? (
+  const editorSurface = (
     <InteractiveWorkspaceSurface
       explanationHtml={explanationHtml}
       explanationOpen={explanationOpen}
@@ -409,28 +436,22 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
       terminalAvailable={!hideTerminalPanel}
       explanationSize={explanationSize}
       terminalSize={terminalSize}
-      onExplanationOpenChange={setExplanationOpen}
-      onTerminalOpenChange={setTerminalOpen}
-      onExplanationSizeChange={setExplanationSize}
-      onTerminalSizeChange={setTerminalSize}
+      onExplanationOpenChange={setExplanationPanelOpen}
+      onTerminalOpenChange={setTerminalPanelOpen}
+      onExplanationSizeChange={setExplanationPanelSize}
+      onTerminalSizeChange={setTerminalPanelSize}
       onTerminalHostChange={onImmersiveTerminalHostChange}
     >
       {editor}
     </InteractiveWorkspaceSurface>
-  ) : (
-    <div className="hidden">{editor}</div>
   );
 
   const editorExperience = (
-    <div
-      data-interactive-hydrated={isClientReady ? 'true' : 'false'}
-      className={classNames(
-        'flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor',
-        theme,
-      )}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, width: '100vw', height: '100vh' }}
-    >
-      {!isImmersiveExperience ? managementControls : null}
+    <InteractiveExperienceRoot screen={experience.screen} theme={theme} hydrated={isClientReady} mount={experienceMount}>
+      <InteractiveManagementShell active={!isImmersiveExperience}>
+        {managementControls}
+      </InteractiveManagementShell>
+      <InteractiveWorkspaceShell active={isImmersiveExperience}>
       {experience.screen === 'teacher-materials' ? (
         <InteractiveMaterialPreparation
           lessonId={lesson.id}
@@ -489,7 +510,8 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
           onPause={interactivePoc.controls.onPausePreviewPlayback}
         />
       ) : null}
-    </div>
+      </InteractiveWorkspaceShell>
+    </InteractiveExperienceRoot>
   );
 
   return (
@@ -502,7 +524,7 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
       collapsible={!hasEditor}
       className="flex flex-col overflow-hidden transition-theme bg-tk-elements-panel-backgroundColor text-tk-elements-panel-textColor"
     >
-      {isClientReady ? createPortal(editorExperience, document.body) : editorExperience}
+      {editorExperience}
     </Panel>
   );
 }
@@ -659,7 +681,7 @@ function TerminalSection({
     >
       {immersiveTerminalHost
         ? createPortal(<TerminalPanel tutorialStore={tutorialStore} theme={theme} />, immersiveTerminalHost)
-        : <TerminalPanel tutorialStore={tutorialStore} theme={theme} />}
+        : null}
     </Panel>
   );
 }

@@ -1,6 +1,6 @@
 # Implementation timeline
 
-This timeline summarizes the incremental evidence built from Phase 0 through the release-candidate recording-studio refinement. Each step preserved the central invariant that learner activity must not mutate the teacher timeline.
+This timeline summarizes the incremental evidence built from Phase 0 through the isolated interactive application-root refinement. Each step preserved the central invariant that learner activity must not mutate the teacher timeline.
 
 ## Phase 0 — Baseline
 
@@ -89,6 +89,8 @@ Milestone I froze the existing product behavior and assembled the release-candid
 ## Recording Studio UX refinement
 
 The recording-studio refinement separated Lecture Setup, material preparation, full-screen recording, and review. It added a shared seekable editor player, deterministic replay from arbitrary timestamps, explicit initial-file capture, live webcam preview, trusted restoration of teacher-created files, and navigation protection while recording. It proved the structured timeline could feel like video while remaining a real editor and while preserving immutable teacher recordings and learner-owned deltas.
+
+The isolated application-root refinement then moved the product DOM into a dedicated Astro mount outside TutorialKit's standard resizable layout. Explicit management and persistent workspace shells prevent terminal/editor controls from leaking into libraries and dashboards. The standard layout remains mounted but inert, the terminal has one persistent immersive owner, lesson Markdown enters through a lesson-specific template bridge, and context-panel resize callbacks are guarded from teacher recording.
 
 ## Learner timeline experiment refinement
 

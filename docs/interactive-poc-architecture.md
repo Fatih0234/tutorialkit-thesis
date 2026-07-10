@@ -36,7 +36,7 @@ Important invariants:
 
 ## 1. Current user flow
 
-The UI now uses a full-viewport product root. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `interactive-session.ts` provides explicit screen transitions and separates a library selection from the active player recording. `InteractiveWorkspaceSurface.tsx` composes the persistent editor with opt-in, resizable lesson explanation and live terminal panels. `InteractiveVideoControls.tsx` supplies the shared full-width bottom transport, accessible seek range, media surface, learner markers, keyboard controls, and experiment drawer. See `docs/immersive-interactive-experience.md`.
+The UI now uses a full-viewport product root mounted in `#interactive-experience-root`, a dedicated Astro application region outside the normal TutorialKit resizable layout. The standard layout remains mounted but becomes `inert` and `aria-hidden` while the product is active. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `InteractiveExperienceProvider` owns explicit reducer state and separates a library selection from the active player recording. `InteractiveExperienceRoot`, `InteractiveManagementShell`, and `InteractiveWorkspaceShell` enforce management/workspace ownership. `InteractiveWorkspaceSurface.tsx` composes the persistent editor with opt-in, resizable lesson explanation and live terminal panels. `InteractiveVideoControls.tsx` supplies the shared full-width bottom transport, accessible seek range, media surface, learner markers, keyboard controls, and experiment drawer. See `docs/immersive-interactive-experience.md`.
 
 `packages/react/src/Panels/InteractivePocControls.tsx` presents two role views and a collapsed demo walkthrough. The workspace orchestrator lifts the role and teacher-stage state so management can be physically separated from the editor:
 
@@ -818,7 +818,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` renders the full-viewport management shell. `interactive-session.ts` owns explicit screen transitions; `WorkspacePanel.tsx` composes the persistent editor into immersive screens; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, and learner behavior. The existing terminal is portaled into the immersive terminal host rather than duplicated.
+`packages/react/src/Panels/InteractivePocControls.tsx` supplies management content only. `InteractiveExperienceProvider` owns explicit screen transitions; `InteractiveExperienceRoot` portals the product into the dedicated Astro mount; management and persistent workspace shells enforce valid visibility; `WorkspacePanel.tsx` provides TutorialStore/editor integration; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, and learner behavior. The existing terminal has one persistent immersive host and never falls back into management.
 
 ### `InteractiveTeacherDashboard.tsx`
 
