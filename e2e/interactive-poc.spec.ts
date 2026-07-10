@@ -531,6 +531,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('button', { name: /resume lecture/i })).toBeVisible();
     await expect(page.getByText(/work status:/i)).toBeVisible();
     await expect(page.getByLabel(/my experiments/i)).toBeVisible();
+    await expect(page.getByRole('slider', { name: /editor playback timeline/i })).toHaveValue('0');
     await expect(page.getByRole('button', { name: /pause & try it/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /save learner delta/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /restore learner delta/i })).toHaveCount(0);

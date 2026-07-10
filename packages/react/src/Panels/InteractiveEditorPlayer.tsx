@@ -47,8 +47,8 @@ export function InteractiveEditorPlayer({
     onMediaElementRef,
   } = model;
   const isLearnerEditing = mode === 'learner-editing';
-  const timelineEndMs = Math.max(1, recordingDurationMs, playheadMs);
-  const timelineValueMs = Math.min(timelineEndMs, Math.max(0, playheadMs));
+  const timelineEndMs = Math.max(1, recordingDurationMs);
+  const timelineValueMs = recordingDurationMs > 0 ? Math.min(recordingDurationMs, Math.max(0, playheadMs)) : 0;
   const playLabel = audience === 'learner' ? 'Play Lesson' : 'Play Preview';
 
   return (
