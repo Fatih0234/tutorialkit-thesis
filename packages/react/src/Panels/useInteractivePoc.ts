@@ -29,7 +29,6 @@ import {
   parseRecordingPackage,
   saveTeacherRecording,
   setDeckProgress,
-  setPresentationComposition,
   setPresentationMode,
   stepDeckReveal,
   stepDeckSlide,
@@ -176,9 +175,6 @@ export interface InteractivePocControlsModel {
   onRefreshRecordingLibrary: () => void;
   onTeacherPresentationModeChange: (resourceId: string, mode: PresentationMode) => void;
   onLearnerPresentationModeChange: (resourceId: string, mode: PresentationMode) => void;
-  onTeacherPresentationLayoutPreview: (layout: PresentationLayout) => void;
-  onTeacherPresentationLayoutCommit: (layout: PresentationLayout) => void;
-  onLearnerPresentationLayoutChange: (layout: PresentationLayout) => void;
   onTeacherDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
   onLearnerDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
   onUpdatePresentationDeck: (deck: DeckPresentationResource) => void;
@@ -243,53 +239,25 @@ const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
 const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
-const CAMERA_PRESENTATION_RESOURCE: PresentationResource = {
-  id: 'instructor-camera',
-  kind: 'camera',
-  title: 'Instructor Camera',
-};
+const CAMERA_PRESENTATION_RESOURCE: PresentationResource = { id: 'instructor-camera', kind: 'camera', title: 'Instructor Camera' };
 const WHITEBOARD_RESOURCE_ID = 'lecture-whiteboard';
 const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
   { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
   { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
   { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } },
   {
-    id: 'javascript-counter-deck',
-    kind: 'deck',
-    title: 'Building a JavaScript Counter',
-    accent: 'indigo',
+    id: 'javascript-counter-deck', kind: 'deck', title: 'Building a JavaScript Counter', accent: 'indigo',
     slides: [
-      {
-        id: 'counter-state',
-        title: 'JavaScript remembers state',
-        eyebrow: 'Counter concept · 1',
-        elements: [
-          {
-            id: 'state-intro',
-            kind: 'paragraph',
-            text: 'A variable stores the current count between button clicks.',
-            revealStep: 0,
-          },
+      { id: 'counter-state', title: 'JavaScript remembers state', eyebrow: 'Counter concept · 1', elements: [
+        { id: 'state-intro', kind: 'paragraph', text: 'A variable stores the current count between button clicks.', revealStep: 0 },
         { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
         { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
-        ],
-      },
-      {
-        id: 'counter-dom',
-        title: 'Events update the DOM',
-        eyebrow: 'Counter concept · 2',
-        elements: [
+      ] },
+      { id: 'counter-dom', title: 'Events update the DOM', eyebrow: 'Counter concept · 2', elements: [
         { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
         { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
-          {
-            id: 'dom-code',
-            kind: 'code',
-            language: 'javascript',
-            code: "button.addEventListener('click', () => {\n  count += 1;\n  output.textContent = count;\n});",
-            revealStep: 3,
-          },
-        ],
-      },
+        { id: 'dom-code', kind: 'code', language: 'javascript', code: "button.addEventListener('click', () => {\n  count += 1;\n  output.textContent = count;\n});", revealStep: 3 },
+      ] },
     ],
   },
 ];
@@ -307,22 +275,13 @@ function withInstructorCamera(resources: PresentationResource[]): PresentationRe
 function withWhiteboard(resources: PresentationResource[]): PresentationResource[] {
   return resources.some((resource) => resource.kind === 'whiteboard')
     ? resources
-    : [
-        ...resources,
-        { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } },
-      ];
+    : [...resources, { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } }];
 }
 
 function createDefaultPresentationLayout(): PresentationLayout {
   let layout = createPresentationLayout(DEFAULT_PRESENTATION_RESOURCES);
   layout = setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'website-preview', 'minimized');
-  layout = setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'javascript-counter-deck', 'minimized');
-  return setPresentationComposition(DEFAULT_PRESENTATION_RESOURCES, layout, {
-    preset: 'stage-with-sidecar',
-    primarySurfaceId: 'workspace-editor',
-    secondarySurfaceId: 'website-preview',
-    splitRatio: 0.7,
-  });
+  return setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'javascript-counter-deck', 'minimized');
 }
 
 function isFakeMediaRecorderEnabled(): boolean {
@@ -381,17 +340,11 @@ export function useInteractivePoc({
   const workspaceLayoutGuardUntilRef = useRef(0);
   const importPackageFileRef = useRef<File | null>(null);
   const currentUserRef = useRef<InteractiveUser | null>(null);
-  const presentationResourcesRef = useRef<PresentationResource[]>(
-    clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES),
-  );
+  const presentationResourcesRef = useRef<PresentationResource[]>(clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
   const teacherPresentationLayoutRef = useRef<PresentationLayout>(createDefaultPresentationLayout());
   const learnerPresentationOverrideRef = useRef<PresentationLayout | null>(null);
-  const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() =>
-    clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES),
-  );
-  const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(
-    createDefaultPresentationLayout,
-  );
+  const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() => clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
+  const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(createDefaultPresentationLayout);
   const [learnerPresentationOverride, setLearnerPresentationOverride] = useState<PresentationLayout | null>(null);
   const whiteboard = useInteractiveWhiteboard({ elements: [] }, onWhiteboardSceneCommit);
   const [currentUser, setCurrentUserState] = useState<InteractiveUser | null>(null);
@@ -445,9 +398,7 @@ export function useInteractivePoc({
   }
 
   function syncEventCount() {
-    setEventCount(
-      recorderRef.current?.getRecording()?.events.length ?? currentDraftRecordingRef.current?.events.length ?? 0,
-    );
+    setEventCount(recorderRef.current?.getRecording()?.events.length ?? currentDraftRecordingRef.current?.events.length ?? 0);
   }
 
   function setCurrentRecordingSource(source: RecordingStorageSource) {
@@ -932,9 +883,9 @@ export function useInteractivePoc({
   }
 
   function restoreInitialPresentation(recording: TeacherRecording) {
-    const recordedResources = withWhiteboard(
-      recording.presentationResources?.length ? recording.presentationResources : DEFAULT_PRESENTATION_RESOURCES,
-    );
+    const recordedResources = withWhiteboard(recording.presentationResources?.length
+      ? recording.presentationResources
+      : DEFAULT_PRESENTATION_RESOURCES);
     const hasWebcam = recording.mediaAssets?.some((asset) => asset.kind === 'webcam') ?? false;
     const resources = hasWebcam ? withInstructorCamera(recordedResources) : recordedResources;
     let initialLayout = recording.initialPresentationLayout ?? createPresentationLayout(resources);
@@ -944,9 +895,7 @@ export function useInteractivePoc({
     }
 
     setPresentationResourcesAndLayout(resources, initialLayout);
-    const whiteboardResource = resources.find(
-      (resource): resource is WhiteboardPresentationResource => resource.kind === 'whiteboard',
-    );
+    const whiteboardResource = resources.find((resource): resource is WhiteboardPresentationResource => resource.kind === 'whiteboard');
     whiteboard.applyScene(whiteboardResource?.initialScene ?? { elements: [] }, 'initialization');
   }
 
@@ -970,21 +919,7 @@ export function useInteractivePoc({
 
   function onLearnerPresentationModeChange(resourceId: string, mode: PresentationMode) {
     const baseLayout = learnerPresentationOverrideRef.current ?? teacherPresentationLayoutRef.current;
-    onLearnerPresentationLayoutChange(
-      setPresentationMode(presentationResourcesRef.current, baseLayout, resourceId, mode),
-    );
-  }
-
-  function onTeacherPresentationLayoutPreview(layout: PresentationLayout) {
-    applyTeacherPresentationLayout(layout);
-  }
-
-  function onTeacherPresentationLayoutCommit(layout: PresentationLayout) {
-    recordTeacherPresentationLayout(layout);
-  }
-
-  function onLearnerPresentationLayoutChange(layout: PresentationLayout) {
-    const nextLayout = normalizePresentationLayout(presentationResourcesRef.current, layout);
+    const nextLayout = setPresentationMode(presentationResourcesRef.current, baseLayout, resourceId, mode);
     learnerPresentationOverrideRef.current = nextLayout;
     setLearnerPresentationOverride(nextLayout);
   }
@@ -994,10 +929,7 @@ export function useInteractivePoc({
     if (action === 'previous-reveal') return stepDeckReveal(presentationResourcesRef.current, layout, deckId, -1);
     if (action === 'next-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, 1);
     if (action === 'previous-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, -1);
-    return setDeckProgress(presentationResourcesRef.current, layout, deckId, {
-      slideIndex: slideIndex ?? 0,
-      revealedStep: 0,
-    });
+    return setDeckProgress(presentationResourcesRef.current, layout, deckId, { slideIndex: slideIndex ?? 0, revealedStep: 0 });
   }
 
   function recordTeacherPresentationLayout(nextLayout: PresentationLayout) {
@@ -1022,9 +954,7 @@ export function useInteractivePoc({
   }
 
   function onUpdatePresentationDeck(deck: DeckPresentationResource) {
-    const nextResources = presentationResourcesRef.current.map((resource) =>
-      resource.id === deck.id ? structuredClone(deck) : resource,
-    );
+    const nextResources = presentationResourcesRef.current.map((resource) => resource.id === deck.id ? structuredClone(deck) : resource);
     const nextLayout = normalizePresentationLayout(nextResources, teacherPresentationLayoutRef.current);
     setPresentationResourcesAndLayout(nextResources, nextLayout);
   }
@@ -1039,11 +969,9 @@ export function useInteractivePoc({
       return;
     }
 
-    const nextResources = presentationResourcesRef.current.map((resource) =>
-      resource.kind === 'whiteboard' && resource.id === WHITEBOARD_RESOURCE_ID
-        ? ({ ...resource, initialScene: structuredClone(scene) } satisfies WhiteboardPresentationResource)
-        : resource,
-    );
+    const nextResources = presentationResourcesRef.current.map((resource) => resource.kind === 'whiteboard' && resource.id === WHITEBOARD_RESOURCE_ID
+      ? { ...resource, initialScene: structuredClone(scene) } satisfies WhiteboardPresentationResource
+      : resource);
     setPresentationResourcesAndLayout(nextResources, teacherPresentationLayoutRef.current);
   }
 
@@ -1075,8 +1003,7 @@ export function useInteractivePoc({
   function applyPlaybackEvent(event: TimelineEvent) {
     if (event.type === 'whiteboard.scene.changed') {
       const payload = event.payload as WhiteboardSceneChangedPayload | undefined;
-      if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene)
-        whiteboard.applyScene(payload.scene, 'playback');
+      if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene) whiteboard.applyScene(payload.scene, 'playback');
       return;
     }
 
@@ -1187,11 +1114,7 @@ export function useInteractivePoc({
     restoreTeacherWorkspaceAt(currentTimeMs, recording);
   }
 
-  function getPlaybackEndMs(
-    events: TimelineEvent[],
-    recording: TeacherRecording,
-    mediaAsset?: RecordingMediaAsset | null,
-  ) {
+  function getPlaybackEndMs(events: TimelineEvent[], recording: TeacherRecording, mediaAsset?: RecordingMediaAsset | null) {
     return Math.max(events.at(-1)?.tMs ?? 0, recording.durationMs ?? 0, mediaAsset?.durationMs ?? 0);
   }
 
@@ -1273,11 +1196,7 @@ export function useInteractivePoc({
     mediaElement.onended = () => stopPlayback('finished');
   }
 
-  function playRecordingFrom(
-    startMs: number,
-    { resetToBase }: { resetToBase: boolean },
-    recordingOverride?: TeacherRecording,
-  ) {
+  function playRecordingFrom(startMs: number, { resetToBase }: { resetToBase: boolean }, recordingOverride?: TeacherRecording) {
     const recording = recordingOverride ?? playbackRecordingRef.current;
 
     stopPlaybackDrivers({ pauseMedia: true });
@@ -1553,32 +1472,23 @@ export function useInteractivePoc({
     }
 
     const startedAtMs = Date.now();
-    const recordingResources =
-      mediaRecorder && mediaKindToRecord === 'webcam'
+    const recordingResources = mediaRecorder && mediaKindToRecord === 'webcam'
       ? withInstructorCamera(presentationResourcesRef.current)
       : presentationResourcesRef.current;
-    const recordingLayout =
-      mediaRecorder && mediaKindToRecord === 'webcam'
-        ? setPresentationMode(
-            recordingResources,
-            teacherPresentationLayoutRef.current,
-            CAMERA_PRESENTATION_RESOURCE.id,
-            'minimized',
-          )
+    const recordingLayout = mediaRecorder && mediaKindToRecord === 'webcam'
+      ? setPresentationMode(recordingResources, teacherPresentationLayoutRef.current, CAMERA_PRESENTATION_RESOURCE.id, 'minimized')
       : normalizePresentationLayout(recordingResources, teacherPresentationLayoutRef.current);
 
     setPresentationResourcesAndLayout(recordingResources, recordingLayout);
 
-    const recording = getRecordingWithOwner(
-      recorder.start({
+    const recording = getRecordingWithOwner(recorder.start({
       lessonId,
       version: 1,
       baseFiles,
       startedAtMs,
       presentationResources: recordingResources,
       initialPresentationLayout: recordingLayout,
-      }),
-    );
+    }));
 
     if (selectedFile) {
       recorder.append('file.opened', {
@@ -1881,9 +1791,7 @@ export function useInteractivePoc({
     const targetId = recordingId || selectedPublishedRecordingId;
     const currentRecording = playbackRecordingRef.current;
     const recording =
-      currentRecording &&
-      currentRecordingSourceRef.current === 'published' &&
-      (!targetId || currentRecording.id === targetId)
+      currentRecording && currentRecordingSourceRef.current === 'published' && (!targetId || currentRecording.id === targetId)
         ? currentRecording
         : await loadPublishedRecording(targetId);
 
@@ -2385,12 +2293,7 @@ export function useInteractivePoc({
   function onFileSelect(filePath: string | undefined) {
     tutorialStore.setSelectedFile(filePath);
 
-    if (
-      !filePath ||
-      modeRef.current !== 'idle' ||
-      isApplyingPlaybackRef.current ||
-      !recorderRef.current?.isRecording()
-    ) {
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -2459,12 +2362,7 @@ export function useInteractivePoc({
 
     const filePath = getCurrentFilePath();
 
-    if (
-      !filePath ||
-      modeRef.current !== 'idle' ||
-      isApplyingPlaybackRef.current ||
-      !recorderRef.current?.isRecording()
-    ) {
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
       return;
     }
 
@@ -2493,16 +2391,12 @@ export function useInteractivePoc({
   }, []);
 
   const hasCurrentDraftRecording = currentDraftRecordingRef.current !== null;
-  const hasCurrentPublishedRecording =
-    currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
-  const hasDraftSelection = Boolean(
-    selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0,
-  );
+  const hasCurrentPublishedRecording = currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
+  const hasDraftSelection = Boolean(selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0);
   const canStartAnyRecording = !isRecording && mode === 'idle' && lessonFullyLoaded;
   const canPublishAsTeacher = canPublishInteractiveRecording(currentUser);
   const canUseLearnerWork = canSaveInteractiveLearnerWork(currentUser);
-  const canSaveLearnerDelta =
-    mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp && canUseLearnerWork;
+  const canSaveLearnerDelta = mode === 'learner-editing' && hasTeacherRecording && hasPausedTeacherTimestamp && canUseLearnerWork;
   const hasExportableRecording = Boolean(
     selectedPublishedRecordingId ||
       selectedDraftId ||
@@ -2570,14 +2464,9 @@ export function useInteractivePoc({
       canSaveDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
       canLoadDraft: !isRecording && mode === 'idle',
       canPreviewDraft: (hasCurrentDraftRecording || hasDraftSelection) && !isRecording && mode === 'idle',
-      canDiscardDraft:
-        (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
+      canDiscardDraft: (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
       canPublishRecording:
-        hasCurrentDraftRecording &&
-        !isRecording &&
-        mode === 'idle' &&
-        publishedStatus !== 'publishing' &&
-        canPublishAsTeacher,
+        hasCurrentDraftRecording && !isRecording && mode === 'idle' && publishedStatus !== 'publishing' && canPublishAsTeacher,
       canLoadPublishedRecording: !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
       canPreviewPublishedRecording:
         (hasCurrentPublishedRecording || Boolean(selectedPublishedRecordingId || publishedRecordings.length > 0)) &&
@@ -2586,8 +2475,7 @@ export function useInteractivePoc({
       canDeleteSelectedDraft: hasDraftSelection && !isRecording && mode !== 'teacher-playback',
       canDeletePublishedRecording: canPublishAsTeacher && !isRecording && publishedDeleteStatus !== 'deleting',
       canExportRecording: hasExportableRecording && !isRecording && mode === 'idle' && exportStatus !== 'exporting',
-      canImportRecordingPackage:
-        hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
+      canImportRecordingPackage: hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
       canImportPublishedPackage:
         hasSelectedImportPackage &&
         !isRecording &&
@@ -2595,8 +2483,7 @@ export function useInteractivePoc({
         !importStatus.startsWith('importing') &&
         canPublishAsTeacher,
       canSeedDemoData: !isRecording && mode === 'idle' && canPublishAsTeacher && demoDataStatus !== 'seeding',
-      canResetDemoData:
-        !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
+      canResetDemoData: !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
       canPlayRecording: !isRecording && mode === 'idle',
       canPausePlayback: isPlaying,
       canSeekPlayback: Boolean(playbackRecordingRef.current) && !isRecording && mode !== 'learner-editing',
@@ -2608,9 +2495,6 @@ export function useInteractivePoc({
       onRefreshRecordingLibrary,
       onTeacherPresentationModeChange,
       onLearnerPresentationModeChange,
-      onTeacherPresentationLayoutPreview,
-      onTeacherPresentationLayoutCommit,
-      onLearnerPresentationLayoutChange,
       onTeacherDeckAction,
       onLearnerDeckAction,
       onUpdatePresentationDeck,

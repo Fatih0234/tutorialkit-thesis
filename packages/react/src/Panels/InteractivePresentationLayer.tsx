@@ -1,20 +1,14 @@
-import { useEffect, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
-import {
-  WORKSPACE_EDITOR_SURFACE_ID,
-  movePresentationSurface,
-  resolvePresentationComposition,
-  setPresentationComposition,
-  setPresentationMode,
-  type DeckPresentationResource,
-  type DeckPlaybackState,
-  type PresentationCompositionPreset,
-  type PresentationLayout,
-  type PresentationMode,
-  type PresentationResource,
-  type PresentationSlide,
-  type PresentationSlideElement,
-  type SlidePresentationResource,
-  type WhiteboardScene,
+import { useEffect, type ReactNode } from 'react';
+import type {
+  DeckPresentationResource,
+  DeckPlaybackState,
+  PresentationLayout,
+  PresentationMode,
+  PresentationResource,
+  PresentationSlide,
+  PresentationSlideElement,
+  SlidePresentationResource,
+  WhiteboardScene,
 } from '@tutorialkit/runtime';
 import type { DeckAction } from './useInteractivePoc.js';
 import { InteractiveButton } from './InteractivePocUi.js';
@@ -24,14 +18,10 @@ interface Props {
   audience: 'teacher' | 'learner';
   resources: PresentationResource[];
   layout: PresentationLayout;
-  workspaceContent: ReactNode;
-  canArrange: boolean;
   hasLearnerOverride: boolean;
   explanationHtml: string;
   canEditDeck: boolean;
   onModeChange: (resourceId: string, mode: PresentationMode) => void;
-  onLayoutPreview: (layout: PresentationLayout) => void;
-  onLayoutCommit: (layout: PresentationLayout) => void;
   onDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
   onDeckChange: (deck: DeckPresentationResource) => void;
   onFollowTeacher: () => void;
@@ -44,629 +34,82 @@ interface Props {
   onWhiteboardSceneCommit: (scene: WhiteboardScene) => void;
 }
 
-export function InteractivePresentationLayer(props: Props) {
-  const {
-    audience,
-    resources,
-    layout,
-    workspaceContent,
-    canArrange,
-    hasLearnerOverride,
-    explanationHtml,
-    canEditDeck,
-    onModeChange,
-    onLayoutPreview,
-    onLayoutCommit,
-    onDeckAction,
-    onDeckChange,
-    onFollowTeacher,
-    onPreviewHostChange,
-    cameraMediaUrl,
-    onCameraMediaElementRef,
-    whiteboardScene,
-    whiteboardReadOnly,
-    whiteboardError,
-    onWhiteboardSceneCommit,
-  } = props;
-  const composition = resolvePresentationComposition(resources, layout);
-  const [arranging, setArranging] = useState(false);
-  const [narrow, setNarrow] = useState(false);
-  const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  const hasSecondary = composition.preset !== 'focus' && Boolean(composition.secondarySurfaceId);
+export function InteractivePresentationLayer({ audience, resources, layout, hasLearnerOverride, explanationHtml, canEditDeck, onModeChange, onDeckAction, onDeckChange, onFollowTeacher, onPreviewHostChange, cameraMediaUrl, onCameraMediaElementRef, whiteboardScene, whiteboardReadOnly, whiteboardError, onWhiteboardSceneCommit }: Props) {
+  const focusedResource = resources.find((resource) => resource.id === layout.focusedResourceId);
+  const previewResource = resources.find((resource) => resource.kind === 'preview');
+  const previewMode = previewResource ? layout.resources[previewResource.id] ?? 'hidden' : 'hidden';
+  const cameraResource = resources.find((resource) => resource.kind === 'camera');
+  const cameraMode = cameraResource ? layout.resources[cameraResource.id] ?? 'hidden' : 'hidden';
+  const whiteboardResource = resources.find((resource) => resource.kind === 'whiteboard');
+  const whiteboardMode = whiteboardResource ? layout.resources[whiteboardResource.id] ?? 'hidden' : 'hidden';
 
   useEffect(() => {
-    if (!root) return undefined;
-    const observer = new ResizeObserver(([entry]) => setNarrow((entry?.contentRect.width ?? root.clientWidth) < 760));
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, [root]);
-
-  useEffect(() => {
+    if (!focusedResource) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"], .cm-editor, .xterm')) return;
-      if (event.key === 'Escape' && composition.preset === 'focus' && composition.secondarySurfaceId) {
+      if (event.key === 'Escape') {
         event.preventDefault();
-        onLayoutCommit(setPresentationComposition(resources, layout, { preset: 'stage-with-sidecar' }));
-      }
-      const focused = resources.find(
-        (resource) => resource.id === composition.primarySurfaceId && resource.kind === 'deck',
-      );
-      if (focused && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+        onModeChange(focusedResource.id, 'minimized');
+      } else if (focusedResource.kind === 'deck' && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
         event.preventDefault();
-        onDeckAction(focused.id, event.key === 'ArrowRight' ? 'next-reveal' : 'previous-reveal');
-      } else if (focused && (event.key === 'PageDown' || event.key === 'PageUp')) {
+        onDeckAction(focusedResource.id, event.key === 'ArrowRight' ? 'next-reveal' : 'previous-reveal');
+      } else if (focusedResource.kind === 'deck' && (event.key === 'PageDown' || event.key === 'PageUp')) {
         event.preventDefault();
-        onDeckAction(focused.id, event.key === 'PageDown' ? 'next-slide' : 'previous-slide');
+        onDeckAction(focusedResource.id, event.key === 'PageDown' ? 'next-slide' : 'previous-slide');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    composition.preset,
-    composition.primarySurfaceId,
-    composition.secondarySurfaceId,
-    layout,
-    onDeckAction,
-    onLayoutCommit,
-    resources,
-  ]);
-
-  const update = (next: PresentationLayout, commit = true) => (commit ? onLayoutCommit(next) : onLayoutPreview(next));
-  const move = (surfaceId: string, target: 'primary' | 'secondary' | 'tray') =>
-    update(movePresentationSurface(resources, layout, surfaceId, target));
-  const focusSurface = (surfaceId: string) =>
-    update(
-      setPresentationComposition(resources, movePresentationSurface(resources, layout, surfaceId, 'primary'), {
-        preset: 'focus',
-      }),
-    );
-  const setPreset = (preset: PresentationCompositionPreset) =>
-    update(setPresentationComposition(resources, layout, { preset }));
-  const onDrop = (event: DragEvent, target: 'primary' | 'secondary' | 'tray') => {
-    event.preventDefault();
-    const surfaceId = event.dataTransfer.getData('text/presentation-surface');
-    if (surfaceId) move(surfaceId, target);
-  };
-  const gridStyle = {
-    gridTemplateColumns:
-      !hasSecondary || narrow
-        ? 'minmax(0, 1fr)'
-        : `minmax(0, ${composition.splitRatio}fr) minmax(0, ${1 - composition.splitRatio}fr)`,
-    gridTemplateRows: hasSecondary && narrow ? 'minmax(0, 1fr) minmax(12rem, .72fr)' : 'minmax(0, 1fr)',
-  } satisfies CSSProperties;
+  }, [focusedResource, onDeckAction, onModeChange]);
 
   return (
-    <div
-      ref={setRoot}
-      data-presentation-layer
-      data-composition-preset={composition.preset}
-      data-composition-responsive={narrow ? 'stacked' : 'split'}
-      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-tk-elements-panel-backgroundColor"
-    >
-      <nav
-        aria-label="Lesson composition"
-        className="flex min-h-11 shrink-0 flex-wrap items-center gap-1 border-b border-tk-elements-app-borderColor bg-tk-background-primary px-2 py-1"
-      >
-        <strong className="mr-1 text-[10px] uppercase tracking-[0.12em] text-tk-text-secondary">Lesson view</strong>
-        {canArrange ? (
-          <InteractiveButton
-            variant={arranging ? 'primary' : 'ghost'}
-            icon="i-ph-layout"
-            aria-pressed={arranging}
-            onClick={() => setArranging(!arranging)}
-          >
-            Arrange Layout
-          </InteractiveButton>
-        ) : null}
-        <InteractiveButton
-          variant="ghost"
-          aria-pressed={composition.preset === 'focus'}
-          onClick={() => setPreset('focus')}
-        >
-          Focus
-        </InteractiveButton>
-        <InteractiveButton
-          variant="ghost"
-          aria-pressed={composition.preset === 'side-by-side'}
-          disabled={!composition.secondarySurfaceId}
-          onClick={() => setPreset('side-by-side')}
-        >
-          Side-by-side
-        </InteractiveButton>
-        <InteractiveButton
-          variant="ghost"
-          aria-pressed={composition.preset === 'stage-with-sidecar'}
-          disabled={!composition.secondarySurfaceId}
-          onClick={() => setPreset('stage-with-sidecar')}
-        >
-          Stage with Sidecar
-        </InteractiveButton>
-        {audience === 'learner' && hasLearnerOverride ? (
-          <InteractiveButton variant="primary" icon="i-ph-broadcast" onClick={onFollowTeacher} className="ml-auto">
-            Follow Teacher
-          </InteractiveButton>
-        ) : null}
-      </nav>
-
-      <div className="relative min-h-0 flex-1">
-        <div
-          data-composition-grid
-          className="grid h-full min-h-0 gap-1 bg-tk-elements-app-borderColor"
-          style={gridStyle}
-        >
-          <CompositionSurface
-            id={WORKSPACE_EDITOR_SURFACE_ID}
-            title="Editor"
-            role={surfaceRole(
-              WORKSPACE_EDITOR_SURFACE_ID,
-              composition.primarySurfaceId,
-              composition.secondarySurfaceId,
-              hasSecondary,
-            )}
-            arranging={arranging}
-            onMove={move}
-            onFocus={focusSurface}
-            onDrop={onDrop}
-          >
-            {workspaceContent}
-          </CompositionSurface>
-          {resources
-            .filter((resource) => resource.kind !== 'camera')
-            .map((resource) => (
-              <CompositionSurface
-                key={resource.id}
-                id={resource.id}
-                title={resource.title}
-                role={
-                  layout.resources[resource.id] === 'hidden'
-                    ? 'hidden'
-                    : surfaceRole(
-                        resource.id,
-                        composition.primarySurfaceId,
-                        composition.secondarySurfaceId,
-                        hasSecondary,
-                      )
-                }
-                arranging={arranging}
-                onMove={move}
-                onFocus={focusSurface}
-                onDrop={onDrop}
-                onHide={() => onModeChange(resource.id, 'hidden')}
-              >
-                <ResourceContent
-                  resource={resource}
-                  compact={resource.id === composition.secondarySurfaceId}
-                  explanationHtml={explanationHtml}
-                  canEditDeck={canEditDeck && resource.id === composition.primarySurfaceId}
-                  onDeckAction={onDeckAction}
-                  onDeckChange={onDeckChange}
-                  onPreviewHostChange={onPreviewHostChange}
-                  whiteboardScene={whiteboardScene}
-                  whiteboardReadOnly={whiteboardReadOnly}
-                  whiteboardError={whiteboardError}
-                  onWhiteboardSceneCommit={onWhiteboardSceneCommit}
-                  layout={layout}
-                />
-              </CompositionSurface>
-            ))}
-        </div>
-
-        {hasSecondary && !narrow ? (
-          <label className="pointer-events-auto absolute bottom-2 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-tk-elements-app-borderColor bg-tk-background-primary/95 px-3 py-1 text-[10px] shadow-lg">
-            Stage split
-            <input
-              aria-label="Stage split ratio"
-              type="range"
-              min="50"
-              max="80"
-              value={Math.round(composition.splitRatio * 100)}
-              onChange={(event) =>
-                update(
-                  setPresentationComposition(resources, layout, { splitRatio: Number(event.target.value) / 100 }),
-                  false,
-                )
-              }
-              onPointerUp={(event) =>
-                update(
-                  setPresentationComposition(resources, layout, {
-                    splitRatio: Number((event.target as HTMLInputElement).value) / 100,
-                  }),
-                )
-              }
-              onKeyUp={(event) =>
-                update(
-                  setPresentationComposition(resources, layout, {
-                    splitRatio: Number((event.target as HTMLInputElement).value) / 100,
-                  }),
-                )
-              }
-            />
-          </label>
-        ) : null}
-
-        <div
-          aria-label="Resource tray"
-          data-composition-tray
-          className="pointer-events-auto absolute bottom-2 left-2 z-40 flex max-w-[calc(100%-1rem)] flex-wrap gap-1 rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary/95 p-1 shadow-lg"
-          onDragOver={(event) => arranging && event.preventDefault()}
-          onDrop={(event) => onDrop(event, 'tray')}
-        >
-          <TrayButton
-            id={WORKSPACE_EDITOR_SURFACE_ID}
-            title="Editor"
-            hidden={
-              composition.primarySurfaceId === WORKSPACE_EDITOR_SURFACE_ID ||
-              composition.secondarySurfaceId === WORKSPACE_EDITOR_SURFACE_ID
-            }
-            arranging={arranging}
-            onMove={move}
-            onFocus={focusSurface}
-          />
-          {resources
-            .filter((resource) => resource.kind !== 'camera')
-            .map((resource) => (
-              <TrayButton
-                key={resource.id}
-                id={resource.id}
-                title={resource.title}
-                hidden={
-                  layout.resources[resource.id] === 'hidden' ||
-                  composition.primarySurfaceId === resource.id ||
-                  composition.secondarySurfaceId === resource.id
-                }
-                arranging={arranging}
-                onMove={move}
-                onFocus={focusSurface}
-                onHide={() => onModeChange(resource.id, 'hidden')}
-              />
-            ))}
-          {resources
-            .filter((resource) => resource.kind !== 'camera' && layout.resources[resource.id] === 'hidden')
-            .map((resource) => (
-              <InteractiveButton
-                key={`hidden-${resource.id}`}
-                variant="ghost"
-                icon={resourceIcon(resource)}
-                aria-label={`Show presentation resource: ${resource.title}`}
-                onClick={() => onModeChange(resource.id, 'minimized')}
-              >
-                Show {resource.title}
+    <div data-presentation-layer className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+      <div className={`pointer-events-auto absolute right-3 top-3 z-30 max-w-[70%] flex-wrap justify-end gap-1 rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary/95 p-1.5 shadow-lg ${focusedResource ? 'hidden' : 'flex'}`}>
+        <span className="self-center px-2 text-[10px] font-700 uppercase tracking-[0.12em] text-tk-text-secondary">Resources</span>
+        {resources.filter((resource) => resource.kind !== 'camera' || Boolean(cameraMediaUrl)).map((resource) => (
+          <InteractiveButton key={resource.id} variant="ghost" icon={resourceIcon(resource)} aria-pressed={layout.resources[resource.id] !== 'hidden'} aria-label={`${layout.resources[resource.id] === 'hidden' ? 'Show' : 'Hide'} presentation resource: ${resource.title}`} onClick={() => onModeChange(resource.id, layout.resources[resource.id] === 'hidden' ? 'minimized' : 'hidden')}>
+            {resource.title}
           </InteractiveButton>
         ))}
       </div>
 
-        <CameraOverlay
-          resources={resources}
-          layout={layout}
-          composition={composition}
-          mediaUrl={cameraMediaUrl}
-          mediaRef={onCameraMediaElementRef}
-          arranging={arranging}
-          onLayoutCommit={onLayoutCommit}
-          onModeChange={onModeChange}
-        />
+      {audience === 'learner' && hasLearnerOverride ? <div className="pointer-events-auto absolute left-3 top-3 z-50"><InteractiveButton variant="primary" icon="i-ph-broadcast" onClick={onFollowTeacher}>Follow teacher</InteractiveButton></div> : null}
+      {previewMode === 'focused' || cameraMode === 'focused' || whiteboardMode === 'focused' ? <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm" aria-hidden="true" /> : null}
+
+      {focusedResource && focusedResource.kind !== 'preview' && focusedResource.kind !== 'camera' && focusedResource.kind !== 'whiteboard' ? (
+        <div data-presentation-focus className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-6 pb-10 backdrop-blur-sm">
+          <PresentationFrame resource={focusedResource} mode="focused" onModeChange={onModeChange}>
+            {focusedResource.kind === 'deck' ? <DeckContent deck={focusedResource} progress={layout.deckStates?.[focusedResource.id]} compact={false} canEdit={canEditDeck} onAction={onDeckAction} onChange={onDeckChange} /> : null}
+            {focusedResource.kind === 'slide' ? <LegacySlideContent resource={focusedResource} /> : null}
+            {focusedResource.kind === 'explanation' ? <ExplanationContent html={explanationHtml} /> : null}
+          </PresentationFrame>
         </div>
+      ) : null}
+
+      <div className={`absolute left-4 z-10 flex max-w-[45%] flex-col-reverse gap-3 ${cameraMode === 'minimized' && cameraMediaUrl ? 'bottom-60' : 'bottom-4'}`}>
+        {resources.filter((resource) => resource.kind !== 'preview' && resource.kind !== 'camera' && resource.kind !== 'whiteboard' && layout.resources[resource.id] === 'minimized').map((resource) => (
+          <PresentationFrame key={resource.id} resource={resource} mode="minimized" onModeChange={onModeChange}>
+            {resource.kind === 'deck' ? <DeckContent deck={resource} progress={layout.deckStates?.[resource.id]} compact canEdit={false} onAction={onDeckAction} onChange={onDeckChange} /> : null}
+            {resource.kind === 'slide' ? <LegacySlideContent resource={resource} compact /> : null}
+            {resource.kind === 'explanation' ? <ExplanationContent html={explanationHtml} compact /> : null}
+          </PresentationFrame>
+        ))}
+      </div>
+
+      {previewResource ? <section aria-label="Website preview presentation" data-presentation-resource={previewResource.id} data-presentation-mode={previewMode} className={previewContainerClass(previewMode)}><ResourceHeader resource={previewResource} mode={previewMode} onModeChange={onModeChange} /><div ref={onPreviewHostChange} data-presentation-preview-host className="min-h-0 flex-1 overflow-hidden bg-white" /></section> : null}
+      {whiteboardResource ? <section aria-label="Whiteboard presentation" aria-hidden={whiteboardMode === 'hidden'} data-presentation-resource={whiteboardResource.id} data-presentation-mode={whiteboardMode} className={whiteboardContainerClass(whiteboardMode)}><ResourceHeader resource={whiteboardResource} mode={whiteboardMode} onModeChange={onModeChange} /><div className="min-h-0 flex-1"><InteractiveWhiteboard scene={whiteboardScene} readOnly={whiteboardReadOnly} error={whiteboardError} onSceneCommit={onWhiteboardSceneCommit} /></div></section> : null}
+      {cameraResource && cameraMediaUrl ? <section aria-label="Instructor Camera presentation" data-presentation-resource={cameraResource.id} data-presentation-mode={cameraMode} className={cameraContainerClass(cameraMode)}><ResourceHeader resource={cameraResource} mode={cameraMode} onModeChange={onModeChange} /><video aria-label="Recorded instructor camera" playsInline preload="auto" src={cameraMediaUrl} ref={onCameraMediaElementRef} className="pointer-events-none min-h-0 flex-1 bg-black object-cover" /></section> : null}
     </div>
   );
 }
 
-type SurfaceRole = 'primary' | 'secondary' | 'tray' | 'hidden';
-function surfaceRole(id: string, primary: string, secondary: string | undefined, showSecondary: boolean): SurfaceRole {
-  return id === primary ? 'primary' : showSecondary && id === secondary ? 'secondary' : 'tray';
+function PresentationFrame({ resource, mode, onModeChange, children }: { resource: PresentationResource; mode: 'minimized' | 'focused'; onModeChange: (resourceId: string, mode: PresentationMode) => void; children: ReactNode }) {
+  return <section aria-label={`${resource.title} presentation`} data-presentation-resource={resource.id} data-presentation-mode={mode} className={mode === 'focused' ? 'flex h-[min(82vh,800px)] w-[min(88vw,1280px)] flex-col overflow-hidden rounded-xl border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl' : 'pointer-events-auto flex h-52 w-80 flex-col overflow-hidden rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary shadow-xl'}><ResourceHeader resource={resource} mode={mode} onModeChange={onModeChange} /><div className="min-h-0 flex-1 overflow-auto">{children}</div></section>;
 }
 
-function CompositionSurface({
-  id,
-  title,
-  role,
-  arranging,
-  onMove,
-  onFocus,
-  onDrop,
-  onHide,
-  children,
-}: {
-  id: string;
-  title: string;
-  role: SurfaceRole;
-  arranging: boolean;
-  onMove: (id: string, target: 'primary' | 'secondary' | 'tray') => void;
-  onFocus: (id: string) => void;
-  onDrop: (event: DragEvent, target: 'primary' | 'secondary' | 'tray') => void;
-  onHide?: () => void;
-  children: ReactNode;
-}) {
-  const active = role === 'primary' || role === 'secondary';
-  return (
-    <section
-      aria-label={`${title} ${active ? `${role} stage` : 'presentation'}`}
-      aria-hidden={!active}
-      data-composition-surface={id}
-      data-composition-role={role}
-      data-presentation-resource={id === WORKSPACE_EDITOR_SURFACE_ID ? undefined : id}
-      data-presentation-mode={
-        role === 'primary' ? 'focused' : role === 'secondary' || role === 'tray' ? 'minimized' : 'hidden'
-      }
-      className={
-        active
-          ? 'relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-tk-elements-panel-backgroundColor'
-          : 'absolute -left-[10000px] top-0 flex h-px w-px flex-col overflow-hidden opacity-0'
-      }
-      onDragOver={(event) => arranging && event.preventDefault()}
-      onDrop={(event) => active && onDrop(event, role)}
-    >
-      <header
-        draggable={arranging && active}
-        onDragStart={(event) => event.dataTransfer.setData('text/presentation-surface', id)}
-        className={`flex h-9 shrink-0 items-center gap-2 border-b border-tk-elements-app-borderColor bg-tk-background-primary px-2 ${arranging && active ? 'cursor-grab ring-1 ring-inset ring-tk-text-accent' : ''}`}
-      >
-        <span className="i-ph-dots-six-vertical text-tk-text-secondary" aria-hidden="true" />
-        <strong className="min-w-0 flex-1 truncate text-xs">{title}</strong>
-        {active && role !== 'primary' ? (
-          <InteractiveButton variant="ghost" icon="i-ph-arrows-out-simple" onClick={() => onFocus(id)} className="px-2">
-            <span className="sr-only">Focus {title}</span>
-          </InteractiveButton>
-        ) : null}
-        {active ? (
-          <InteractiveButton variant="ghost" icon="i-ph-minus" onClick={() => onMove(id, 'tray')} className="px-2">
-            <span className="sr-only">Minimize {title}</span>
-          </InteractiveButton>
-        ) : null}
-        {active && onHide ? (
-          <InteractiveButton variant="ghost" icon="i-ph-x" onClick={onHide} className="px-2">
-            <span className="sr-only">Hide {title}</span>
-          </InteractiveButton>
-        ) : null}
-      </header>
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-      {arranging && active ? (
-        <div className="pointer-events-none absolute inset-2 grid place-items-center rounded-lg border-2 border-dashed border-tk-text-accent bg-tk-background-primary/20 text-xs font-700 uppercase tracking-wider">
-          {role === 'primary' ? 'Main Stage' : 'Sidecar'}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function TrayButton({
-  id,
-  title,
-  hidden,
-  arranging,
-  onMove,
-  onFocus,
-  onHide,
-}: {
-  id: string;
-  title: string;
-  hidden: boolean;
-  arranging: boolean;
-  onMove: (id: string, target: 'primary' | 'secondary' | 'tray') => void;
-  onFocus: (id: string) => void;
-  onHide?: () => void;
-}) {
-  if (hidden) return null;
-  return (
-    <div
-      data-composition-tray-item={id}
-      draggable={arranging}
-      onDragStart={(event) => event.dataTransfer.setData('text/presentation-surface', id)}
-      className="flex items-center rounded border border-tk-elements-app-borderColor bg-tk-background-secondary"
-    >
-      <InteractiveButton variant="ghost" aria-label={`Focus ${title}`} onClick={() => onFocus(id)}>
-        {title}
-      </InteractiveButton>
-      {arranging ? (
-        <>
-          <button type="button" className="px-1 text-[10px]" onClick={() => onMove(id, 'primary')}>
-            Main
-          </button>
-          <button type="button" className="px-1 text-[10px]" onClick={() => onMove(id, 'secondary')}>
-            Side
-          </button>
-        </>
-      ) : null}
-      {onHide ? (
-        <button type="button" aria-label={`Hide ${title}`} className="px-1 text-xs" onClick={onHide}>
-          ×
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function ResourceContent({
-  resource,
-  compact,
-  explanationHtml,
-  canEditDeck,
-  onDeckAction,
-  onDeckChange,
-  onPreviewHostChange,
-  whiteboardScene,
-  whiteboardReadOnly,
-  whiteboardError,
-  onWhiteboardSceneCommit,
-  layout,
-}: {
-  resource: PresentationResource;
-  compact: boolean;
-  explanationHtml: string;
-  canEditDeck: boolean;
-  onDeckAction: Props['onDeckAction'];
-  onDeckChange: Props['onDeckChange'];
-  onPreviewHostChange: Props['onPreviewHostChange'];
-  whiteboardScene: WhiteboardScene;
-  whiteboardReadOnly: boolean;
-  whiteboardError: string;
-  onWhiteboardSceneCommit: Props['onWhiteboardSceneCommit'];
-  layout: PresentationLayout;
-}) {
-  if (resource.kind === 'preview')
-    return (
-      <div
-        ref={onPreviewHostChange}
-        data-presentation-preview-host
-        className="h-full min-h-0 overflow-hidden bg-white"
-      />
-    );
-  if (resource.kind === 'whiteboard')
-    return (
-      <InteractiveWhiteboard
-        scene={whiteboardScene}
-        readOnly={whiteboardReadOnly}
-        error={whiteboardError}
-        onSceneCommit={onWhiteboardSceneCommit}
-      />
-    );
-  if (resource.kind === 'deck')
-    return (
-      <DeckContent
-        deck={resource}
-        progress={layout.deckStates?.[resource.id]}
-        compact={compact}
-        canEdit={canEditDeck}
-        onAction={onDeckAction}
-        onChange={onDeckChange}
-      />
-    );
-  if (resource.kind === 'slide') return <LegacySlideContent resource={resource} compact={compact} />;
-  if (resource.kind === 'explanation') return <ExplanationContent html={explanationHtml} compact={compact} />;
-  return null;
-}
-
-function CameraOverlay({
-  resources,
-  layout,
-  composition,
-  mediaUrl,
-  mediaRef,
-  arranging,
-  onLayoutCommit,
-  onModeChange,
-}: {
-  resources: PresentationResource[];
-  layout: PresentationLayout;
-  composition: ReturnType<typeof resolvePresentationComposition>;
-  mediaUrl: string;
-  mediaRef: Props['onCameraMediaElementRef'];
-  arranging: boolean;
-  onLayoutCommit: Props['onLayoutCommit'];
-  onModeChange: Props['onModeChange'];
-}) {
-  const camera = resources.find((resource) => resource.kind === 'camera');
-  if (!camera) return null;
-  const hidden = layout.resources[camera.id] === 'hidden';
-  const anchors = {
-    'top-left': 'left-3 top-3',
-    'top-right': 'right-3 top-3',
-    'bottom-left': 'bottom-16 left-3',
-    'bottom-right': 'bottom-16 right-3',
-  } as const;
-  const sizes = { small: 'h-32 w-48', medium: 'h-48 w-72', large: 'h-[min(45vh,28rem)] w-[min(45vw,42rem)]' } as const;
-  if (hidden)
-    return (
-      <>
-        <div className="pointer-events-auto absolute right-3 top-3 z-50">
-          <InteractiveButton
-            aria-label="Show presentation resource: Instructor Camera"
-            onClick={() => onModeChange(camera.id, 'minimized')}
-          >
-            Show Instructor Camera
-          </InteractiveButton>
-        </div>
-        <section
-          aria-label="Instructor Camera presentation"
-          aria-hidden="true"
-          data-presentation-resource={camera.id}
-          data-presentation-mode="hidden"
-          className="absolute -left-[10000px] top-0 h-px w-px overflow-hidden"
-        >
-          {mediaUrl ? <video src={mediaUrl} ref={mediaRef} /> : null}
-        </section>
-      </>
-    );
-  const change = (update: Partial<typeof composition>) =>
-    onLayoutCommit(setPresentationComposition(resources, layout, update));
-  return (
-    <>
-      <section
-        aria-label="Instructor Camera presentation"
-        data-presentation-resource={camera.id}
-        data-presentation-mode={composition.cameraSize === 'large' ? 'focused' : 'minimized'}
-        data-camera-anchor={composition.cameraAnchor}
-        className={`pointer-events-auto absolute z-50 flex flex-col overflow-hidden rounded-lg border border-tk-elements-app-borderColor bg-black shadow-2xl ${anchors[composition.cameraAnchor]} ${sizes[composition.cameraSize]}`}
-      >
-        <header
-          draggable={arranging}
-          onDragStart={(event) => event.dataTransfer.setData('text/presentation-camera', camera.id)}
-          className={`flex h-8 shrink-0 items-center gap-1 bg-tk-background-primary px-2 text-xs ${arranging ? 'cursor-grab' : ''}`}
-        >
-          <strong className="mr-auto truncate">Instructor Camera</strong>
-          {arranging ? (
-            <select
-              aria-label="Camera position"
-              value={composition.cameraAnchor}
-              onChange={(event) => change({ cameraAnchor: event.target.value as typeof composition.cameraAnchor })}
-            >
-              <option value="top-left">Top left</option>
-              <option value="top-right">Top right</option>
-              <option value="bottom-left">Bottom left</option>
-              <option value="bottom-right">Bottom right</option>
-            </select>
-          ) : null}
-          <button
-            type="button"
-            onClick={() =>
-              change({
-                cameraSize:
-                  composition.cameraSize === 'small'
-                    ? 'medium'
-                    : composition.cameraSize === 'medium'
-                      ? 'large'
-                      : 'small',
-              })
-            }
-          >
-            Size
-          </button>
-          <button type="button" aria-label="Hide Instructor Camera" onClick={() => onModeChange(camera.id, 'hidden')}>
-            Hide
-          </button>
-        </header>
-        {mediaUrl ? (
-          <video
-            aria-label="Recorded instructor camera"
-            playsInline
-            preload="auto"
-            src={mediaUrl}
-            ref={mediaRef}
-            className="pointer-events-none min-h-0 flex-1 object-cover"
-          />
-        ) : (
-          <div className="grid min-h-0 flex-1 place-items-center bg-slate-950 text-xs text-slate-300">
-            Camera placement
-          </div>
-        )}
-      </section>
-      {arranging
-        ? (['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((anchor) => (
-            <div
-              key={anchor}
-              data-camera-drop-anchor={anchor}
-              aria-label={`Move camera ${anchor.replace('-', ' ')}`}
-              className={`absolute z-[60] h-16 w-24 rounded border-2 border-dashed border-tk-text-accent bg-tk-background-primary/60 ${anchors[anchor]}`}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (event.dataTransfer.getData('text/presentation-camera')) change({ cameraAnchor: anchor });
-              }}
-            />
-          ))
-        : null}
-    </>
-  );
+function ResourceHeader({ resource, mode, onModeChange }: { resource: PresentationResource; mode: PresentationMode; onModeChange: (resourceId: string, mode: PresentationMode) => void }) {
+  return <header className="flex h-9 shrink-0 items-center gap-2 border-b border-tk-elements-app-borderColor bg-tk-background-primary px-2"><span className={`${resourceIcon(resource)} text-tk-text-secondary`} aria-hidden="true" /><strong className="min-w-0 flex-1 truncate text-xs">{resource.title}</strong>{mode !== 'focused' ? <InteractiveButton variant="ghost" icon="i-ph-arrows-out-simple" onClick={() => onModeChange(resource.id, 'focused')} className="px-2"><span className="sr-only">Focus {resource.title}</span></InteractiveButton> : <InteractiveButton variant="ghost" icon="i-ph-minus" onClick={() => onModeChange(resource.id, 'minimized')} className="px-2"><span className="sr-only">Minimize {resource.title}</span></InteractiveButton>}<InteractiveButton variant="ghost" icon="i-ph-x" onClick={() => onModeChange(resource.id, 'hidden')} className="px-2"><span className="sr-only">Hide {resource.title}</span></InteractiveButton></header>;
 }
 
 function DeckContent({ deck, progress, compact, canEdit, onAction, onChange }: { deck: DeckPresentationResource; progress?: DeckPlaybackState; compact: boolean; canEdit: boolean; onAction: (deckId: string, action: DeckAction, slideIndex?: number) => void; onChange: (deck: DeckPresentationResource) => void }) {
