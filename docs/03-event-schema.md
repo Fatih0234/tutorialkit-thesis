@@ -71,12 +71,16 @@ export interface FileChangedPayload {
         slideIndex: 1,
         revealedStep: 2
       }
+    },
+    frontmostBySide: {
+      left: 'javascript-counter-deck',
+      right: 'website-preview'
     }
   }
 }
 ```
 
-Learner presentation overrides and interactions inside the preview iframe never create timeline events.
+`frontmostBySide` identifies the semantic front window in each fixed layer. It contains resource ids only—never z-index values or geometry. Learner presentation overrides and interactions inside the preview iframe never create timeline events.
 
 ## LearnerDelta
 

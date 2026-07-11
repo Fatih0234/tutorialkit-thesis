@@ -110,6 +110,10 @@ Optional webcam media became a synchronized **Instructor Camera** presentation r
 
 The compatibility recording mirror stopped acting as authoritative draft storage. Legacy unpublished migration now runs once; published review never creates a draft; successful publication removes the matching local IndexedDB draft/media; matching draft deletion also clears the mirror. Published review is read-only and requires an explicit future duplicate/version action before editing.
 
+## Layered resource windows
+
+The simple Resources toolbar remains the presentation launcher. Website Preview uses the fixed right window, while whiteboard, deck, slides, and presentation explanation share one fixed left position and overlap instead of stacking vertically. `frontmostBySide` records which covered minimized window is brought forward; toolbar clicks open, bring forward, or hide without persisting z-index values or geometry. Instructor Camera remains a separate corner overlay. This focused refinement deliberately excludes draggable windows, responsive composition presets, Main Stage, Sidecar, and split controls.
+
 ## Excalidraw whiteboard resource
 
 A native Excalidraw whiteboard joined the presentation-resource union with hidden/minimized/focused layout controlled by existing `presentation.changed` snapshots. Material Preparation captures an initial JSON scene; recording emits debounced `whiteboard.scene.changed` snapshots after meaningful content actions; seeking materializes the scene by timestamp; and learner playback uses read-only view mode. Runtime and remote validators strip transient Excalidraw state and enforce 1,000-element/512 KiB limits. Drafts, publications, compatibility storage, and package format 1 preserve the additive resource/event data. Image insertion is intentionally disabled in this first version.
