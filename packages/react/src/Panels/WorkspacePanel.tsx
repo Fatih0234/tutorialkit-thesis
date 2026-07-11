@@ -500,17 +500,17 @@ function EditorSection({
         <InteractiveImmersiveHeader
           eyebrow="Recording review"
           title="Recording Review"
-          status="Teacher preview"
-          statusTone="info"
+          status={interactivePoc.controls.recordingStorageSource === 'published' ? 'Published' : 'Teacher preview'}
+          statusTone={interactivePoc.controls.recordingStorageSource === 'published' ? 'positive' : 'info'}
           currentTimeMs={interactivePoc.controls.playheadMs}
           onExit={exitTeacherReview}
           exitLabel="Dashboard"
-          actions={
+          actions={interactivePoc.controls.recordingStorageSource === 'published' ? undefined : (
             <>
               <InteractiveButton icon="i-ph-floppy-disk" onClick={interactivePoc.controls.onSaveDraft} disabled={!interactivePoc.controls.canSaveDraft}>Save Draft</InteractiveButton>
               <InteractiveButton variant="primary" icon="i-ph-upload-simple" onClick={interactivePoc.controls.onPublishRecording} disabled={!interactivePoc.controls.canPublishRecording}>Publish</InteractiveButton>
             </>
-          }
+          )}
         />
       ) : null}
       {experience.screen === 'learner-player' ? (

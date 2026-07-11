@@ -60,7 +60,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after the minimal management refinement: **35 passed**.
+Expected interactive POC result after the draft-lifecycle correction: **36 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 

@@ -52,7 +52,7 @@ pnpm build
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium TK_POC_URL=http://localhost:4329 PLAYWRIGHT_HTML_OPEN=never pnpm --dir e2e exec playwright test interactive-poc.spec.ts --project=Default
 ```
 
-Expected result after the minimal management refinement: **35 passed** in `interactive-poc.spec.ts`.
+Expected result after the draft-lifecycle correction: **36 passed** in `interactive-poc.spec.ts`.
 
 ## 4. Prepare the demonstration
 

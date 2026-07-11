@@ -494,6 +494,7 @@ test.describe('interactive timeline POC', () => {
       localStorage.removeItem('interactive-poc.learnerDeltas');
       localStorage.removeItem('interactive-poc.fakeMediaRecorder');
       localStorage.removeItem('interactive-poc.workspaceLayout');
+      localStorage.removeItem('interactive-poc.indexeddbMigrationComplete');
     });
     await expect(page.locator('[data-interactive-hydrated="true"]')).toBeAttached();
   });
@@ -825,8 +826,12 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /^dashboard$/i }).click();
     await openRecordingLibrary(page);
     await page.getByRole('button', { name: /delete lesson and solution draft/i }).click();
-    await expect(page.getByRole('button', { name: /confirm delete lesson and solution draft/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /open review/i })).toBeVisible();
+    const confirmDelete = page.getByRole('button', { name: /confirm delete lesson and solution draft/i });
+    await expect(confirmDelete).toBeVisible();
+    await confirmDelete.click();
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
   });
 
   test('teacher publish requires teacher identity', async ({ page }) => {
@@ -1122,6 +1127,26 @@ test.describe('interactive timeline POC', () => {
     );
   });
 
+  test('reviewing a published lesson never creates a draft', async ({ page, request }) => {
+    const recording = createPublishedRecording(
+      'teacher-recording-readonly-review-test',
+      'console.log("published review");\n// published review remains read only\n',
+    );
+
+    await seedPublishedRecording(request, recording);
+    await page.reload();
+    await openTeacherSection(page);
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
+    await page.getByRole('button', { name: /view lesson/i }).click();
+    await expect(page.getByText(/^published$/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /save draft|^publish$/i })).toHaveCount(0);
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /view lesson/i })).toBeVisible();
+  });
+
   test('teacher can publish and reload recording from backend', async ({ page }) => {
     await signInAsTeacher(page);
     await startTeacherRecording(page);
@@ -1157,6 +1182,9 @@ test.describe('interactive timeline POC', () => {
       { timeout: 5000 },
     );
     await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
+    await expect(page.getByRole('button', { name: /open review/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /view lesson/i })).toBeVisible();
   });
 
   test('teacher can publish media recording and load media from backend', async ({ page }) => {

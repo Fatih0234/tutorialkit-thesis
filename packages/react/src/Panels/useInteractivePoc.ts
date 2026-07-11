@@ -26,6 +26,7 @@ import {
   normalizePath,
   normalizePresentationLayout,
   parseRecordingPackage,
+  saveTeacherRecording,
   setDeckProgress,
   setPresentationMode,
   stepDeckReveal,
@@ -1664,12 +1665,20 @@ export function useInteractivePoc({
         await remoteTimelineStorage.saveMediaAsset(asset);
       }
 
+      const localAssets = await localTimelineStorage.listMediaAssetsForRecording(recordingWithMedia.id);
+      await Promise.all(localAssets.map((asset) => localTimelineStorage.deleteMediaAsset(asset.id)));
+      await localTimelineStorage.deleteTeacherRecordingDraft(recordingWithMedia.id);
+      saveTeacherRecording(recordingWithMedia);
+
       playbackRecordingRef.current = recordingWithMedia;
       setCurrentRecordingSource('published');
       setPublishedStatus('published');
       setPublishedRecordingId(recordingWithMedia.id);
       setSelectedPublishedRecordingId(recordingWithMedia.id);
-      setCurrentDraftRecording(recordingWithMedia, draftStatus === 'missing' ? 'loaded' : draftStatus);
+      setSelectedDraftId('');
+      setCurrentDraftRecording(null, 'missing');
+      setRecordingDurationMs(recordingWithMedia.durationMs);
+      setEventCount(recordingWithMedia.events.length);
       setMediaStatus(assets.length > 0 ? 'saved' : mediaStatus);
       await syncLearnerDeltaState(recordingWithMedia, remoteTimelineStorage);
       await refreshRecordingLibrary();

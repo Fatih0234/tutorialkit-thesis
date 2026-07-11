@@ -31,7 +31,7 @@ interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-The mirror is intentionally retained so existing localStorage inspection, migration, and Playwright compatibility checks continue to work. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. Dev sessions are stored server-side under `.interactive-data/sessions/` and are never mirrored to localStorage. The IndexedDB adapter also imports existing localStorage values when possible and falls back to `LocalStorageInteractiveTimelineStorage` for timeline-only data when IndexedDB is unavailable.
+The mirror is intentionally retained so existing localStorage inspection and Playwright compatibility checks continue to work, but it is not an authoritative draft collection. IndexedDB performs a one-time migration of an unpublished legacy recording only; loading a published recording into the mirror never creates a draft. Deleting a matching draft clears both IndexedDB and the compatibility mirror, and successful publication removes the corresponding local draft. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. Dev sessions are stored server-side under `.interactive-data/sessions/` and are never mirrored to localStorage. `LocalStorageInteractiveTimelineStorage` remains the timeline-only fallback when IndexedDB is unavailable.
 
 Remote published data is stored by local dev endpoints under `/api/interactive/*` in a gitignored repository directory:
 

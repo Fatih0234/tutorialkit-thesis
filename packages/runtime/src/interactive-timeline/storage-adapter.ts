@@ -1,4 +1,5 @@
 import {
+  clearTeacherRecording,
   loadLatestLearnerDelta,
   loadLearnerDeltas,
   loadTeacherRecording,
@@ -115,9 +116,8 @@ export class LocalStorageInteractiveTimelineStorage implements InteractiveTimeli
     saveTeacherRecording(recording);
   }
 
-  async deleteTeacherRecordingDraft(_id: string): Promise<void> {
-    // The localStorage compatibility layer intentionally keeps the legacy keys
-    // in place until a later cleanup/migration phase removes them explicitly.
+  async deleteTeacherRecordingDraft(id: string): Promise<void> {
+    clearTeacherRecording(id);
   }
 
   async saveMediaAsset(_asset: RecordingMediaAsset): Promise<void> {

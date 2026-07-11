@@ -14,6 +14,7 @@ const DB_VERSION = 2;
 const TEACHER_RECORDINGS_STORE = 'teacherRecordings';
 const LEARNER_DELTAS_STORE = 'learnerDeltas';
 const MEDIA_ASSETS_STORE = 'mediaAssets';
+const LOCAL_STORAGE_MIGRATION_KEY = 'interactive-poc.indexeddbMigrationComplete';
 
 type StoreName = typeof TEACHER_RECORDINGS_STORE | typeof LEARNER_DELTAS_STORE | typeof MEDIA_ASSETS_STORE;
 
@@ -89,13 +90,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
         return indexedDbRecording;
       }
 
-      const fallbackById = await this.fallbackStorage.loadTeacherRecording(id);
-
-      if (fallbackById) {
-        await this.writeTeacherRecordingToIndexedDB(fallbackById);
-      }
-
-      return fallbackById;
+      return undefined;
     }
 
     const indexedDbRecordings = await this.readAllTeacherRecordingsFromIndexedDB();
@@ -112,13 +107,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return latest;
     }
 
-    const fallbackRecording = await this.fallbackStorage.loadTeacherRecording();
-
-    if (fallbackRecording) {
-      await this.writeTeacherRecordingToIndexedDB(fallbackRecording);
-    }
-
-    return fallbackRecording;
+    return undefined;
   }
 
   async saveTeacherRecording(recording: TeacherRecording): Promise<void> {
@@ -184,15 +173,6 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return this.fallbackStorage.listTeacherRecordingDrafts();
     }
 
-    if (indexedDbRecordings.length === 0) {
-      const fallbackRecording = await this.fallbackStorage.loadTeacherRecording();
-
-      if (fallbackRecording) {
-        await this.writeTeacherRecordingToIndexedDB(fallbackRecording);
-        return [getTeacherRecordingDraftSummary(fallbackRecording)];
-      }
-    }
-
     return sortTeacherRecordingsNewestFirst(indexedDbRecordings).map(getTeacherRecordingDraftSummary);
   }
 
@@ -206,14 +186,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return indexedDbRecording;
     }
 
-    const fallbackRecording = await this.fallbackStorage.loadTeacherRecordingDraft(id);
-
-    if (fallbackRecording) {
-      await this.writeTeacherRecordingToIndexedDB(fallbackRecording);
-      await this.fallbackStorage.saveTeacherRecording(fallbackRecording);
-    }
-
-    return fallbackRecording;
+    return undefined;
   }
 
   async saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void> {
@@ -223,6 +196,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
 
   async deleteTeacherRecordingDraft(id: string): Promise<void> {
     await this.deleteTeacherRecordingFromIndexedDB(id);
+    await this.fallbackStorage.deleteTeacherRecordingDraft(id);
   }
 
   async saveMediaAsset(asset: RecordingMediaAsset): Promise<void> {
@@ -284,10 +258,16 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return;
     }
 
-    const localRecording = await this.fallbackStorage.loadTeacherRecording();
+    const migrationComplete = typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_STORAGE_MIGRATION_KEY) === 'true';
+    const localRecording = migrationComplete ? undefined : await this.fallbackStorage.loadTeacherRecording();
+    const existingRecordings = await this.readAllTeacherRecordingsFromIndexedDB();
 
-    if (localRecording && !(await this.readTeacherRecordingFromIndexedDB(localRecording.id))) {
+    if (localRecording && !localRecording.publishedAt && existingRecordings?.length === 0) {
       await this.writeTeacherRecordingToIndexedDB(localRecording);
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_MIGRATION_KEY, 'true');
     }
 
     const localDeltas = await this.fallbackStorage.loadLearnerDeltas();
