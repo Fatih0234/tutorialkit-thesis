@@ -413,10 +413,6 @@ function EditorSection({
       onPreviewSelectedDraft={previewSelectedDraft}
       onPreviewSelectedPublished={previewSelectedPublished}
       onOpenLearnerLesson={openLearnerLesson}
-      onContinueLoadedLearnerLesson={() => dispatchExperience({
-        type: 'OPEN_LEARNER_RECORDING',
-        recordingId: interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId || 'loaded-recording',
-      })}
     />
   );
 

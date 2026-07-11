@@ -38,20 +38,16 @@ Important invariants:
 
 The UI now uses a full-viewport product root mounted in `#interactive-experience-root`, a dedicated Astro application region outside the normal TutorialKit resizable layout. The standard layout remains mounted but becomes `inert` and `aria-hidden` while the product is active. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `InteractiveExperienceProvider` owns explicit reducer state and separates a library selection from the active player recording. `InteractiveExperienceRoot`, `InteractiveManagementShell`, and `InteractiveWorkspaceShell` enforce management/workspace ownership. `InteractiveWorkspaceSurface.tsx` composes the persistent editor with opt-in, resizable lesson explanation and live terminal panels. `InteractiveVideoControls.tsx` supplies the shared full-width bottom transport, accessible seek range, media surface, learner markers, keyboard controls, and experiment drawer. See `docs/immersive-interactive-experience.md`.
 
-`packages/react/src/Panels/InteractivePocControls.tsx` presents two role views and a collapsed demo walkthrough. The workspace orchestrator lifts the role and teacher-stage state so management can be physically separated from the editor:
+`packages/react/src/Panels/InteractivePocControls.tsx` presents two minimal role views while the workspace orchestrator keeps management physically separated from the editor:
 
-- **Teacher Studio** for recording, draft management, publishing, preview, export/import, demo seed, and demo reset.
-- **Learner Lesson** for opening published lessons, playing the teacher timeline, creating timestamped experiments, resuming teacher truth, and reopening experiments from timeline markers.
+- **Teacher Studio** for lecture setup and opening draft or published recording cards.
+- **Interactive Lessons** for choosing and starting a published lesson.
 
-A small `Debug details` disclosure remains for generated ids, compatibility localStorage keys, and raw validation notes, but primary tests and user flows use visible product controls.
+Technical status, package import/export, seed/reset, and walkthrough controls are intentionally absent from default management UI. Their underlying POC contracts remain available for automated validation.
 
-### Thesis demo walkthrough panel
+### Account panel
 
-`InteractivePocControls.tsx` renders a collapsed **Thesis demo walkthrough** disclosure for the live thesis demo. Expanding it shows the expected Teacher Studio flow (sign in as Teacher Demo, seed or create a recording, preview, publish, export) and Learner Lesson flow (sign in as Learner Demo, open a published lesson, play, try it yourself, save a timeline experiment, resume, and reopen its marker). The guide is static product guidance only; it does not change recording, storage, identity, or playback architecture. The full operator script lives in `docs/thesis-demo-script.md`.
-
-### Demo Identity panel
-
-`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders a compact **Demo Identity** selector with options for Teacher Demo, Learner Demo, and Learner Two, plus a Sign out action. The selected user and role remain visible without occupying a full workflow panel. Auth status and errors remain available to assistive technology/debug validation. It is intentionally labeled as dev-only and is not production authentication.
+`packages/react/src/Panels/InteractiveDevIdentityPanel.tsx` renders a compact **Account** selector with Teacher Demo, Learner Demo, and Learner Two plus Sign out. The selected user and role remain visible without occupying a full workflow panel. Auth status and errors remain available to assistive technology. This remains development identity rather than production authentication.
 
 Seeded users are non-sequential dev ids:
 
@@ -77,52 +73,9 @@ The browser only receives the current user. Session ids are random, meaningless 
 
 ### Teacher Studio
 
-`packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders Lecture Setup and Recording Review. `WorkspacePanel.tsx` coordinates four teacher stages: `setup`, `materials`, `recording`, and `review`.
+`packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders only Lecture Setup and product-facing recording cards. `WorkspacePanel.tsx` coordinates four teacher stages: `setup`, `materials`, `recording`, and `review`.
 
-Visible controls include:
-
-- initial-file selection;
-- Editor only / Editor + microphone / Editor + camera + microphone modes;
-- Edit Materials / Use This Workspace;
-- Start Recording / Stop Recording;
-- Back to Lecture Setup;
-- Play Preview / Pause / Restart / seek timeline;
-- New Recording;
-- Save Draft;
-- Load Draft;
-- Preview Draft;
-- Publish Recording (requires teacher/both demo identity);
-- Load Published Lesson;
-- Preview Published Lesson;
-- Discard Draft;
-- Delete Draft;
-- Refresh Recordings;
-- Export Package;
-- Include My Learner Work;
-- Import Package;
-- Import as Draft;
-- Import as Published (requires teacher/both demo identity);
-- Demo Seed (requires teacher/both demo identity);
-- Reset Demo Data (requires teacher/both demo identity).
-
-Important status fields use badges, compact cards, native text, and `role="status"` for async state. While recording, a prominent red **Recording in progress** banner shows an animated indicator, elapsed time, event count, media state, and the primary **Stop Recording** action. Raw ids/timestamps remain available in compact status cards or collapsed technical details for thesis validation:
-
-- Draft status;
-- Current draft id;
-- Published status;
-- Published recording id;
-- Recording library status;
-- Export Package status;
-- Import Package status;
-- Import package file;
-- Demo data status;
-- Recording storage source;
-- Recording duration;
-- Recording status;
-- Playback status;
-- Playhead;
-- Event count;
-- Media status/kind/duration/MIME/error.
+Lecture Setup contains initial-file selection, Editor only / microphone / camera-and-microphone modes, **Edit Materials**, and **Start Recording**. Recording uses the dedicated studio and **Stop Recording** action. Recording Review exclusively owns playback, **Save Draft**, and **Publish**. Teacher Studio cards provide **Open Review**, **View Lesson**, and confirmed contextual draft deletion without exposing recording IDs, versions, event counts, storage sources, or media diagnostics.
 
 ### Recording libraries
 

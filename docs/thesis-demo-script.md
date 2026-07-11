@@ -52,43 +52,28 @@ pnpm build
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium TK_POC_URL=http://localhost:4329 PLAYWRIGHT_HTML_OPEN=never pnpm --dir e2e exec playwright test interactive-poc.spec.ts --project=Default
 ```
 
-Expected result after the presentation-resource refinement: **39 passed** in `interactive-poc.spec.ts`.
+Expected result after the minimal management refinement: **35 passed** in `interactive-poc.spec.ts`.
 
-## 4. Reset and seed demo data
+## 4. Prepare the demonstration
 
-1. Open **Teacher Studio**.
-2. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
-3. Expand **Import, Export, and Demo Tools**.
-4. Click **Reset Demo Data**, then **Confirm Reset Demo Data**.
-5. Click **Demo Seed**.
-6. Expand **Recording Library** and confirm the Published Lesson selector contains:
-
-```text
-demo-interactive-conflict-flow
-```
-
-Reset only removes `demo-` prefixed recordings/media/deltas. Non-demo recordings and sessions remain.
+The normal product interface intentionally omits seed/reset and package tooling. Start with an existing published lesson or create one through the teacher flow below. Automated Playwright fixtures continue to prepare deterministic demo data directly through the local persistence API.
 
 ## 5. Teacher walkthrough
 
-1. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
-2. In **Teacher Studio**, either:
-   - expand **Import, Export, and Demo Tools** and click **Demo Seed**, or
-   - use **Lecture Setup** to choose the initial file and recording mode;
-   - optionally select **Edit Materials**, prepare the starting workspace, and select **Use This Workspace**;
-   - select **Start Recording**, confirm the full-screen red **Recording in progress** studio appears, edit `example.js`, and select the prominent **Stop Recording** action.
-3. In **Recording Review**, click **Save Draft** for local IndexedDB draft storage.
-4. Click **Play Preview**, then demonstrate pause, restart, and the seekable **Editor playback timeline**.
-5. Click **Publish Recording** to write the immutable recording to `.interactive-data/`.
-6. Use **Preview Published Lesson** to show the published replay path.
-7. Expand **Import, Export, and Demo Tools** and use **Export Package** to download a portable JSON package.
+1. In the **Account** selector, choose **Teacher Demo**.
+2. In **Lecture Setup**, choose the initial file and recording mode.
+3. Optionally select **Edit Materials**, prepare the starting workspace, and exit preparation.
+4. Select **Start Recording**, confirm the full-screen red **Recording in progress** studio appears, edit `example.js`, and select **Stop Recording**.
+5. In immersive **Recording Review**, click **Save Draft**.
+6. Demonstrate play, pause, restart, and the seekable editor timeline.
+7. Click **Publish** to write the immutable recording to `.interactive-data/`.
+8. Return to Teacher Studio and use the recording card's **View Lesson** action to show the published replay path.
 
 ## 6. Learner walkthrough
 
 1. Switch to **Learner Lesson**.
-2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
-3. Select the Published Lesson.
-4. Click **Start Lesson** and point out that management disappears into a full-screen editor player.
+2. In the **Account** selector, choose **Learner Demo**.
+3. Click **Start Lesson** on a published lesson card and point out that management disappears into a full-screen editor player.
 5. Use the round **Play** control on the full-width bottom timeline.
 6. Click **Pause and Experiment** while playback is running.
 7. Edit `example.js`.
@@ -117,20 +102,9 @@ Flow:
 
 No merge runs. The teacher recording and learner checkpoint remain separate immutable-source artifacts.
 
-## 8. Export/import walkthrough
+## 8. Package compatibility
 
-1. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
-2. Seed or publish a recording.
-3. Expand **Import, Export, and Demo Tools**, then click **Export Package**.
-4. Optionally enable **Include My Learner Work** before export if demonstrating scoped learner delta export.
-5. Click **Reset Demo Data** and **Confirm Reset Demo Data** to prove portability.
-6. Choose the downloaded JSON file with **Import Package**.
-7. Click **Import as Draft** to write a copied local draft to IndexedDB.
-8. Preview the imported draft.
-9. Choose the same package again and click **Import as Published**.
-10. Switch to Learner Lesson and open the imported Published Lesson.
-
-Import always creates a copy with a new recording id. Unsupported package versions show a friendly error. If package media data is missing, the structured recording still imports and playback falls back to the timeline clock.
+Import/export remains a supported persistence contract but is no longer part of the default teacher or learner interface. Contract-level validation should use the runtime package APIs and automated tests rather than adding technical controls back to management pages.
 
 ## 9. Known limitations
 

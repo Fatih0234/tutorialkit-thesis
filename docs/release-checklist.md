@@ -64,15 +64,12 @@ pnpm --dir e2e run dev
 ```
 
 - [ ] Open `http://localhost:4329/tests/file-tree/lesson-and-solution` (or the next available port printed by Astro).
-- [ ] Confirm the page shows **Interactive Thesis Demo**, **Demo Identity**, **Teacher Studio**, **Learner Lesson**, and **Thesis demo walkthrough**.
+- [ ] Confirm the page shows **Interactive Learning**, **Account**, **Teacher Studio**, and **Learner Lesson** without walkthrough, debug, technical, package, or demo controls.
 
-## 4. Deterministic seed/reset check
+## 4. Deterministic fixture check
 
-- [ ] In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
-- [ ] Expand **Import, Export, and Demo Tools**, then select **Reset Demo Data** and **Confirm Reset Demo Data**.
-- [ ] Confirm reset reports success and does not remove a known non-demo record if one is used for the evaluation.
-- [ ] Select **Demo Seed**.
-- [ ] Expand **Recording Library** and confirm `demo-interactive-conflict-flow` appears under **Published Lessons**.
+- [ ] Run the Playwright fixture coverage for demo seed/reset through the local persistence API.
+- [ ] Confirm reset preserves non-demo records and the deterministic published lesson can be opened from a product-facing card.
 
 ## 5. Teacher demonstration check
 
@@ -80,16 +77,14 @@ pnpm --dir e2e run dev
 - [ ] Open **Edit Materials**, confirm recording is off, prepare the workspace, and return with **Use This Workspace**.
 - [ ] Select **Start Recording** and confirm the full-screen studio shows elapsed time, event count, media status, and the prominent **Stop Recording** action.
 - [ ] Stop and confirm **Recording Review** exposes play, pause, restart, and the seekable editor timeline, or use the seeded recording.
-- [ ] Save and preview a local IndexedDB draft.
-- [ ] Publish and preview an immutable published lesson.
-- [ ] Expand **Import, Export, and Demo Tools**, then export the selected recording with **Export Package**.
-- [ ] Confirm exported JSON contains `formatVersion: 1`, `teacherRecording`, `mediaAssets`, and no session cookie/id.
-- [ ] Import the package as a draft and confirm the status reports a new copied recording id.
-- [ ] Import it as published and confirm it appears as a separate published copy.
+- [ ] Confirm setup does not duplicate Save Draft or Publish.
+- [ ] Save a local IndexedDB draft from Recording Review and reopen it with **Open Review**.
+- [ ] Publish an immutable lesson from Recording Review and reopen it with **View Lesson**.
+- [ ] Validate package import/export contracts through runtime or automated integration coverage, not the default product UI.
 
 ## 6. Learner experiment demonstration check
 
-- [ ] Switch to **Learner Lesson** and choose **Sign in as Learner Demo** in the **Demo Identity** selector.
+- [ ] Switch to **Learner Lesson** and choose **Learner Demo** in the **Account** selector.
 - [ ] Open and play `demo-interactive-conflict-flow` (legacy deterministic seed id).
 - [ ] Choose **Pause and Experiment** before the future teacher `/example.js` edit.
 - [ ] Edit `/example.js` and select **Save Experiment**.
@@ -120,7 +115,7 @@ These are currently non-blocking only when the build command exits successfully,
 
 ## 9. Cleanup
 
-- [ ] In Teacher Studio, expand **Import, Export, and Demo Tools**, then select **Reset Demo Data** and **Confirm Reset Demo Data** to remove demo-prefixed recording/media/delta records while preserving sessions and non-demo data.
+- [ ] Use the automated local persistence API fixture to remove demo-prefixed recording/media/delta records while preserving sessions and non-demo data.
 - [ ] Stop the dev/preview server.
 - [ ] Remove all local development persistence only when a completely clean machine state is intended:
 

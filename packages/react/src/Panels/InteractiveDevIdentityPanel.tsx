@@ -25,14 +25,14 @@ export function InteractiveDevIdentityPanel({
         <span aria-hidden="true" className="i-ph-user-circle-duotone shrink-0 text-xl text-tk-text-accent" />
         <div className="min-w-0">
           <h2 id="interactive-demo-identity-heading" className="sr-only">
-            Demo Identity
+            Account
           </h2>
           <div aria-live="polite" role="status" className="flex flex-wrap items-center gap-1.5">
             <strong className="truncate text-sm text-tk-text-primary">
-              Signed-in user: {currentUser ? currentUser.displayName : 'signed out'}
+              {currentUser ? currentUser.displayName : 'Choose an account'}
             </strong>
             <InteractiveStatusBadge tone={currentUser ? 'positive' : 'neutral'}>
-              Signed-in role: {currentUser?.role ?? 'none'}
+              {currentUser?.role ?? 'signed out'}
             </InteractiveStatusBadge>
             <span className="sr-only">Auth status: {authStatus}</span>
             <span className="sr-only">Auth error: {authError}</span>
@@ -42,9 +42,9 @@ export function InteractiveDevIdentityPanel({
 
       <div className="flex flex-wrap items-center gap-1.5">
         <label className="flex items-center gap-1.5 text-xs font-500 text-tk-text-secondary">
-          Demo Identity
+          Account
           <select
-            aria-label="Choose Demo Identity"
+            aria-label="Choose Account"
             className={`${interactiveSelectClassName} w-auto min-w-44 py-1`}
             value={currentUser?.id ?? ''}
             onChange={(event) => {
@@ -54,11 +54,11 @@ export function InteractiveDevIdentityPanel({
             }}
           >
             <option value="" disabled>
-              Choose a demo user…
+              Choose an account…
             </option>
             {devUsers.map((user) => (
               <option key={user.id} value={user.id}>
-                Sign in as {user.displayName}
+                {user.displayName}
               </option>
             ))}
           </select>

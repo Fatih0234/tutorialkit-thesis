@@ -60,23 +60,17 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after the presentation-resource refinement: **39 passed**.
+Expected interactive POC result after the minimal management refinement: **35 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 
-## Demo seed and reset
+## Management experience
 
-1. Open **Teacher Studio**.
-2. In the **Demo Identity** selector, choose **Sign in as Teacher Demo**.
-3. Expand **Import, Export, and Demo Tools**.
-4. To start clean, select **Reset Demo Data**, then **Confirm Reset Demo Data**.
-5. Select **Demo Seed**.
-6. Expand **Recording Library** and confirm that `demo-interactive-conflict-flow` appears under **Published Lessons**.
-7. Switch to **Learner Lesson**, choose **Sign in as Learner Demo** in the identity selector, and open the seeded lesson.
+Teacher Studio now focuses on lecture setup and existing recordings. Material editing and recording open dedicated immersive workspaces; saving and publishing are available only where they are meaningful, on Recording Review. Interactive Lessons presents published lectures as simple lesson cards with one **Start Lesson** action.
 
-Reset removes only demo-prefixed recordings, linked media, and linked learner deltas. `.interactive-data/` is gitignored local demo persistence; deleting that directory manually also produces a clean local server state.
+Technical status, package import/export, and demo seed/reset capabilities remain part of the POC contracts and automated validation but are intentionally absent from the default product interface. `.interactive-data/` remains gitignored local development persistence.
 
-For the complete teacher, learner-experiment, and export/import walkthrough, see [the thesis demo script](./docs/thesis-demo-script.md).
+For the complete teacher and learner-experiment walkthrough, see [the thesis demo script](./docs/thesis-demo-script.md).
 
 ## Documentation
 

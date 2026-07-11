@@ -5,8 +5,6 @@ import {
   InteractiveCard,
   InteractiveStatusBadge,
   formatInteractiveTime,
-  interactiveDetailsClassName,
-  interactiveSummaryClassName,
 } from './InteractivePocUi.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
@@ -67,28 +65,14 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
 
       <InteractiveCard className="grid gap-3">
         <InteractiveRecordingLibrary
-          compact
           title="Published lessons"
           description="Choose a published lesson to begin."
-          emptyText="No published lessons available yet. Ask a teacher to publish or seed the demo."
-          selectLabel="Select published lesson"
+          emptyText="No published lessons available yet."
           recordings={publishedRecordings}
-          selectedRecordingId={selectedPublishedRecordingId}
-          onSelectRecording={onSelectPublishedRecording}
+          actionLabel="Open Lesson"
+          actionIcon="i-ph-folder-open"
+          onOpenRecording={onLoadPublishedRecording}
         />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <InteractiveButton
-            variant="primary"
-            icon="i-ph-folder-open"
-            onClick={() => onLoadPublishedRecording(selectedPublishedRecordingId)}
-            disabled={!canLoadPublishedRecording}
-          >
-            Open Published Lesson
-          </InteractiveButton>
-          <span className="min-w-0 truncate text-xs text-tk-text-secondary" title={publishedRecordingId}>
-            Published status: {publishedStatus} · Published recording id: {publishedRecordingId}
-          </span>
-        </div>
       </InteractiveCard>
 
       <InteractiveEditorPlayer
@@ -191,23 +175,6 @@ export function InteractiveLearnerPlayback(props: InteractivePocControlsModel) {
         )}
       </InteractiveCard>
 
-      <details className={interactiveDetailsClassName}>
-        <summary className={interactiveSummaryClassName}>
-          <span className="flex items-center gap-2">
-            <span aria-hidden="true" className="i-ph-code-duotone text-base" />
-            Technical status
-          </span>
-          <span aria-hidden="true" className="i-ph-caret-down-bold transition-transform group-open:rotate-180" />
-        </summary>
-        <dl className="mb-0 mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-tk-border-primary pt-3 text-xs text-tk-text-secondary">
-          <dt>Experiment anchor timestamp ms</dt>
-          <dd className="m-0">{pausedTeacherTimestampMs}</dd>
-          <dt>Recording storage source</dt>
-          <dd className="m-0">{recordingStorageSource}</dd>
-          <dt>Work identity</dt>
-          <dd className="m-0">{canUseLearnerWork ? 'learner allowed' : 'learner sign-in required'}</dd>
-        </dl>
-      </details>
     </section>
   );
 }
