@@ -690,6 +690,38 @@ test.describe('interactive timeline POC', () => {
     await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
   });
 
+  test('same-side resource windows overlap and the toolbar records which window is in front', async ({ page }) => {
+    await startTeacherRecording(page);
+    const deck = page.locator('[data-presentation-resource="javascript-counter-deck"]');
+    const whiteboard = page.locator('[data-presentation-resource="lecture-whiteboard"]');
+    await expect(deck).toHaveAttribute('data-presentation-frontmost', 'true');
+
+    await page.getByRole('button', { name: /show presentation resource: whiteboard/i }).click();
+    await expect(whiteboard).toHaveAttribute('data-presentation-mode', 'minimized');
+    await expect(whiteboard).toHaveAttribute('data-presentation-frontmost', 'true');
+    await expect(deck).toHaveAttribute('data-presentation-frontmost', 'false');
+    const deckBox = await deck.boundingBox();
+    const whiteboardBox = await whiteboard.boundingBox();
+    expect(deckBox).toMatchObject({ x: whiteboardBox?.x, y: whiteboardBox?.y, width: whiteboardBox?.width, height: whiteboardBox?.height });
+
+    await page.getByRole('button', { name: /bring forward presentation resource: building a javascript counter/i }).click();
+    await expect(deck).toHaveAttribute('data-presentation-frontmost', 'true');
+    await expect(whiteboard).toHaveAttribute('data-presentation-frontmost', 'false');
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const cues = recording.events.filter((event: any) => event.type === 'presentation.changed');
+    expect(cues).toHaveLength(2);
+    expect(cues[0].payload.layout.frontmostBySide.left).toBe('lecture-whiteboard');
+    expect(cues[1].payload.layout.frontmostBySide.left).toBe('javascript-counter-deck');
+    await page.getByLabel(/lesson timeline/i).fill(String(cues[0].tMs));
+    await expect(whiteboard).toHaveAttribute('data-presentation-frontmost', 'true');
+    await page.getByLabel(/lesson timeline/i).fill(String(cues[1].tMs));
+    await expect(deck).toHaveAttribute('data-presentation-frontmost', 'true');
+  });
+
   test('teacher whiteboard preparation, recording, publication, and learner seeking are deterministic', async ({ page }) => {
     test.setTimeout(90_000);
     await signInAsTeacher(page);
@@ -1014,7 +1046,7 @@ test.describe('interactive timeline POC', () => {
     expect(recording.events.some((event: any) => event.type === 'file.opened' && event.tMs === 0)).toBeTruthy();
 
     await page.getByRole('button', { name: /^play$/i }).click();
-    await expect(editor).toContainText('// progressive first step', { timeout: 1000 });
+    await expect(editor).toContainText('// progressive first step', { timeout: firstCompleteEvent.tMs + 1000 });
     await expect(editor).not.toContainText('// progressive second step');
     await expect(editor).toContainText('// progressive second step', { timeout: 3000 });
     await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();

@@ -109,6 +109,7 @@ interface TeacherRecording {
     resources: Record<string, 'hidden' | 'minimized' | 'focused'>;
     focusedResourceId?: string;
     deckStates?: Record<string, { slideIndex: number; revealedStep: number }>;
+    frontmostBySide?: { left?: string; right?: string };
   };
   mediaAssets?: RecordingMediaAssetMetadata[];
   createdByUserId?: string;

@@ -42,6 +42,13 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
   const cameraMode = cameraResource ? layout.resources[cameraResource.id] ?? 'hidden' : 'hidden';
   const whiteboardResource = resources.find((resource) => resource.kind === 'whiteboard');
   const whiteboardMode = whiteboardResource ? layout.resources[whiteboardResource.id] ?? 'hidden' : 'hidden';
+  const frontmostLeftId = layout.frontmostBySide?.left;
+  const onToolbarResourceClick = (resource: PresentationResource) => {
+    const mode = layout.resources[resource.id] ?? 'hidden';
+    const side = resource.kind === 'preview' ? 'right' : resource.kind === 'camera' ? undefined : 'left';
+    const isFrontmost = side ? layout.frontmostBySide?.[side] === resource.id : true;
+    onModeChange(resource.id, mode === 'hidden' || (mode === 'minimized' && !isFrontmost) ? 'minimized' : 'hidden');
+  };
 
   useEffect(() => {
     if (!focusedResource) return undefined;
@@ -68,7 +75,7 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
       <div className={`pointer-events-auto absolute right-3 top-3 z-30 max-w-[70%] flex-wrap justify-end gap-1 rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary/95 p-1.5 shadow-lg ${focusedResource ? 'hidden' : 'flex'}`}>
         <span className="self-center px-2 text-[10px] font-700 uppercase tracking-[0.12em] text-tk-text-secondary">Resources</span>
         {resources.filter((resource) => resource.kind !== 'camera' || Boolean(cameraMediaUrl)).map((resource) => (
-          <InteractiveButton key={resource.id} variant="ghost" icon={resourceIcon(resource)} aria-pressed={layout.resources[resource.id] !== 'hidden'} aria-label={`${layout.resources[resource.id] === 'hidden' ? 'Show' : 'Hide'} presentation resource: ${resource.title}`} onClick={() => onModeChange(resource.id, layout.resources[resource.id] === 'hidden' ? 'minimized' : 'hidden')}>
+          <InteractiveButton key={resource.id} variant="ghost" icon={resourceIcon(resource)} aria-pressed={layout.resources[resource.id] !== 'hidden'} aria-label={`${layout.resources[resource.id] === 'hidden' ? 'Show' : layout.resources[resource.id] === 'minimized' && (resource.kind === 'preview' ? layout.frontmostBySide?.right : resource.kind !== 'camera' ? layout.frontmostBySide?.left : resource.id) !== resource.id ? 'Bring forward' : 'Hide'} presentation resource: ${resource.title}`} onClick={() => onToolbarResourceClick(resource)}>
             {resource.title}
           </InteractiveButton>
         ))}
@@ -87,9 +94,9 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
         </div>
       ) : null}
 
-      <div className={`absolute left-4 z-10 flex max-w-[45%] flex-col-reverse gap-3 ${cameraMode === 'minimized' && cameraMediaUrl ? 'bottom-60' : 'bottom-4'}`}>
+      <div data-presentation-window-side="left" className={`absolute left-4 h-64 w-[min(26rem,42vw)] ${frontmostLeftId === whiteboardResource?.id ? 'z-10' : 'z-20'} ${cameraMode === 'minimized' && cameraMediaUrl ? 'bottom-60' : 'bottom-4'}`}>
         {resources.filter((resource) => resource.kind !== 'preview' && resource.kind !== 'camera' && resource.kind !== 'whiteboard' && layout.resources[resource.id] === 'minimized').map((resource) => (
-          <PresentationFrame key={resource.id} resource={resource} mode="minimized" onModeChange={onModeChange}>
+          <PresentationFrame key={resource.id} resource={resource} mode="minimized" frontmost={frontmostLeftId === resource.id} onModeChange={onModeChange}>
             {resource.kind === 'deck' ? <DeckContent deck={resource} progress={layout.deckStates?.[resource.id]} compact canEdit={false} onAction={onDeckAction} onChange={onDeckChange} /> : null}
             {resource.kind === 'slide' ? <LegacySlideContent resource={resource} compact /> : null}
             {resource.kind === 'explanation' ? <ExplanationContent html={explanationHtml} compact /> : null}
@@ -97,15 +104,15 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
         ))}
       </div>
 
-      {previewResource ? <section aria-label="Website preview presentation" data-presentation-resource={previewResource.id} data-presentation-mode={previewMode} className={previewContainerClass(previewMode)}><ResourceHeader resource={previewResource} mode={previewMode} onModeChange={onModeChange} /><div ref={onPreviewHostChange} data-presentation-preview-host className="min-h-0 flex-1 overflow-hidden bg-white" /></section> : null}
-      {whiteboardResource ? <section aria-label="Whiteboard presentation" aria-hidden={whiteboardMode === 'hidden'} data-presentation-resource={whiteboardResource.id} data-presentation-mode={whiteboardMode} className={whiteboardContainerClass(whiteboardMode)}><ResourceHeader resource={whiteboardResource} mode={whiteboardMode} onModeChange={onModeChange} /><div className="min-h-0 flex-1"><InteractiveWhiteboard scene={whiteboardScene} readOnly={whiteboardReadOnly} error={whiteboardError} onSceneCommit={onWhiteboardSceneCommit} /></div></section> : null}
+      {previewResource ? <section aria-label="Website preview presentation" data-presentation-resource={previewResource.id} data-presentation-mode={previewMode} data-presentation-frontmost={layout.frontmostBySide?.right === previewResource.id} className={previewContainerClass(previewMode)}><ResourceHeader resource={previewResource} mode={previewMode} onModeChange={onModeChange} /><div ref={onPreviewHostChange} data-presentation-preview-host className="min-h-0 flex-1 overflow-hidden bg-white" /></section> : null}
+      {whiteboardResource ? <section aria-label="Whiteboard presentation" aria-hidden={whiteboardMode === 'hidden'} data-presentation-resource={whiteboardResource.id} data-presentation-mode={whiteboardMode} data-presentation-frontmost={frontmostLeftId === whiteboardResource.id} className={whiteboardContainerClass(whiteboardMode, frontmostLeftId === whiteboardResource.id, cameraMode === 'minimized' && Boolean(cameraMediaUrl))}><ResourceHeader resource={whiteboardResource} mode={whiteboardMode} onModeChange={onModeChange} /><div className="min-h-0 flex-1"><InteractiveWhiteboard scene={whiteboardScene} readOnly={whiteboardReadOnly} error={whiteboardError} onSceneCommit={onWhiteboardSceneCommit} /></div></section> : null}
       {cameraResource && cameraMediaUrl ? <section aria-label="Instructor Camera presentation" data-presentation-resource={cameraResource.id} data-presentation-mode={cameraMode} className={cameraContainerClass(cameraMode)}><ResourceHeader resource={cameraResource} mode={cameraMode} onModeChange={onModeChange} /><video aria-label="Recorded instructor camera" playsInline preload="auto" src={cameraMediaUrl} ref={onCameraMediaElementRef} className="pointer-events-none min-h-0 flex-1 bg-black object-cover" /></section> : null}
     </div>
   );
 }
 
-function PresentationFrame({ resource, mode, onModeChange, children }: { resource: PresentationResource; mode: 'minimized' | 'focused'; onModeChange: (resourceId: string, mode: PresentationMode) => void; children: ReactNode }) {
-  return <section aria-label={`${resource.title} presentation`} data-presentation-resource={resource.id} data-presentation-mode={mode} className={mode === 'focused' ? 'flex h-[min(82vh,800px)] w-[min(88vw,1280px)] flex-col overflow-hidden rounded-xl border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl' : 'pointer-events-auto flex h-52 w-80 flex-col overflow-hidden rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary shadow-xl'}><ResourceHeader resource={resource} mode={mode} onModeChange={onModeChange} /><div className="min-h-0 flex-1 overflow-auto">{children}</div></section>;
+function PresentationFrame({ resource, mode, frontmost = true, onModeChange, children }: { resource: PresentationResource; mode: 'minimized' | 'focused'; frontmost?: boolean; onModeChange: (resourceId: string, mode: PresentationMode) => void; children: ReactNode }) {
+  return <section aria-label={`${resource.title} presentation`} data-presentation-resource={resource.id} data-presentation-mode={mode} data-presentation-frontmost={frontmost} className={mode === 'focused' ? 'flex h-[min(82vh,800px)] w-[min(88vw,1280px)] flex-col overflow-hidden rounded-xl border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl' : `pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary shadow-xl ${frontmost ? 'z-20' : 'z-10'}`}><ResourceHeader resource={resource} mode={mode} onModeChange={onModeChange} /><div className="min-h-0 flex-1 overflow-auto">{children}</div></section>;
 }
 
 function ResourceHeader({ resource, mode, onModeChange }: { resource: PresentationResource; mode: PresentationMode; onModeChange: (resourceId: string, mode: PresentationMode) => void }) {
@@ -174,5 +181,5 @@ function LegacySlideContent({ resource, compact = false }: { resource: SlidePres
 function ExplanationContent({ html, compact = false }: { html: string; compact?: boolean }) { return html ? <div className={`markdown-content text-tk-elements-content-textColor ${compact ? 'line-clamp-5 p-4 text-xs' : 'p-8 md:p-12'}`} dangerouslySetInnerHTML={{ __html: html }} /> : <p className="p-6 text-sm text-tk-text-secondary">No lesson explanation is available.</p>; }
 function resourceIcon(resource: PresentationResource): string { if (resource.kind === 'preview') return 'i-ph-browser'; if (resource.kind === 'camera') return 'i-ph-video-camera'; if (resource.kind === 'whiteboard') return 'i-ph-chalkboard-teacher'; if (resource.kind === 'slide' || resource.kind === 'deck') return 'i-ph-presentation-chart'; return 'i-ph-book-open-text'; }
 function previewContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[6%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 right-4 h-60 w-[min(34rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
-function whiteboardContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-white shadow-2xl'; if (mode === 'focused') return `${base} inset-[5%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 left-4 h-64 w-[min(26rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
+function whiteboardContainerClass(mode: PresentationMode, frontmost: boolean, cameraOffset: boolean): string { const base = 'pointer-events-auto absolute flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-white shadow-2xl'; if (mode === 'focused') return `${base} z-40 inset-[5%] rounded-xl`; if (mode === 'minimized') return `${base} ${frontmost ? 'z-20' : 'z-10'} ${cameraOffset ? 'bottom-60' : 'bottom-4'} left-4 h-64 w-[min(26rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
 function cameraContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[8%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 left-4 h-52 w-72 rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }

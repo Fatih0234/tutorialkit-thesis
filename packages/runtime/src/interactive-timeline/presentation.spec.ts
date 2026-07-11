@@ -30,7 +30,7 @@ describe('presentation layout and decks', () => {
     let layout = createPresentationLayout(resources);
     layout = setPresentationMode(resources, layout, 'preview', 'focused');
     layout = setPresentationMode(resources, layout, 'counter-deck', 'focused');
-    expect(layout).toEqual({ resources: { preview: 'minimized', 'counter-deck': 'focused' }, focusedResourceId: 'counter-deck', deckStates: emptyDeckState });
+    expect(layout).toEqual({ resources: { preview: 'minimized', 'counter-deck': 'focused' }, focusedResourceId: 'counter-deck', deckStates: emptyDeckState, frontmostBySide: { right: 'preview' } });
   });
 
   it('removes focus when the focused resource is hidden', () => {
@@ -42,7 +42,7 @@ describe('presentation layout and decks', () => {
     expect(normalizePresentationLayout(resources, {
       resources: { preview: 'focused', 'counter-deck': 'focused', missing: 'focused' },
       focusedResourceId: 'missing', deckStates: { 'counter-deck': { slideIndex: 99, revealedStep: 99 } },
-    })).toEqual({ resources: { preview: 'focused', 'counter-deck': 'minimized' }, focusedResourceId: 'preview', deckStates: { 'counter-deck': { slideIndex: 1, revealedStep: 1 } } });
+    })).toEqual({ resources: { preview: 'focused', 'counter-deck': 'minimized' }, focusedResourceId: 'preview', deckStates: { 'counter-deck': { slideIndex: 1, revealedStep: 1 } }, frontmostBySide: { left: 'counter-deck' } });
   });
 
   it('reveals progressively and then advances to the next slide', () => {
@@ -65,6 +65,24 @@ describe('presentation layout and decks', () => {
     const minimized = setPresentationMode(cameraResources, createPresentationLayout(cameraResources), 'camera', 'minimized');
     expect(minimized).toEqual({ resources: { camera: 'minimized' }, deckStates: {} });
     expect(setPresentationMode(cameraResources, minimized, 'camera', 'focused')).toEqual({ resources: { camera: 'focused' }, focusedResourceId: 'camera', deckStates: {} });
+  });
+
+  it('tracks the latest minimized window on each fixed side', () => {
+    let layout = createPresentationLayout(resources);
+    layout = setPresentationMode(resources, layout, 'counter-deck', 'minimized');
+    expect(layout.frontmostBySide).toEqual({ left: 'counter-deck' });
+    layout = setPresentationMode(resources, layout, 'preview', 'minimized');
+    expect(layout.frontmostBySide).toEqual({ left: 'counter-deck', right: 'preview' });
+    layout = setPresentationMode(resources, layout, 'counter-deck', 'hidden');
+    expect(layout.frontmostBySide).toEqual({ right: 'preview' });
+  });
+
+  it('normalizes invalid front-window references without changing visibility', () => {
+    const layout = normalizePresentationLayout(resources, {
+      resources: { preview: 'minimized', 'counter-deck': 'minimized' },
+      frontmostBySide: { left: 'preview', right: 'missing' },
+    });
+    expect(layout.frontmostBySide).toEqual({ left: 'counter-deck', right: 'preview' });
   });
 
   it('supports explicit slide navigation and clamps boundaries', () => {

@@ -2,6 +2,7 @@ import type { WhiteboardScene } from './whiteboard.js';
 
 export type PresentationMode = 'hidden' | 'minimized' | 'focused';
 export type PresentationResourceKind = 'preview' | 'slide' | 'deck' | 'explanation' | 'camera' | 'whiteboard';
+export type PresentationWindowSide = 'left' | 'right';
 
 export interface PreviewPresentationResource { id: string; kind: 'preview'; title: string; }
 export interface ExplanationPresentationResource { id: string; kind: 'explanation'; title: string; }
@@ -45,6 +46,7 @@ export interface PresentationLayout {
   resources: Record<string, PresentationMode>;
   focusedResourceId?: string;
   deckStates?: Record<string, DeckPlaybackState>;
+  frontmostBySide?: Partial<Record<PresentationWindowSide, string>>;
 }
 
 export interface PresentationChangedPayload { layout: PresentationLayout; }
@@ -82,6 +84,14 @@ export function normalizePresentationLayout(resources: PresentationResource[], l
     normalized.resources[requestedFocus] = 'focused';
   }
   if (focusedResourceId) normalized.focusedResourceId = focusedResourceId;
+  const frontmostBySide: Partial<Record<PresentationWindowSide, string>> = {};
+  for (const side of ['left', 'right'] as const) {
+    const requestedId = layout?.frontmostBySide?.[side];
+    const fallbackId = [...resources].reverse().find((resource) => presentationWindowSide(resource) === side && normalized.resources[resource.id] === 'minimized')?.id;
+    const frontmostId = requestedId && resources.some((resource) => resource.id === requestedId && presentationWindowSide(resource) === side && normalized.resources[resource.id] === 'minimized') ? requestedId : fallbackId;
+    if (frontmostId) frontmostBySide[side] = frontmostId;
+  }
+  if (Object.keys(frontmostBySide).length) normalized.frontmostBySide = frontmostBySide;
   return normalized;
 }
 
@@ -103,9 +113,15 @@ export function setPresentationMode(resources: PresentationResource[], layout: P
     for (const [id, currentMode] of Object.entries(nextResources)) if (currentMode === 'focused' && id !== resourceId) nextResources[id] = 'minimized';
   }
   nextResources[resourceId] = mode;
+  const resource = resources.find((item) => item.id === resourceId)!;
+  const side = presentationWindowSide(resource);
+  const frontmostBySide = { ...layout.frontmostBySide };
+  if (side && mode !== 'hidden') frontmostBySide[side] = resourceId;
+  if (side && mode === 'hidden' && frontmostBySide[side] === resourceId) delete frontmostBySide[side];
   return normalizePresentationLayout(resources, {
     resources: nextResources,
     deckStates: layout.deckStates,
+    frontmostBySide,
     focusedResourceId: mode === 'focused' ? resourceId : layout.focusedResourceId === resourceId ? undefined : layout.focusedResourceId,
   });
 }
@@ -140,10 +156,16 @@ export function stepDeckSlide(resources: PresentationResource[], layout: Present
   return setDeckProgress(resources, layout, deckId, { slideIndex: current.slideIndex + direction, revealedStep: 0 });
 }
 
+export function presentationWindowSide(resource: PresentationResource): PresentationWindowSide | undefined {
+  if (resource.kind === 'camera') return undefined;
+  return resource.kind === 'preview' ? 'right' : 'left';
+}
+
 export function clonePresentationLayout(layout: PresentationLayout): PresentationLayout {
   return {
     resources: { ...layout.resources },
     ...(layout.focusedResourceId ? { focusedResourceId: layout.focusedResourceId } : {}),
     deckStates: Object.fromEntries(Object.entries(layout.deckStates ?? {}).map(([id, state]) => [id, { ...state }])),
+    ...(layout.frontmostBySide ? { frontmostBySide: { ...layout.frontmostBySide } } : {}),
   };
 }
