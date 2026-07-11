@@ -92,7 +92,7 @@ The recording-studio refinement separated Lecture Setup, material preparation, f
 
 The isolated application-root refinement then moved the product DOM into a dedicated Astro mount outside TutorialKit's standard resizable layout. Explicit management and persistent workspace shells prevent terminal/editor controls from leaking into libraries and dashboards. The standard layout remains mounted but inert, the terminal has one persistent immersive owner, lesson Markdown enters through a lesson-specific template bridge, and context-panel resize callbacks are guarded from teacher recording.
 
-The presentation-resource refinement added Scrimba-style hidden, minimized, and focused resources for the persistent live website preview, explanation, and self-contained demo slides. Teacher layout snapshots became deterministic timeline cues; learner actions remain temporary local overrides with an explicit Follow teacher action. The real preview iframe is embedded into the immersive host without recreation, while interactions inside it intentionally remain outside the recording schema.
+The presentation-resource refinement added Scrimba-style hidden, minimized, and focused resources for the persistent live website preview, explanation, and a self-contained multi-slide deck with progressive element reveals and a preparation-stage visual builder. Teacher layout snapshots became deterministic timeline cues; learner actions remain temporary local overrides with an explicit Follow teacher action. The real preview iframe is embedded into the immersive host without recreation, while interactions inside it intentionally remain outside the recording schema.
 
 ## Learner timeline experiment refinement
 

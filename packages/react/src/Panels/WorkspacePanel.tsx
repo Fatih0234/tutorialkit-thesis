@@ -462,9 +462,14 @@ function EditorSection({
           layout={interactivePoc.controls.presentationLayout}
           hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
           explanationHtml={explanationHtml}
+          canEditDeck={experience.screen === 'teacher-materials'}
           onModeChange={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
             ? interactivePoc.controls.onTeacherPresentationModeChange
             : interactivePoc.controls.onLearnerPresentationModeChange}
+          onDeckAction={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+            ? interactivePoc.controls.onTeacherDeckAction
+            : interactivePoc.controls.onLearnerDeckAction}
+          onDeckChange={interactivePoc.controls.onUpdatePresentationDeck}
           onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
           onPreviewHostChange={onImmersivePreviewHostChange}
         />

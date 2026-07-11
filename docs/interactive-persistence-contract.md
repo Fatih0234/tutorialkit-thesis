@@ -1017,7 +1017,7 @@ interactive-poc.learnerDeltas
 
 The separate `interactive-poc.workspaceLayout` preference stores only immersive explanation/terminal visibility and sizes. Temporary learner presentation overrides are likewise UI-only and are not mirrored to a backend. Neither is recording or learner-work data, and both can be discarded safely.
 
-Recordings may optionally snapshot `presentationResources` and `initialPresentationLayout`; subsequent teacher cues are ordinary ordered `presentation.changed` events. Existing recordings without these additive fields remain valid and default to hidden resources.
+Recordings may optionally snapshot `presentationResources` and `initialPresentationLayout`; the layout includes optional per-deck `slideIndex` and `revealedStep` state. Subsequent teacher layout, slide, and progressive-reveal cues are ordinary ordered `presentation.changed` snapshots. Existing recordings without these additive fields remain valid and default to hidden resources; legacy individual slide resources remain playable.
 
 Milestone H stores local draft resource shapes in IndexedDB database `interactive-timeline-poc` with object stores `teacherRecordings`, `learnerDeltas`, and `mediaAssets`. Published/demo resource shapes are stored in `.interactive-data/teacher-recordings`, `.interactive-data/learner-deltas`, `.interactive-data/media-assets`, and `.interactive-data/sessions`. Media blobs are stored only in IndexedDB, `.interactive-data/media-assets`, or base64 inside an explicit exported package; they are not mirrored to localStorage.
 

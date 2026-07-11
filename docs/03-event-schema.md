@@ -63,9 +63,15 @@ export interface FileChangedPayload {
   layout: {
     resources: {
       'website-preview': 'minimized',
-      'slide-javascript-runtime': 'focused'
+      'javascript-counter-deck': 'focused'
     },
-    focusedResourceId: 'slide-javascript-runtime'
+    focusedResourceId: 'javascript-counter-deck',
+    deckStates: {
+      'javascript-counter-deck': {
+        slideIndex: 1,
+        revealedStep: 2
+      }
+    }
   }
 }
 ```

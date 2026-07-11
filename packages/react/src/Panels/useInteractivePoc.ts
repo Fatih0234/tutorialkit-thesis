@@ -26,8 +26,12 @@ import {
   normalizePath,
   normalizePresentationLayout,
   parseRecordingPackage,
+  setDeckProgress,
   setPresentationMode,
+  stepDeckReveal,
+  stepDeckSlide,
   simpleHashFiles,
+  type DeckPresentationResource,
   type EditorScrolledPayload,
   type FileChangedPayload,
   type FilesSnapshot,
@@ -82,6 +86,8 @@ export interface LearnerCheckpointView {
   versionCount: number;
   selectedFile?: string;
 }
+
+export type DeckAction = 'next-reveal' | 'previous-reveal' | 'next-slide' | 'previous-slide' | 'select-slide';
 
 export interface InteractivePocControlsModel {
   isRecording: boolean;
@@ -158,6 +164,9 @@ export interface InteractivePocControlsModel {
   onRefreshRecordingLibrary: () => void;
   onTeacherPresentationModeChange: (resourceId: string, mode: PresentationMode) => void;
   onLearnerPresentationModeChange: (resourceId: string, mode: PresentationMode) => void;
+  onTeacherDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
+  onLearnerDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
+  onUpdatePresentationDeck: (deck: DeckPresentationResource) => void;
   onFollowTeacherPresentation: () => void;
   onSelectDraftRecording: (recordingId: string) => void;
   onSelectPublishedRecording: (recordingId: string) => void;
@@ -221,20 +230,19 @@ const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
   { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
   { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
   {
-    id: 'slide-javascript-runtime',
-    kind: 'slide',
-    title: 'JavaScript runs in the browser',
-    eyebrow: 'Demo slide 1',
-    body: 'Edit the source, observe the live website, and connect each code change to visible browser behavior.',
-    accent: 'indigo',
-  },
-  {
-    id: 'slide-dom-update',
-    kind: 'slide',
-    title: 'From code to interface',
-    eyebrow: 'Demo slide 2',
-    body: 'JavaScript reads the document, updates DOM state, and lets the learner inspect the result in a real interactive preview.',
-    accent: 'violet',
+    id: 'javascript-counter-deck', kind: 'deck', title: 'Building a JavaScript Counter', accent: 'indigo',
+    slides: [
+      { id: 'counter-state', title: 'JavaScript remembers state', eyebrow: 'Counter concept · 1', elements: [
+        { id: 'state-intro', kind: 'paragraph', text: 'A variable stores the current count between button clicks.', revealStep: 0 },
+        { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
+        { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
+      ] },
+      { id: 'counter-dom', title: 'Events update the DOM', eyebrow: 'Counter concept · 2', elements: [
+        { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
+        { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
+        { id: 'dom-code', kind: 'code', language: 'javascript', code: "button.addEventListener('click', () => {\n  count += 1;\n  output.textContent = count;\n});", revealStep: 3 },
+      ] },
+    ],
   },
 ];
 
@@ -245,7 +253,7 @@ function clonePresentationResources(resources: PresentationResource[]): Presenta
 function createDefaultPresentationLayout(): PresentationLayout {
   let layout = createPresentationLayout(DEFAULT_PRESENTATION_RESOURCES);
   layout = setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'website-preview', 'minimized');
-  return setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'slide-javascript-runtime', 'minimized');
+  return setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'javascript-counter-deck', 'minimized');
 }
 
 function isFakeMediaRecorderEnabled(): boolean {
@@ -874,6 +882,41 @@ export function useInteractivePoc({
     const nextLayout = setPresentationMode(presentationResourcesRef.current, baseLayout, resourceId, mode);
     learnerPresentationOverrideRef.current = nextLayout;
     setLearnerPresentationOverride(nextLayout);
+  }
+
+  function reduceDeckAction(layout: PresentationLayout, deckId: string, action: DeckAction, slideIndex?: number) {
+    if (action === 'next-reveal') return stepDeckReveal(presentationResourcesRef.current, layout, deckId, 1);
+    if (action === 'previous-reveal') return stepDeckReveal(presentationResourcesRef.current, layout, deckId, -1);
+    if (action === 'next-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, 1);
+    if (action === 'previous-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, -1);
+    return setDeckProgress(presentationResourcesRef.current, layout, deckId, { slideIndex: slideIndex ?? 0, revealedStep: 0 });
+  }
+
+  function recordTeacherPresentationLayout(nextLayout: PresentationLayout) {
+    applyTeacherPresentationLayout(nextLayout);
+    if (modeRef.current === 'idle' && recorderRef.current?.isRecording()) {
+      recorderRef.current.append<PresentationChangedPayload>('presentation.changed', {
+        payload: { layout: clonePresentationLayout(nextLayout) },
+      });
+      syncEventCount();
+    }
+  }
+
+  function onTeacherDeckAction(deckId: string, action: DeckAction, slideIndex?: number) {
+    recordTeacherPresentationLayout(reduceDeckAction(teacherPresentationLayoutRef.current, deckId, action, slideIndex));
+  }
+
+  function onLearnerDeckAction(deckId: string, action: DeckAction, slideIndex?: number) {
+    const base = learnerPresentationOverrideRef.current ?? teacherPresentationLayoutRef.current;
+    const nextLayout = reduceDeckAction(base, deckId, action, slideIndex);
+    learnerPresentationOverrideRef.current = nextLayout;
+    setLearnerPresentationOverride(nextLayout);
+  }
+
+  function onUpdatePresentationDeck(deck: DeckPresentationResource) {
+    const nextResources = presentationResourcesRef.current.map((resource) => resource.id === deck.id ? structuredClone(deck) : resource);
+    const nextLayout = normalizePresentationLayout(nextResources, teacherPresentationLayoutRef.current);
+    setPresentationResourcesAndLayout(nextResources, nextLayout);
   }
 
   function onFollowTeacherPresentation() {
@@ -2334,6 +2377,9 @@ export function useInteractivePoc({
       onRefreshRecordingLibrary,
       onTeacherPresentationModeChange,
       onLearnerPresentationModeChange,
+      onTeacherDeckAction,
+      onLearnerDeckAction,
+      onUpdatePresentationDeck,
       onFollowTeacherPresentation,
       onSelectDraftRecording,
       onSelectPublishedRecording,

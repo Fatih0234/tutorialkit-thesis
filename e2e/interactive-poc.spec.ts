@@ -622,6 +622,21 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /hide explanation/i }).click();
     await expect(presentationExplanation).toHaveCount(0);
 
+    await page.getByRole('button', { name: /focus building a javascript counter/i }).click();
+    const deckRevealPoint = page.locator('[data-presentation-resource="javascript-counter-deck"] p').filter({ hasText: /read the current value/i });
+    await page.keyboard.press('ArrowRight');
+    await expect(deckRevealPoint).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(deckRevealPoint).toHaveCount(0);
+    await page.getByText(/edit presentation/i).click();
+    await page.getByLabel(/deck title/i).fill('My Counter Lecture');
+    await page.getByLabel(/deck title/i).press('ArrowRight');
+    await expect(deckRevealPoint).toHaveCount(0);
+    await page.getByRole('button', { name: /add slide/i }).click();
+    await expect(page.getByText(/slide 1 \/ 3/i)).toBeVisible();
+    await page.getByRole('button', { name: /minimize my counter lecture/i }).click();
+    await expect(page.getByRole('button', { name: /hide presentation resource: my counter lecture/i })).toBeVisible();
+
     const savedLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.workspaceLayout') || 'null'));
     expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
     expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
@@ -696,16 +711,25 @@ test.describe('interactive timeline POC', () => {
   test('teacher presentation cues record and seek deterministic slide layouts', async ({ page }) => {
     await startTeacherRecording(page);
 
-    const slide = page.locator('[data-presentation-resource="slide-javascript-runtime"]');
+    const slide = page.locator('[data-presentation-resource="javascript-counter-deck"]');
     await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
     const website = page.frameLocator('[data-presentation-preview-host] iframe').first();
     await website.getByRole('button', { name: /click the live preview/i }).click({ timeout: 20000 });
     await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
     await page.waitForTimeout(250);
-    await page.getByRole('button', { name: /focus javascript runs in the browser/i }).click();
+    await page.getByRole('button', { name: /focus building a javascript counter/i }).click();
     await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
-    await page.waitForTimeout(350);
-    await page.getByRole('button', { name: /minimize javascript runs in the browser/i }).click();
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /reveal next/i }).click();
+    await expect(slide.getByText(/read the current value/i)).toBeVisible();
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /reveal next/i }).click();
+    await expect(slide.getByText(/increment it after every click/i)).toBeVisible();
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /next slide/i }).click();
+    await expect(slide.getByRole('heading', { name: /events update the dom/i })).toBeVisible();
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /minimize building a javascript counter/i }).click();
     await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
 
     await page.getByRole('button', { name: /stop recording/i }).click();
@@ -715,16 +739,21 @@ test.describe('interactive timeline POC', () => {
     const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
     const presentationEvents = recording.events.filter((event: any) => event.type === 'presentation.changed');
 
-    expect(recording.presentationResources.some((resource: any) => resource.id === 'slide-javascript-runtime')).toBeTruthy();
-    expect(recording.initialPresentationLayout.resources['slide-javascript-runtime']).toBe('minimized');
-    expect(presentationEvents).toHaveLength(2);
+    const deck = recording.presentationResources.find((resource: any) => resource.id === 'javascript-counter-deck');
+    expect(deck.slides).toHaveLength(2);
+    expect(recording.initialPresentationLayout.resources['javascript-counter-deck']).toBe('minimized');
+    expect(presentationEvents).toHaveLength(5);
     expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeFalsy();
-    expect(presentationEvents[0].payload.layout.resources['slide-javascript-runtime']).toBe('focused');
-    expect(presentationEvents[1].payload.layout.resources['slide-javascript-runtime']).toBe('minimized');
+    expect(presentationEvents[0].payload.layout.resources['javascript-counter-deck']).toBe('focused');
+    expect(presentationEvents[2].payload.layout.deckStates['javascript-counter-deck']).toEqual({ slideIndex: 0, revealedStep: 2 });
+    expect(presentationEvents[3].payload.layout.deckStates['javascript-counter-deck']).toEqual({ slideIndex: 1, revealedStep: 0 });
+    expect(presentationEvents[4].payload.layout.resources['javascript-counter-deck']).toBe('minimized');
 
-    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[0].tMs));
-    await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
-    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[1].tMs));
+    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[2].tMs));
+    await expect(slide.getByText(/increment it after every click/i)).toBeVisible();
+    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[3].tMs));
+    await expect(slide.getByRole('heading', { name: /events update the dom/i })).toBeVisible();
+    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[4].tMs));
     await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
   });
 
@@ -738,15 +767,18 @@ test.describe('interactive timeline POC', () => {
       { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
       { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
       {
-        id: 'slide-javascript-runtime',
-        kind: 'slide',
-        title: 'JavaScript runs in the browser',
-        eyebrow: 'Demo slide 1',
-        body: 'A deterministic learner presentation test.',
+        id: 'learner-counter-deck', kind: 'deck', title: 'Learner Counter Deck', slides: [
+          { id: 'learner-state', title: 'State', elements: [
+            { id: 'learner-state-intro', kind: 'paragraph', text: 'Initial concept', revealStep: 0 },
+            { id: 'learner-state-point', kind: 'bullet', text: 'Learner-revealed point', revealStep: 1 },
+          ] },
+          { id: 'learner-dom', title: 'DOM update', elements: [] },
+        ],
       },
     ];
     recording.initialPresentationLayout = {
-      resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'minimized' },
+      resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'minimized' },
+      deckStates: { 'learner-counter-deck': { slideIndex: 0, revealedStep: 0 } },
     };
     recording.events.splice(2, 0,
       {
@@ -756,8 +788,9 @@ test.describe('interactive timeline POC', () => {
         type: 'presentation.changed',
         payload: {
           layout: {
-            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'focused' },
-            focusedResourceId: 'slide-javascript-runtime',
+            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'focused' },
+            focusedResourceId: 'learner-counter-deck',
+            deckStates: { 'learner-counter-deck': { slideIndex: 0, revealedStep: 0 } },
           },
         },
         origin: 'teacher',
@@ -769,7 +802,8 @@ test.describe('interactive timeline POC', () => {
         type: 'presentation.changed',
         payload: {
           layout: {
-            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'minimized' },
+            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'minimized' },
+            deckStates: { 'learner-counter-deck': { slideIndex: 1, revealedStep: 0 } },
           },
         },
         origin: 'teacher',
@@ -785,9 +819,11 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /start lesson/i }).click();
     await page.getByRole('button', { name: /^play$/i }).click();
 
-    const slide = page.locator('[data-presentation-resource="slide-javascript-runtime"]');
+    const slide = page.locator('[data-presentation-resource="learner-counter-deck"]');
     await expect(slide).toHaveAttribute('data-presentation-mode', 'focused', { timeout: 1800 });
-    await page.getByRole('button', { name: /hide javascript runs in the browser/i }).click();
+    await page.getByRole('button', { name: /reveal next/i }).click();
+    await expect(slide.getByText(/learner-revealed point/i)).toBeVisible();
+    await page.getByRole('button', { name: /hide learner counter deck/i }).click();
     await expect(slide).toHaveCount(0);
     await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
     await page.waitForTimeout(400);
@@ -795,11 +831,12 @@ test.describe('interactive timeline POC', () => {
 
     await page.getByRole('button', { name: /follow teacher/i }).click();
     await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
-    await page.getByRole('button', { name: /minimize javascript runs in the browser/i }).click();
-    await page.getByRole('button', { name: /focus javascript runs in the browser/i }).click();
+    await page.getByRole('button', { name: /minimize learner counter deck/i }).click();
+    await page.getByRole('button', { name: /focus learner counter deck/i }).click();
     await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
 
     await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized', { timeout: 7000 });
+    await expect(slide.getByRole('heading', { name: /dom update/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /follow teacher/i })).toHaveCount(0);
     expect(readFileSync(getPublishedRecordingFile(recording.id), 'utf8')).toBe(rawBefore);
   });
@@ -1237,7 +1274,8 @@ test.describe('interactive timeline POC', () => {
     expect(exportedPackage.formatVersion).toBe(1);
     expect(exportedPackage.teacherRecording.id).toBe('demo-interactive-conflict-flow');
     expect(exportedPackage.teacherRecording.events).toHaveLength(8);
-    expect(exportedPackage.teacherRecording.presentationResources).toHaveLength(4);
+    expect(exportedPackage.teacherRecording.presentationResources).toHaveLength(3);
+    expect(exportedPackage.teacherRecording.presentationResources.find((resource: any) => resource.kind === 'deck').slides).toHaveLength(2);
     expect(exportedPackage.teacherRecording.events.filter((event: any) => event.type === 'presentation.changed')).toHaveLength(5);
     expect(exportedPackage.mediaAssets[0].metadata.id).toBe('demo-interactive-conflict-flow-audio');
     expect(exportedPackage.mediaAssets[0].dataBase64).toBeTruthy();

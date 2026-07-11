@@ -45,7 +45,7 @@ pnpm --dir e2e run preview
 
 Open `http://localhost:4329/tests/file-tree/lesson-and-solution`.
 
-The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor, terminal, and live website preview as an immersive video-like surface with a full-width timeline. Foldable context panels and timeline-directed preview, explanation, and slide resources restore lesson context while learners retain local presentation control. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md) and [Presentation Resource Layer](./docs/presentation-resource-layer.md).
+The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor, terminal, and live website preview as an immersive video-like surface with a full-width timeline. Foldable context panels and timeline-directed preview, explanation, and multi-slide deck resources restore lesson context while learners retain local presentation control. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md) and [Presentation Resource Layer](./docs/presentation-resource-layer.md).
 
 ## Validation
 

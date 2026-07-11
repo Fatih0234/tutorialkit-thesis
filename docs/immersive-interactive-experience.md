@@ -22,7 +22,7 @@ The immersive workspace remains editor-first, with two optional and resizable co
 
 Both are closed by default. Their visibility and last sizes are stored under `interactive-poc.workspaceLayout`. This preference is UI-only: toggling or resizing panels never creates teacher events, learner deltas, or dirty-work state. A short layout guard prevents CodeMirror resize-induced scroll callbacks from becoming teacher events. The terminal stays mounted while collapsed and while management is visible, so output and process attachment survive. Terminal activity is live context and remains outside the recording and replay schema.
 
-A presentation layer above the workspace can independently minimize, focus, hide, and reopen the existing live website preview, lesson explanation, and snapshot-safe slides. Teacher actions during recording become deterministic `presentation.changed` cues. Learner controls create temporary local overrides; **Follow teacher** or the next teacher cue restores teacher direction. The same TutorialKit preview iframe remains mounted and interactive across presentation modes. See `docs/presentation-resource-layer.md`.
+A presentation layer above the workspace can independently minimize, focus, hide, and reopen the existing live website preview, lesson explanation, and a snapshot-safe multi-slide deck with progressive reveals. Teacher actions during recording become deterministic `presentation.changed` cues. Learner controls create temporary local overrides; **Follow teacher** or the next teacher cue restores teacher direction. The same TutorialKit preview iframe remains mounted and interactive across presentation modes. See `docs/presentation-resource-layer.md`.
 
 ## Session lifecycle
 

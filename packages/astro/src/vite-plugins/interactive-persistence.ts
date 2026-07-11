@@ -90,15 +90,22 @@ interface TeacherRecording {
   events: TimelineEvent[];
   presentationResources?: Array<{
     id: string;
-    kind: 'preview' | 'explanation' | 'slide';
+    kind: 'preview' | 'explanation' | 'slide' | 'deck';
     title: string;
     eyebrow?: string;
     body?: string;
     accent?: string;
+    slides?: Array<{
+      id: string;
+      title: string;
+      eyebrow?: string;
+      elements: Array<Record<string, unknown>>;
+    }>;
   }>;
   initialPresentationLayout?: {
     resources: Record<string, 'hidden' | 'minimized' | 'focused'>;
     focusedResourceId?: string;
+    deckStates?: Record<string, { slideIndex: number; revealedStep: number }>;
   };
   mediaAssets?: RecordingMediaAssetMetadata[];
   createdByUserId?: string;
@@ -836,34 +843,34 @@ console.log("demo conflict base");
     { id: 'website-preview', kind: 'preview' as const, title: 'Live Counter Preview' },
     { id: 'lesson-explanation', kind: 'explanation' as const, title: 'Counter lesson notes' },
     {
-      id: 'slide-javascript-runtime',
-      kind: 'slide' as const,
-      title: 'JavaScript remembers state',
-      eyebrow: 'Counter concept · 1',
-      body: 'A variable stores the current count. Every click changes that value before the page is updated.',
-      accent: 'indigo',
-    },
-    {
-      id: 'slide-dom-update',
-      kind: 'slide' as const,
-      title: 'Events update the DOM',
-      eyebrow: 'Counter concept · 2',
-      body: 'The click listener changes textContent, connecting JavaScript state to something visible in the browser.',
-      accent: 'violet',
+      id: 'javascript-counter-deck', kind: 'deck' as const, title: 'Building a JavaScript Counter', accent: 'indigo',
+      slides: [
+        { id: 'counter-state', title: 'JavaScript remembers state', eyebrow: 'Counter concept · 1', elements: [
+          { id: 'state-intro', kind: 'paragraph', text: 'A variable stores the current count between clicks.', revealStep: 0 },
+          { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
+          { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
+        ] },
+        { id: 'counter-dom', title: 'Events update the DOM', eyebrow: 'Counter concept · 2', elements: [
+          { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
+          { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
+          { id: 'dom-code', kind: 'code', language: 'javascript', code: "button.addEventListener('click', () => { count += 1; });", revealStep: 3 },
+        ] },
+      ],
     },
   ];
   const layout = (
     websitePreview: 'hidden' | 'minimized' | 'focused',
-    firstSlide: 'hidden' | 'minimized' | 'focused',
-    secondSlide: 'hidden' | 'minimized' | 'focused',
+    deck: 'hidden' | 'minimized' | 'focused',
     focusedResourceId?: string,
+    slideIndex = 0,
+    revealedStep = 0,
   ) => ({
     resources: {
       'website-preview': websitePreview,
       'lesson-explanation': 'hidden' as const,
-      'slide-javascript-runtime': firstSlide,
-      'slide-dom-update': secondSlide,
+      'javascript-counter-deck': deck,
     },
+    deckStates: { 'javascript-counter-deck': { slideIndex, revealedStep } },
     ...(focusedResourceId ? { focusedResourceId } : {}),
   });
   const mediaMetadata: RecordingMediaAssetMetadata = {
@@ -909,7 +916,7 @@ createServer(async (request, response) => {
 `,
     },
     presentationResources,
-    initialPresentationLayout: layout('minimized', 'minimized', 'hidden'),
+    initialPresentationLayout: layout('minimized', 'minimized'),
     events: [
       { id: 'demo-event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
       {
@@ -918,15 +925,15 @@ createServer(async (request, response) => {
       },
       {
         id: 'demo-presentation-concept', seq: 2, tMs: 300, type: 'presentation.changed', origin: 'teacher',
-        payload: { layout: layout('minimized', 'focused', 'hidden', 'slide-javascript-runtime') },
+        payload: { layout: layout('minimized', 'focused', 'javascript-counter-deck', 0, 0) },
       },
       {
         id: 'demo-presentation-preview', seq: 3, tMs: 900, type: 'presentation.changed', origin: 'teacher',
-        payload: { layout: layout('focused', 'minimized', 'hidden', 'website-preview') },
+        payload: { layout: layout('focused', 'minimized', 'website-preview', 0, 2) },
       },
       {
         id: 'demo-presentation-dom', seq: 4, tMs: 1500, type: 'presentation.changed', origin: 'teacher',
-        payload: { layout: layout('minimized', 'hidden', 'focused', 'slide-dom-update') },
+        payload: { layout: layout('minimized', 'focused', 'javascript-counter-deck', 1, 1) },
       },
       {
         id: 'demo-event-conflict-change', seq: 5, tMs: 2000, type: 'file.changed', filePath: '/example.js',
@@ -934,11 +941,11 @@ createServer(async (request, response) => {
       },
       {
         id: 'demo-presentation-try-it', seq: 6, tMs: 2300, type: 'presentation.changed', origin: 'teacher',
-        payload: { layout: layout('focused', 'hidden', 'minimized', 'website-preview') },
+        payload: { layout: layout('focused', 'minimized', 'website-preview', 1, 3) },
       },
       {
         id: 'demo-presentation-summary', seq: 7, tMs: 2700, type: 'presentation.changed', origin: 'teacher',
-        payload: { layout: layout('minimized', 'minimized', 'minimized') },
+        payload: { layout: layout('minimized', 'minimized', undefined, 1, 3) },
       },
     ],
     mediaAssets: [mediaMetadata],
