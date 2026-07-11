@@ -219,9 +219,9 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
             <fieldset className="grid gap-1.5 rounded-md border border-tk-border-primary p-2">
               <legend className="px-1 text-xs font-500 text-tk-text-secondary">Recording mode</legend>
               {([
-                ['none', 'Editor timeline only'],
+                ['none', 'Editor only'],
                 ['audio', 'Editor + microphone'],
-                ['webcam', 'Editor + camera'],
+                ['webcam', 'Editor + camera + microphone'],
               ] as const).map(([value, label]) => (
                 <label key={value} className="inline-flex items-center gap-2 text-xs text-tk-text-primary">
                   <input
@@ -346,9 +346,8 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
       ) : null}
       {view === 'setup' && mediaPreviewUrl && mediaKind === 'webcam' ? (
         <video
-          className="max-h-36 max-w-56 rounded-md border border-tk-border-primary"
+          className="pointer-events-none max-h-36 max-w-56 rounded-md border border-tk-border-primary"
           aria-label="Recorded webcam preview"
-          controls
           playsInline
           preload="auto"
           src={mediaPreviewUrl}

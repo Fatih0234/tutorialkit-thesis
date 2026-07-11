@@ -90,7 +90,7 @@ interface TeacherRecording {
   events: TimelineEvent[];
   presentationResources?: Array<{
     id: string;
-    kind: 'preview' | 'explanation' | 'slide' | 'deck';
+    kind: 'preview' | 'explanation' | 'slide' | 'deck' | 'camera';
     title: string;
     eyebrow?: string;
     body?: string;

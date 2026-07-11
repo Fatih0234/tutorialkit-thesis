@@ -472,6 +472,8 @@ function EditorSection({
           onDeckChange={interactivePoc.controls.onUpdatePresentationDeck}
           onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
           onPreviewHostChange={onImmersivePreviewHostChange}
+          cameraMediaUrl={interactivePoc.controls.mediaKind === 'webcam' ? interactivePoc.controls.mediaPreviewUrl : ''}
+          onCameraMediaElementRef={interactivePoc.controls.onMediaElementRef}
         />
       }
     >

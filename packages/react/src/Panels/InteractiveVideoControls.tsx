@@ -67,18 +67,6 @@ export function InteractiveVideoControls({ audience, model, onPlay, onPause }: I
         </section>
       ) : null}
 
-      {model.mediaPreviewUrl && model.mediaKind === 'webcam' ? (
-        <video
-          aria-label="Recorded webcam preview"
-          controls
-          playsInline
-          preload="auto"
-          src={model.mediaPreviewUrl}
-          ref={model.onMediaElementRef}
-          className="fixed bottom-24 right-4 z-[1010] max-h-44 w-64 rounded-xl border border-tk-border-primary bg-black object-cover shadow-2xl"
-        />
-      ) : null}
-
       <footer aria-label="Interactive lesson controls" className="relative z-20 shrink-0 border-t border-tk-border-primary bg-tk-background-primary px-4 pb-3 pt-2 shadow-[0_-8px_30px_rgba(0,0,0,0.18)]">
         <div hidden>
           <span>Draft status: {model.draftStatus}</span>

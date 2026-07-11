@@ -1,6 +1,6 @@
 # Presentation Resource Layer
 
-The immersive workspace presents the live website preview, lesson explanation, and an ordered slide deck as timeline-directed resources. A resource has one canonical layout mode: `hidden`, `minimized`, or `focused`; only one resource may be focused.
+The immersive workspace presents the live website preview, lesson explanation, an ordered slide deck, and an optional recorded instructor camera as timeline-directed resources. A resource has one canonical layout mode: `hidden`, `minimized`, or `focused`; only one resource may be focused.
 
 ## Deck model
 
@@ -64,6 +64,14 @@ Every teacher layout or deck-progress action appends a complete `presentation.ch
 Playback materializes presentation events alongside editor events. Seeking restores the initial layout and applies ordered snapshots through the target timestamp, immediately producing the correct slide and reveal step.
 
 Learners can navigate slides and reveals, hide or focus resources, and interact with the live preview. These actions create a temporary presentation override only: they do not mutate the teacher recording, create a learner file delta, mark the workspace dirty, or write backend state. **Follow teacher** clears the override. A later teacher presentation cue also clears it and applies the teacher's new state.
+
+## Instructor camera
+
+A webcam recording captures camera and microphone together. Its synchronized video is exposed as an **Instructor Camera** resource, initially minimized in a safe lower-left slot while the website preview remains lower-right. Learners can hide, minimize, focus, and reopen it using the same temporary override behavior as other resources.
+
+The camera `<video>` remains mounted even while hidden so it can continue serving as the authoritative media clock. It deliberately has no native controls or independent pointer interaction: play, pause, restart, and seek belong exclusively to the lecture transport. During recording, the teacher still sees the separate muted live monitor in the recording header.
+
+Older webcam recordings without a camera resource receive this resource and minimized default when loaded. Recordings without webcam media do not expose it.
 
 ## Live preview ownership
 

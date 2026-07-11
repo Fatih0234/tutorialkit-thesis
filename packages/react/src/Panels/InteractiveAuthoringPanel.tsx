@@ -102,12 +102,11 @@ export function InteractiveAuthoringPanel({
       {mediaPreviewUrl && mediaKind === 'webcam' ? (
         <video
           aria-label="Recorded webcam preview"
-          controls
           playsInline
           preload="auto"
           src={mediaPreviewUrl}
           ref={onMediaElementRef}
-          style={{ maxHeight: '6rem', maxWidth: '10rem' }}
+          style={{ maxHeight: '6rem', maxWidth: '10rem', pointerEvents: 'none' }}
         />
       ) : null}
     </div>

@@ -331,7 +331,7 @@ async function startTeacherRecording(page: Page, mode: 'timeline' | 'audio' | 'c
   }
 
   const modeName =
-    mode === 'audio' ? /editor \+ microphone/i : mode === 'camera' ? /editor \+ camera/i : /editor timeline only/i;
+    mode === 'audio' ? /editor \+ microphone/i : mode === 'camera' ? /editor \+ camera \+ microphone/i : /^editor only$/i;
 
   await page.getByRole('radio', { name: modeName }).check();
   await page.getByRole('button', { name: /^start recording$/i }).click();
@@ -1102,6 +1102,35 @@ test.describe('interactive timeline POC', () => {
 
     await expect(reloadedEditor).toContainText('// teacher fake audio draft edit', { timeout: 5000 });
     await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached({ timeout: 5000 });
+  });
+
+  test('webcam recording becomes an optional synchronized camera resource', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('interactive-poc.fakeMediaRecorder', 'true'));
+
+    await startTeacherRecording(page, 'camera');
+    await expect(page.getByText(/media kind:\s*webcam/i)).toBeAttached();
+    await page.waitForTimeout(100);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+
+    const camera = page.getByLabel(/instructor camera presentation/i);
+    const cameraVideo = page.getByLabel(/recorded instructor camera/i);
+    await expect(camera).toHaveAttribute('data-presentation-mode', 'minimized');
+    await expect(cameraVideo).toBeVisible();
+    expect(await cameraVideo.evaluate((element) => (element as HTMLVideoElement).controls)).toBe(false);
+
+    await camera.getByRole('button', { name: /hide instructor camera/i }).click();
+    await expect(camera).toHaveAttribute('data-presentation-mode', 'hidden');
+    await page.getByRole('button', { name: /show presentation resource: instructor camera/i }).click();
+    await expect(camera).toHaveAttribute('data-presentation-mode', 'minimized');
+    await camera.getByRole('button', { name: /focus instructor camera/i }).click();
+    await expect(camera).toHaveAttribute('data-presentation-mode', 'focused');
+
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).not.toBeNull();
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') ?? 'null'));
+    expect(recording.presentationResources).toContainEqual(expect.objectContaining({ id: 'instructor-camera', kind: 'camera' }));
+    expect(recording.initialPresentationLayout.resources['instructor-camera']).toBe('minimized');
   });
 
   test('media playback drives the structured timeline playhead', async ({ page }) => {

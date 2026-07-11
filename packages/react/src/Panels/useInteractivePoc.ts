@@ -226,6 +226,7 @@ const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
 const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
+const CAMERA_PRESENTATION_RESOURCE: PresentationResource = { id: 'instructor-camera', kind: 'camera', title: 'Instructor Camera' };
 const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
   { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
   { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
@@ -248,6 +249,12 @@ const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
 
 function clonePresentationResources(resources: PresentationResource[]): PresentationResource[] {
   return structuredClone(resources);
+}
+
+function withInstructorCamera(resources: PresentationResource[]): PresentationResource[] {
+  return resources.some((resource) => resource.kind === 'camera')
+    ? resources
+    : [...resources, CAMERA_PRESENTATION_RESOURCE];
 }
 
 function createDefaultPresentationLayout(): PresentationLayout {
@@ -852,10 +859,17 @@ export function useInteractivePoc({
   }
 
   function restoreInitialPresentation(recording: TeacherRecording) {
-    const resources = recording.presentationResources?.length
+    const recordedResources = recording.presentationResources?.length
       ? recording.presentationResources
       : DEFAULT_PRESENTATION_RESOURCES;
-    const initialLayout = recording.initialPresentationLayout ?? createPresentationLayout(resources);
+    const hasWebcam = recording.mediaAssets?.some((asset) => asset.kind === 'webcam') ?? false;
+    const resources = hasWebcam ? withInstructorCamera(recordedResources) : recordedResources;
+    let initialLayout = recording.initialPresentationLayout ?? createPresentationLayout(resources);
+
+    if (hasWebcam && !recording.presentationResources?.some((resource) => resource.kind === 'camera')) {
+      initialLayout = setPresentationMode(resources, initialLayout, CAMERA_PRESENTATION_RESOURCE.id, 'minimized');
+    }
+
     setPresentationResourcesAndLayout(resources, initialLayout);
   }
 
@@ -1410,13 +1424,22 @@ export function useInteractivePoc({
     }
 
     const startedAtMs = Date.now();
+    const recordingResources = mediaRecorder && mediaKindToRecord === 'webcam'
+      ? withInstructorCamera(presentationResourcesRef.current)
+      : presentationResourcesRef.current;
+    const recordingLayout = mediaRecorder && mediaKindToRecord === 'webcam'
+      ? setPresentationMode(recordingResources, teacherPresentationLayoutRef.current, CAMERA_PRESENTATION_RESOURCE.id, 'minimized')
+      : normalizePresentationLayout(recordingResources, teacherPresentationLayoutRef.current);
+
+    setPresentationResourcesAndLayout(recordingResources, recordingLayout);
+
     const recording = getRecordingWithOwner(recorder.start({
       lessonId,
       version: 1,
       baseFiles,
       startedAtMs,
-      presentationResources: presentationResourcesRef.current,
-      initialPresentationLayout: teacherPresentationLayoutRef.current,
+      presentationResources: recordingResources,
+      initialPresentationLayout: recordingLayout,
     }));
 
     if (selectedFile) {

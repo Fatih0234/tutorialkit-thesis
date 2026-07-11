@@ -82,7 +82,7 @@ The browser only receives the current user. Session ids are random, meaningless 
 Visible controls include:
 
 - initial-file selection;
-- Editor timeline only / Editor + microphone / Editor + camera modes;
+- Editor only / Editor + microphone / Editor + camera + microphone modes;
 - Edit Materials / Use This Workspace;
 - Start Recording / Stop Recording;
 - Back to Lecture Setup;

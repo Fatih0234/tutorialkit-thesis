@@ -18,9 +18,9 @@ type InteractiveTeacherStage = 'setup' | 'materials' | 'recording' | 'review';
 
 The editor is hidden. The teacher sees the current TutorialKit lesson, normalized file paths, starting file, and recording mode:
 
-- editor timeline only;
+- editor only;
 - editor plus microphone;
-- editor plus camera.
+- editor plus camera and microphone.
 
 Draft libraries, publishing, package tools, and deterministic demo controls remain management concerns in this stage.
 
@@ -52,7 +52,8 @@ Stopping finalizes the timeline and optional media, then opens Recording Review.
 - restart;
 - current time and duration;
 - a seekable editor timeline;
-- optional recorded audio/webcam playback;
+- optional recorded audio playback;
+- optional synchronized Instructor Camera presentation resource without independent media controls;
 - save, publish, export, and return-to-setup actions.
 
 Seeking pauses playback, restores `baseFiles`, reapplies ordered events through the chosen timestamp, restores file/scroll state, and aligns loaded media to the same timestamp. Play after seeking continues from the materialized state.

@@ -1,8 +1,9 @@
 export type PresentationMode = 'hidden' | 'minimized' | 'focused';
-export type PresentationResourceKind = 'preview' | 'slide' | 'deck' | 'explanation';
+export type PresentationResourceKind = 'preview' | 'slide' | 'deck' | 'explanation' | 'camera';
 
 export interface PreviewPresentationResource { id: string; kind: 'preview'; title: string; }
 export interface ExplanationPresentationResource { id: string; kind: 'explanation'; title: string; }
+export interface CameraPresentationResource { id: string; kind: 'camera'; title: string; }
 
 /** @deprecated Kept so recordings made before deck support remain playable. */
 export interface SlidePresentationResource {
@@ -34,7 +35,7 @@ export interface DeckPresentationResource {
   accent?: string;
 }
 
-export type PresentationResource = PreviewPresentationResource | ExplanationPresentationResource | SlidePresentationResource | DeckPresentationResource;
+export type PresentationResource = PreviewPresentationResource | ExplanationPresentationResource | CameraPresentationResource | SlidePresentationResource | DeckPresentationResource;
 export interface DeckPlaybackState { slideIndex: number; revealedStep: number; }
 
 export interface PresentationLayout {

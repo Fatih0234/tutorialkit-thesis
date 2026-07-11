@@ -60,6 +60,13 @@ describe('presentation layout and decks', () => {
     expect(layout.deckStates?.['counter-deck']).toEqual({ slideIndex: 0, revealedStep: 2 });
   });
 
+  it('normalizes an instructor camera through the shared visibility modes', () => {
+    const cameraResources: PresentationResource[] = [{ id: 'camera', kind: 'camera', title: 'Instructor Camera' }];
+    const minimized = setPresentationMode(cameraResources, createPresentationLayout(cameraResources), 'camera', 'minimized');
+    expect(minimized).toEqual({ resources: { camera: 'minimized' }, deckStates: {} });
+    expect(setPresentationMode(cameraResources, minimized, 'camera', 'focused')).toEqual({ resources: { camera: 'focused' }, focusedResourceId: 'camera', deckStates: {} });
+  });
+
   it('supports explicit slide navigation and clamps boundaries', () => {
     let layout = stepDeckSlide(resources, createPresentationLayout(resources), 'counter-deck', 1);
     expect(layout.deckStates?.['counter-deck']).toEqual({ slideIndex: 1, revealedStep: 0 });

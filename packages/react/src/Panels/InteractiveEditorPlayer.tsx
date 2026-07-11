@@ -111,9 +111,8 @@ export function InteractiveEditorPlayer({
       ) : null}
       {mediaPreviewUrl && mediaKind === 'webcam' ? (
         <video
-          className="max-h-36 max-w-56 rounded-md border border-tk-border-primary object-cover"
+          className="pointer-events-none max-h-36 max-w-56 rounded-md border border-tk-border-primary object-cover"
           aria-label="Recorded webcam preview"
-          controls
           playsInline
           preload="auto"
           src={mediaPreviewUrl}
