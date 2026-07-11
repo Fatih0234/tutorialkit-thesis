@@ -88,6 +88,18 @@ interface TeacherRecording {
   durationMs: number;
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
+  presentationResources?: Array<{
+    id: string;
+    kind: 'preview' | 'explanation' | 'slide';
+    title: string;
+    eyebrow?: string;
+    body?: string;
+    accent?: string;
+  }>;
+  initialPresentationLayout?: {
+    resources: Record<string, 'hidden' | 'minimized' | 'focused'>;
+    focusedResourceId?: string;
+  };
   mediaAssets?: RecordingMediaAssetMetadata[];
   createdByUserId?: string;
   ownerUserId?: string;
@@ -808,8 +820,52 @@ function createSilentWavBuffer(durationMs: number): Buffer {
 }
 
 function createDemoTeacherRecording(user: InteractiveUser): TeacherRecording {
-  const baseContent = 'console.log("demo conflict base");\n';
+  const baseContent = `const countButton = document.querySelector('#count-button');
+const countOutput = document.querySelector('#count-output');
+let count = 0;
+
+countButton.addEventListener('click', () => {
+  count += 1;
+  countOutput.textContent = String(count);
+});
+
+console.log("demo conflict base");
+`;
   const finalContent = `${baseContent}// teacher demo final edit\n`;
+  const presentationResources = [
+    { id: 'website-preview', kind: 'preview' as const, title: 'Live Counter Preview' },
+    { id: 'lesson-explanation', kind: 'explanation' as const, title: 'Counter lesson notes' },
+    {
+      id: 'slide-javascript-runtime',
+      kind: 'slide' as const,
+      title: 'JavaScript remembers state',
+      eyebrow: 'Counter concept · 1',
+      body: 'A variable stores the current count. Every click changes that value before the page is updated.',
+      accent: 'indigo',
+    },
+    {
+      id: 'slide-dom-update',
+      kind: 'slide' as const,
+      title: 'Events update the DOM',
+      eyebrow: 'Counter concept · 2',
+      body: 'The click listener changes textContent, connecting JavaScript state to something visible in the browser.',
+      accent: 'violet',
+    },
+  ];
+  const layout = (
+    websitePreview: 'hidden' | 'minimized' | 'focused',
+    firstSlide: 'hidden' | 'minimized' | 'focused',
+    secondSlide: 'hidden' | 'minimized' | 'focused',
+    focusedResourceId?: string,
+  ) => ({
+    resources: {
+      'website-preview': websitePreview,
+      'lesson-explanation': 'hidden' as const,
+      'slide-javascript-runtime': firstSlide,
+      'slide-dom-update': secondSlide,
+    },
+    ...(focusedResourceId ? { focusedResourceId } : {}),
+  });
   const mediaMetadata: RecordingMediaAssetMetadata = {
     id: DEMO_MEDIA_ASSET_ID,
     recordingId: DEMO_RECORDING_ID,
@@ -827,28 +883,62 @@ function createDemoTeacherRecording(user: InteractiveUser): TeacherRecording {
     startedAt: '2026-01-01T00:00:00.000Z',
     durationMs: 3000,
     baseFiles: {
-      '/example.html': '<h1>Demo: Interactive Tutorial Conflict Flow</h1>\n',
+      '/example.html': `<!doctype html>
+<html lang="en">
+  <body>
+    <main>
+      <p>Interactive JavaScript concept</p>
+      <h1>Build a counter</h1>
+      <p>Each click updates JavaScript state and the visible DOM.</p>
+      <button id="count-button" type="button">Count: <strong id="count-output">0</strong></button>
+    </main>
+    <script src="/example.js"></script>
+  </body>
+</html>
+`,
       '/example.js': baseContent,
+      '/server.mjs': `import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+
+createServer(async (request, response) => {
+  const file = request.url === '/example.js' ? 'example.js' : 'example.html';
+  const content = await readFile(new URL(file, import.meta.url), 'utf8');
+  response.writeHead(200, { 'content-type': file.endsWith('.js') ? 'text/javascript' : 'text/html' });
+  response.end(content);
+}).listen(3000, () => console.log('Counter lecture preview: http://localhost:3000'));
+`,
     },
+    presentationResources,
+    initialPresentationLayout: layout('minimized', 'minimized', 'hidden'),
     events: [
       { id: 'demo-event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
       {
-        id: 'demo-event-opened',
-        seq: 1,
-        tMs: 0,
-        type: 'file.opened',
-        filePath: '/example.js',
-        payload: { filePath: '/example.js' },
-        origin: 'teacher',
+        id: 'demo-event-opened', seq: 1, tMs: 0, type: 'file.opened', filePath: '/example.js',
+        payload: { filePath: '/example.js' }, origin: 'teacher',
       },
       {
-        id: 'demo-event-conflict-change',
-        seq: 2,
-        tMs: 2000,
-        type: 'file.changed',
-        filePath: '/example.js',
-        payload: { content: finalContent },
-        origin: 'teacher',
+        id: 'demo-presentation-concept', seq: 2, tMs: 300, type: 'presentation.changed', origin: 'teacher',
+        payload: { layout: layout('minimized', 'focused', 'hidden', 'slide-javascript-runtime') },
+      },
+      {
+        id: 'demo-presentation-preview', seq: 3, tMs: 900, type: 'presentation.changed', origin: 'teacher',
+        payload: { layout: layout('focused', 'minimized', 'hidden', 'website-preview') },
+      },
+      {
+        id: 'demo-presentation-dom', seq: 4, tMs: 1500, type: 'presentation.changed', origin: 'teacher',
+        payload: { layout: layout('minimized', 'hidden', 'focused', 'slide-dom-update') },
+      },
+      {
+        id: 'demo-event-conflict-change', seq: 5, tMs: 2000, type: 'file.changed', filePath: '/example.js',
+        payload: { content: finalContent }, origin: 'teacher',
+      },
+      {
+        id: 'demo-presentation-try-it', seq: 6, tMs: 2300, type: 'presentation.changed', origin: 'teacher',
+        payload: { layout: layout('focused', 'hidden', 'minimized', 'website-preview') },
+      },
+      {
+        id: 'demo-presentation-summary', seq: 7, tMs: 2700, type: 'presentation.changed', origin: 'teacher',
+        payload: { layout: layout('minimized', 'minimized', 'minimized') },
       },
     ],
     mediaAssets: [mediaMetadata],

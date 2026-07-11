@@ -1236,7 +1236,9 @@ test.describe('interactive timeline POC', () => {
 
     expect(exportedPackage.formatVersion).toBe(1);
     expect(exportedPackage.teacherRecording.id).toBe('demo-interactive-conflict-flow');
-    expect(exportedPackage.teacherRecording.events).toHaveLength(3);
+    expect(exportedPackage.teacherRecording.events).toHaveLength(8);
+    expect(exportedPackage.teacherRecording.presentationResources).toHaveLength(4);
+    expect(exportedPackage.teacherRecording.events.filter((event: any) => event.type === 'presentation.changed')).toHaveLength(5);
     expect(exportedPackage.mediaAssets[0].metadata.id).toBe('demo-interactive-conflict-flow-audio');
     expect(exportedPackage.mediaAssets[0].dataBase64).toBeTruthy();
 
