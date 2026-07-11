@@ -79,7 +79,7 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
         </div>
       ) : null}
 
-      <div className={`absolute left-4 z-10 flex max-w-[45%] flex-col-reverse gap-3 ${cameraMode === 'minimized' ? 'bottom-60' : 'bottom-4'}`}>
+      <div className={`absolute left-4 z-10 flex max-w-[45%] flex-col-reverse gap-3 ${cameraMode === 'minimized' && cameraMediaUrl ? 'bottom-60' : 'bottom-4'}`}>
         {resources.filter((resource) => resource.kind !== 'preview' && resource.kind !== 'camera' && layout.resources[resource.id] === 'minimized').map((resource) => (
           <PresentationFrame key={resource.id} resource={resource} mode="minimized" onModeChange={onModeChange}>
             {resource.kind === 'deck' ? <DeckContent deck={resource} progress={layout.deckStates?.[resource.id]} compact canEdit={false} onAction={onDeckAction} onChange={onDeckChange} /> : null}
