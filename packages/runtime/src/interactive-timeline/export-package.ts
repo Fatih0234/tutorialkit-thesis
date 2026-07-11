@@ -2,6 +2,8 @@ import { getRecordingMediaAssetMetadata, type RecordingMediaAsset, type Recordin
 import { normalizeFiles, normalizePath } from './path.js';
 import type { InteractiveTimelineStorage, LearnerDeltaQuery } from './storage-adapter.js';
 import type { LearnerDelta, TeacherRecording, TimelineEvent } from './types.js';
+import { MAX_WHITEBOARD_TITLE_LENGTH, sanitizeWhiteboardScene } from './whiteboard.js';
+import type { PresentationResource } from './presentation.js';
 
 export interface InteractiveRecordingPackageMediaAsset {
   metadata: RecordingMediaAssetMetadata;
@@ -103,6 +105,19 @@ function normalizeTimelinePayload(payload: unknown): unknown {
   };
 }
 
+function normalizePresentationResources(value: unknown): PresentationResource[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error('Presentation resources must be an array.');
+  return value.map((item) => {
+    const resource = assertObject(item, 'Expected presentation resource object.') as Partial<PresentationResource>;
+    const id = assertSafeId(resource.id, 'presentation resource id');
+    if (typeof resource.title !== 'string' || !resource.title.trim() || resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH) throw new Error('Presentation resource title is invalid.');
+    if (resource.kind === 'whiteboard') return { id, kind: 'whiteboard', title: resource.title, initialScene: sanitizeWhiteboardScene(resource.initialScene) };
+    if (resource.kind !== 'preview' && resource.kind !== 'explanation' && resource.kind !== 'camera' && resource.kind !== 'slide' && resource.kind !== 'deck') throw new Error('Presentation resource kind is invalid.');
+    return { ...resource, id, title: resource.title } as PresentationResource;
+  });
+}
+
 function normalizeTimelineEvent(event: unknown): TimelineEvent {
   const candidate = assertObject(event, 'Expected timeline event object.') as Partial<TimelineEvent>;
 
@@ -122,6 +137,12 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     throw new Error('Timeline event origin is invalid.');
   }
 
+  let payload = normalizeTimelinePayload(candidate.payload);
+  if (candidate.type === 'whiteboard.scene.changed') {
+    const whiteboardPayload = assertObject(candidate.payload, 'Whiteboard event payload must be an object.');
+    payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+  }
+
   return {
     ...candidate,
     id: assertSafeId(candidate.id, 'timeline event id'),
@@ -129,7 +150,7 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     tMs: candidate.tMs,
     type: candidate.type,
     filePath: candidate.filePath ? normalizePath(candidate.filePath) : undefined,
-    payload: normalizeTimelinePayload(candidate.payload),
+    payload,
     origin: candidate.origin,
   };
 }
@@ -201,6 +222,7 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     events: candidate.events
       .map(normalizeTimelineEvent)
       .sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs)),
+    presentationResources: normalizePresentationResources(candidate.presentationResources),
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
     createdByUserId: optionalSafeId(candidate.createdByUserId, 'createdBy user id'),
     ownerUserId: optionalSafeId(candidate.ownerUserId, 'owner user id'),

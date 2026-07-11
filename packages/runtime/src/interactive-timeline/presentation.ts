@@ -1,9 +1,12 @@
+import type { WhiteboardScene } from './whiteboard.js';
+
 export type PresentationMode = 'hidden' | 'minimized' | 'focused';
-export type PresentationResourceKind = 'preview' | 'slide' | 'deck' | 'explanation' | 'camera';
+export type PresentationResourceKind = 'preview' | 'slide' | 'deck' | 'explanation' | 'camera' | 'whiteboard';
 
 export interface PreviewPresentationResource { id: string; kind: 'preview'; title: string; }
 export interface ExplanationPresentationResource { id: string; kind: 'explanation'; title: string; }
 export interface CameraPresentationResource { id: string; kind: 'camera'; title: string; }
+export interface WhiteboardPresentationResource { id: string; kind: 'whiteboard'; title: string; initialScene: WhiteboardScene; }
 
 /** @deprecated Kept so recordings made before deck support remain playable. */
 export interface SlidePresentationResource {
@@ -35,7 +38,7 @@ export interface DeckPresentationResource {
   accent?: string;
 }
 
-export type PresentationResource = PreviewPresentationResource | ExplanationPresentationResource | CameraPresentationResource | SlidePresentationResource | DeckPresentationResource;
+export type PresentationResource = PreviewPresentationResource | ExplanationPresentationResource | CameraPresentationResource | WhiteboardPresentationResource | SlidePresentationResource | DeckPresentationResource;
 export interface DeckPlaybackState { slideIndex: number; revealedStep: number; }
 
 export interface PresentationLayout {

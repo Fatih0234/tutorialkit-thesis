@@ -10,6 +10,7 @@ export type TimelineEventType =
   | 'file.changed'
   | 'editor.scrolled'
   | 'presentation.changed'
+  | 'whiteboard.scene.changed'
   | 'playback.marker';
 
 export type TimelineEventOrigin = 'teacher' | 'playback' | 'system';

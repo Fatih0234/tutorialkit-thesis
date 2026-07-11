@@ -11,6 +11,8 @@ import {
   INTERACTIVE_DEV_LEARNER_USER_ID,
   INTERACTIVE_DEV_TEACHER_USER_ID,
   INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID,
+  MAX_WHITEBOARD_TITLE_LENGTH,
+  sanitizeWhiteboardScene,
   type InteractiveSession,
   type InteractiveUser,
 } from '@tutorialkit/runtime';
@@ -90,11 +92,12 @@ interface TeacherRecording {
   events: TimelineEvent[];
   presentationResources?: Array<{
     id: string;
-    kind: 'preview' | 'explanation' | 'slide' | 'deck' | 'camera';
+    kind: 'preview' | 'explanation' | 'slide' | 'deck' | 'camera' | 'whiteboard';
     title: string;
     eyebrow?: string;
     body?: string;
     accent?: string;
+    initialScene?: ReturnType<typeof sanitizeWhiteboardScene>;
     slides?: Array<{
       id: string;
       title: string;
@@ -380,6 +383,14 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     throw new Error('Event origin is required.');
   }
 
+  let payload = candidate.payload;
+  if (candidate.type === 'whiteboard.scene.changed') {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Whiteboard event payload must be an object.');
+    const whiteboardPayload = payload as { resourceId?: unknown; scene?: unknown };
+    if (typeof whiteboardPayload.resourceId !== 'string') throw new Error('Whiteboard resource id is required.');
+    payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+  }
+
   return {
     ...candidate,
     id: candidate.id,
@@ -387,6 +398,7 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     tMs: candidate.tMs,
     type: candidate.type,
     filePath: candidate.filePath ? normalizePath(candidate.filePath) : undefined,
+    payload,
     origin: candidate.origin,
   };
 }
@@ -434,6 +446,21 @@ function normalizeMediaMetadata(value: unknown, fallbackRecordingId?: string): R
   };
 }
 
+function normalizePresentationResources(value: unknown): TeacherRecording['presentationResources'] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error('Presentation resources must be an array.');
+  return value.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Presentation resource must be an object.');
+    const resource = item as NonNullable<TeacherRecording['presentationResources']>[number];
+    const allowedKinds = new Set(['preview', 'explanation', 'slide', 'deck', 'camera', 'whiteboard']);
+    if (!allowedKinds.has(resource.kind)) throw new Error('Presentation resource kind is invalid.');
+    const id = assertSafeId(resource.id, 'presentation resource id');
+    if (typeof resource.title !== 'string' || !resource.title.trim() || resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH) throw new Error('Presentation resource title is invalid.');
+    if (resource.kind === 'whiteboard') return { id, kind: 'whiteboard' as const, title: resource.title, initialScene: sanitizeWhiteboardScene(resource.initialScene) };
+    return { ...resource, id, title: resource.title };
+  });
+}
+
 function normalizeTeacherRecording(value: unknown): TeacherRecording {
   const input = value && typeof value === 'object' && 'teacherRecording' in value ? (value as any).teacherRecording : value;
 
@@ -468,6 +495,12 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
   }
 
   const recordingId = assertSafeId(candidate.id, 'teacher recording id');
+  const presentationResources = normalizePresentationResources(candidate.presentationResources);
+  const events = candidate.events.map(normalizeTimelineEvent).sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs));
+  const whiteboardIds = new Set(presentationResources?.filter((resource) => resource.kind === 'whiteboard').map((resource) => resource.id));
+  for (const event of events) {
+    if (event.type === 'whiteboard.scene.changed' && !whiteboardIds.has((event.payload as { resourceId: string }).resourceId)) throw new Error('Whiteboard event references an unknown resource.');
+  }
 
   return {
     ...candidate,
@@ -477,7 +510,8 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     startedAt: candidate.startedAt,
     durationMs: candidate.durationMs,
     baseFiles: normalizeFiles(candidate.baseFiles),
-    events: candidate.events.map(normalizeTimelineEvent).sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs)),
+    events,
+    presentationResources,
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
     createdByUserId: candidate.createdByUserId ? assertSafeId(candidate.createdByUserId, 'createdBy user id') : undefined,
     ownerUserId: candidate.ownerUserId ? assertSafeId(candidate.ownerUserId, 'owner user id') : undefined,
