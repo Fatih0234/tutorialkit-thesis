@@ -110,6 +110,10 @@ Optional webcam media became a synchronized **Instructor Camera** presentation r
 
 The compatibility recording mirror stopped acting as authoritative draft storage. Legacy unpublished migration now runs once; published review never creates a draft; successful publication removes the matching local IndexedDB draft/media; matching draft deletion also clears the mirror. Published review is read-only and requires an explicit future duplicate/version action before editing.
 
+## Excalidraw whiteboard resource
+
+A native Excalidraw whiteboard joined the presentation-resource union with hidden/minimized/focused layout controlled by existing `presentation.changed` snapshots. Material Preparation captures an initial JSON scene; recording emits debounced `whiteboard.scene.changed` snapshots after meaningful content actions; seeking materializes the scene by timestamp; and learner playback uses read-only view mode. Runtime and remote validators strip transient Excalidraw state and enforce 1,000-element/512 KiB limits. Drafts, publications, compatibility storage, and package format 1 preserve the additive resource/event data. Image insertion is intentionally disabled in this first version.
+
 ## Published-lesson deletion
 
 Teacher owners gained a confirmed **Delete Lesson** card action backed by a dedicated remote DELETE operation. The backend verifies teacher ownership and cascades over the exact publication, linked media metadata/files, and linked learner deltas while preserving unrelated local drafts, publications, assets, experiments, and lesson source files. This does not weaken recording-content immutability: deletion removes the complete resource rather than modifying its timeline.

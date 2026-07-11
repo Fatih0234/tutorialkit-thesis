@@ -408,6 +408,8 @@ type TimelineEventType =
   | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
+  | 'presentation.changed'
+  | 'whiteboard.scene.changed'
   | 'playback.marker';
 
 type TimelineEventOrigin = 'teacher' | 'playback' | 'system';
@@ -439,7 +441,14 @@ interface EditorScrolledPayload {
   top: number;
   left: number;
 }
+
+interface WhiteboardSceneChangedPayload {
+  resourceId: string;
+  scene: WhiteboardScene;
+}
 ```
+
+Whiteboards are `PresentationResource` values with an `initialScene`; hidden/minimized/focused state stays exclusively in presentation layout snapshots. Material Preparation updates the initial scene, recording stores complete semantic scene snapshots after meaningful debounced actions, and seeking replays ordered snapshots without pointer animation. Excalidraw is isolated behind the React whiteboard adapter; learners use read-only view mode. Server/package normalization limits each scene to 1,000 elements and 512 KiB, strips transient app state, and rejects malformed references. Image insertion is disabled in v1.
 
 Ordering contract:
 

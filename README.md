@@ -2,7 +2,7 @@
 
 This repository is a thesis proof of concept built on TutorialKit. It implements the interactivity layer for recording a teacher's editor/file actions, replaying them for a learner, pausing for learner-owned edits, and safely saving/restoring those edits without mutating the teacher timeline.
 
-The current demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, timestamped learner-experiment markers, optional narration and synchronized Instructor Camera, local drafts, file-backed published lessons, and demo identity/ownership checks. Portable packages and deterministic fixture controls remain supported contracts outside the minimal default UI. It is not a production authentication or persistence system.
+The current demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, timestamped learner-experiment markers, optional narration, synchronized Instructor Camera, and an Excalidraw-powered timeline whiteboard, local drafts, file-backed published lessons, and demo identity/ownership checks. Portable packages and deterministic fixture controls remain supported contracts outside the minimal default UI. It is not a production authentication or persistence system.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ pnpm --dir e2e run preview
 
 Open `http://localhost:4329/tests/file-tree/lesson-and-solution`.
 
-The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor, terminal, and live website preview as an immersive video-like surface with a full-width timeline. Foldable context panels and timeline-directed preview, explanation, and multi-slide deck resources restore lesson context while learners retain local presentation control. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md) and [Presentation Resource Layer](./docs/presentation-resource-layer.md).
+The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor, terminal, and live website preview as an immersive video-like surface with a full-width timeline. Foldable context panels and timeline-directed preview, explanation, multi-slide deck, whiteboard, and camera resources restore lesson context while learners retain local presentation control. Teachers prepare a whiteboard scene before recording and record debounced semantic scene snapshots—not raw pointer movement—while learners receive deterministic read-only playback. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md) and [Presentation Resource Layer](./docs/presentation-resource-layer.md).
 
 ## Validation
 
@@ -60,7 +60,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after published-lesson management: **37 passed**.
+Expected interactive POC result with synchronized whiteboard coverage: **39 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 

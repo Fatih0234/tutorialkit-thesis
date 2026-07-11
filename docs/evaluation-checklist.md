@@ -14,7 +14,7 @@ Use this checklist to evaluate the current thesis POC candidate. Record the date
 ## Automated acceptance
 
 - [ ] `pnpm build` completes successfully.
-- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **37 passed**.
+- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **39 passed**.
 - [ ] `git diff --check` reports no whitespace errors.
 - [ ] Playwright product actions use user-facing role/text/label locators; CSS scoping is limited to the embedded editor integration where no stable product role identifies the container.
 - [ ] The localStorage compatibility shapes can be inspected at `interactive-poc.teacherRecording` and `interactive-poc.learnerDeltas`.
@@ -39,6 +39,9 @@ git diff --check
 - [ ] **Start Recording** opens the focused full-screen studio with elapsed time, event count, media state, and Stop.
 - [ ] A teacher can record progressive editor changes, stop into **Recording Review**, save, load, and preview a local draft.
 - [ ] The editor player can pause, restart, seek to an intermediate state, and continue deterministically.
+- [ ] A teacher can prepare an initial Excalidraw scene and record at least two semantic scene snapshots without raw pointer events.
+- [ ] Whiteboard seeking restores initial, intermediate, and final scenes; learner playback is read-only and leaves teacher JSON unchanged.
+- [ ] Draft, publication, reload, and package round-trip preserve whiteboards; malformed or oversized scenes are rejected.
 - [ ] A teacher-created file can be restored by structured playback.
 - [ ] A teacher can publish and reload a recording through the development backend; the matching local draft disappears after successful publication.
 - [ ] Opening published Recording Review is read-only, exposes neither Save Draft nor Publish, creates no draft, and leaves recording bytes unchanged.

@@ -1,6 +1,6 @@
 # Presentation Resource Layer
 
-The immersive workspace presents the live website preview, lesson explanation, an ordered slide deck, and an optional recorded instructor camera as timeline-directed resources. A resource has one canonical layout mode: `hidden`, `minimized`, or `focused`; only one resource may be focused.
+The immersive workspace presents the live website preview, lesson explanation, an ordered slide deck, an Excalidraw whiteboard, and an optional recorded instructor camera as timeline-directed resources. A resource has one canonical layout mode: `hidden`, `minimized`, or `focused`; only one resource may be focused.
 
 ## Deck model
 
@@ -64,6 +64,16 @@ Every teacher layout or deck-progress action appends a complete `presentation.ch
 Playback materializes presentation events alongside editor events. Seeking restores the initial layout and applies ordered snapshots through the target timestamp, immediately producing the correct slide and reveal step.
 
 Learners can navigate slides and reveals, hide or focus resources, and interact with the live preview. These actions create a temporary presentation override only: they do not mutate the teacher recording, create a learner file delta, mark the workspace dirty, or write backend state. **Follow teacher** clears the override. A later teacher presentation cue also clears it and applies the teacher's new state.
+
+## Whiteboard
+
+The whiteboard is an embedded React presentation resource, never an iframe. Teachers can use selection, freehand drawing, eraser, arrows, rectangles, ellipses, text, undo/redo, clear, pan, and zoom. Material Preparation updates its application-owned `initialScene` without timeline events. During recording, content-only changes are fingerprinted and committed after a 450 ms trailing action debounce as complete `whiteboard.scene.changed` snapshots. Raw pointer movement and viewport-only changes are never recorded.
+
+Seeking restores `initialScene` and applies ordered scene snapshots through the target timestamp. Normal playback applies the same snapshots under either media time or `TimelinePlaybackClock`. Explicit programmatic update sources and duplicate fingerprints prevent playback application from recording new events.
+
+Learners receive Excalidraw view mode: teacher elements are read-only, while local pan/zoom state is transient. Learner code experiments never include whiteboard data. Whiteboard layout remains separate in `presentation.changed`, supports hidden/minimized/focused, and follows the existing one-focus and Follow Teacher behavior.
+
+Scenes are JSON-only, limited to 1,000 elements and 512 KiB. Stable background/grid appearance may persist; selection, active tools, dialogs, pointers, scroll, and zoom do not. Image insertion is disabled in v1 to avoid binary-file persistence. Package format 1 remains compatible because whiteboard resources/events are additive. `@excalidraw/excalidraw` 0.18.x is an MIT-licensed dependency loaded through the client-only adapter.
 
 ## Instructor camera
 
