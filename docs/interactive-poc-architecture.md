@@ -818,7 +818,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` supplies management content only. `InteractiveExperienceProvider` owns explicit screen transitions; `InteractiveExperienceRoot` portals the product into the dedicated Astro mount; management and persistent workspace shells enforce valid visibility; `WorkspacePanel.tsx` provides TutorialStore/editor integration; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, and learner behavior. The existing terminal has one persistent immersive host and never falls back into management.
+`packages/react/src/Panels/InteractivePocControls.tsx` supplies management content only. `InteractiveExperienceProvider` owns explicit screen transitions; `InteractiveExperienceRoot` portals the product into the dedicated Astro mount; management and persistent workspace shells enforce valid visibility; `WorkspacePanel.tsx` provides TutorialStore/editor integration; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `InteractivePresentationLayer.tsx` owns hidden/minimized/focused preview, explanation, and slide geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, learner behavior, and teacher/learner presentation state. The existing terminal and preview iframe each have one persistent immersive host and never fall back into management.
 
 ### `InteractiveTeacherDashboard.tsx`
 

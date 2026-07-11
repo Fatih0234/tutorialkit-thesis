@@ -9,6 +9,7 @@ import resizePanelStyles from '../styles/resize-panel.module.css';
 import { classNames } from '../utils/classnames.js';
 
 interface Props {
+  embedIframes?: boolean;
   showToggleTerminal?: boolean;
   toggleTerminal?: () => void;
   tutorialStore: TutorialStore;
@@ -24,7 +25,7 @@ export type ImperativePreviewHandle = {
 };
 
 export const PreviewPanel = memo(
-  forwardRef<ImperativePreviewHandle, Props>(({ showToggleTerminal, toggleTerminal, i18n, tutorialStore }, ref) => {
+  forwardRef<ImperativePreviewHandle, Props>(({ embedIframes = false, showToggleTerminal, toggleTerminal, i18n, tutorialStore }, ref) => {
     const expectedPreviews = useStore(tutorialStore.previews);
     const iframeRefs = useRef<IFrameRef[]>([]);
 
@@ -34,13 +35,20 @@ export const PreviewPanel = memo(
           continue;
         }
 
-        const { left, top, width, height } = container.getBoundingClientRect();
-        ref.style.left = `${left}px`;
-        ref.style.top = `${top}px`;
-        ref.style.height = `${height}px`;
-        ref.style.width = `${width}px`;
+        if (embedIframes) {
+          ref.style.left = '0';
+          ref.style.top = '0';
+          ref.style.height = '100%';
+          ref.style.width = '100%';
+        } else {
+          const { left, top, width, height } = container.getBoundingClientRect();
+          ref.style.left = `${left}px`;
+          ref.style.top = `${top}px`;
+          ref.style.height = `${height}px`;
+          ref.style.width = `${width}px`;
+        }
       }
-    }, []);
+    }, [embedIframes]);
 
     const activePreviewsCount = expectedPreviews.reduce((count, preview) => (preview.ready ? count + 1 : count), 0);
     const hasPreviews = activePreviewsCount > 0;
@@ -75,15 +83,7 @@ export const PreviewPanel = memo(
       return undefined;
     }, [hasPreviews]);
 
-    adjustLength(iframeRefs.current, activePreviewsCount, newIframeRef);
-    preparePreviewsContainer(activePreviewsCount);
-
-    // update preview refs
-    for (const [index, iframeRef] of iframeRefs.current.entries()) {
-      if (!iframeRef.ref) {
-        iframeRef.ref = previewsContainer.children.item(index) as HTMLIFrameElement;
-      }
-    }
+    adjustIframeRefs(iframeRefs.current, activePreviewsCount);
 
     if (!hasPreviews) {
       return (
@@ -120,6 +120,7 @@ export const PreviewPanel = memo(
         <Panel defaultSize={defaultSize} minSize={minSize}>
           <Preview
             iframe={iframeRefs.current[index]}
+            embedIframe={embedIframes}
             preview={preview}
             previewCount={previews.length}
             first={index === 0}
@@ -142,6 +143,7 @@ PreviewPanel.displayName = 'PreviewPanel';
 
 interface PreviewProps {
   iframe: IFrameRef;
+  embedIframe: boolean;
   preview: PreviewInfo;
   previewCount: number;
   first?: boolean;
@@ -150,7 +152,7 @@ interface PreviewProps {
   i18n: I18n;
 }
 
-function Preview({ preview, iframe, previewCount, first, last, toggleTerminal, i18n }: PreviewProps) {
+function Preview({ preview, iframe, embedIframe, previewCount, first, last, toggleTerminal, i18n }: PreviewProps) {
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -160,6 +162,10 @@ function Preview({ preview, iframe, previewCount, first, last, toggleTerminal, i
 
     iframe.container = previewContainerRef.current!;
 
+    if (embedIframe) {
+      iframe.container.appendChild(iframe.ref);
+    }
+
     if (preview.url) {
       iframe.ref.src = preview.url;
     }
@@ -167,7 +173,13 @@ function Preview({ preview, iframe, previewCount, first, last, toggleTerminal, i
     if (preview.title) {
       iframe.ref.title = preview.title;
     }
-  }, [preview.url, iframe.ref]);
+
+    return () => {
+      if (embedIframe && iframe.ref && previewsContainer.isConnected) {
+        previewsContainer.appendChild(iframe.ref);
+      }
+    };
+  }, [embedIframe, preview.url, iframe.ref]);
 
   function reload() {
     if (iframe.ref) {
@@ -205,7 +217,7 @@ function Preview({ preview, iframe, previewCount, first, last, toggleTerminal, i
       </div>
       <div
         ref={previewContainerRef}
-        className={classNames('h-full w-full flex justify-center items-center', {
+        className={classNames('relative h-full w-full flex justify-center items-center', {
           'border-l border-tk-elements-previews-borderColor': !first,
         })}
       />
@@ -240,41 +252,20 @@ function previewTitle(preview: PreviewInfo, previewCount: number, i18n: I18n) {
   return `Preview on port ${preview.port}`;
 }
 
-function preparePreviewsContainer(previewCount: number) {
-  while (previewsContainer.childElementCount < previewCount) {
+function adjustIframeRefs(refs: IFrameRef[], expectedSize: number) {
+  while (refs.length < expectedSize) {
     const iframe = document.createElement('iframe');
 
     iframe.className = 'absolute z-10';
-
     iframe.allow =
       document.featurePolicy?.allowedFeatures().join('; ') ??
       'magnetometer; accelerometer; gyroscope; geolocation; microphone; camera; payment; autoplay; serial; xr-spatial-tracking; cross-origin-isolated';
-
     previewsContainer.appendChild(iframe);
+    refs.push({ ref: iframe, container: undefined });
   }
 
-  for (let i = 0; i < previewsContainer.childElementCount; i++) {
-    const preview = previewsContainer.children.item(i)!;
-
-    if (i < previewCount) {
-      preview.classList.remove('hidden');
-    } else {
-      preview.classList.add('hidden');
-    }
-  }
-}
-
-function newIframeRef(): IFrameRef {
-  return { ref: undefined, container: undefined };
-}
-
-function adjustLength<T>(array: T[], expectedSize: number, newElement: () => T) {
-  while (array.length < expectedSize) {
-    array.push(newElement());
-  }
-
-  while (array.length > expectedSize) {
-    array.pop();
+  while (refs.length > expectedSize) {
+    refs.pop()?.ref?.remove();
   }
 }
 

@@ -45,7 +45,7 @@ pnpm --dir e2e run preview
 
 Open `http://localhost:4329/tests/file-tree/lesson-and-solution`.
 
-The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor and terminal as an immersive video-like surface with a full-width timeline. Foldable, resizable Explanation and Terminal panels restore lesson context without sacrificing the minimal editor-first view. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md).
+The interactive product now mounts in a dedicated full-viewport application root outside TutorialKit's standard resizable layout. Teacher Studio and Interactive Lessons contain management only; preparation, recording, review, and learner playback use the persistent real editor, terminal, and live website preview as an immersive video-like surface with a full-width timeline. Foldable context panels and timeline-directed preview, explanation, and slide resources restore lesson context while learners retain local presentation control. See [Immersive Interactive Experience](./docs/immersive-interactive-experience.md) and [Presentation Resource Layer](./docs/presentation-resource-layer.md).
 
 ## Validation
 
@@ -60,7 +60,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 git diff --check
 ```
 
-Expected interactive POC result after the isolated application-root refinement: **36 passed**.
+Expected interactive POC result after the presentation-resource refinement: **39 passed**.
 
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` may be changed to the path of a compatible local Chromium installation.
 

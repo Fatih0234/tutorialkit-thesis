@@ -37,6 +37,7 @@ export type TimelineEventType =
   | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
+  | 'presentation.changed'
   | 'playback.marker';
 ```
 
@@ -52,6 +53,24 @@ export interface FileChangedPayload {
   selection?: unknown;
 }
 ```
+
+## Presentation payload
+
+`presentation.changed` stores the complete canonical teacher layout rather than a toggle command:
+
+```ts
+{
+  layout: {
+    resources: {
+      'website-preview': 'minimized',
+      'slide-javascript-runtime': 'focused'
+    },
+    focusedResourceId: 'slide-javascript-runtime'
+  }
+}
+```
+
+Learner presentation overrides and interactions inside the preview iframe never create timeline events.
 
 ## LearnerDelta
 

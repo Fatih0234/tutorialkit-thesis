@@ -6,6 +6,7 @@ import type {
   TimelineEventType,
   FilesSnapshot,
 } from './types.js';
+import type { PresentationLayout, PresentationResource } from './presentation.js';
 import { normalizeFiles, normalizePath } from './path.js';
 
 function createId(prefix: string): string {
@@ -17,6 +18,8 @@ interface StartRecordingOptions {
   version?: number;
   baseFiles: FilesSnapshot;
   startedAtMs?: number;
+  presentationResources?: PresentationResource[];
+  initialPresentationLayout?: PresentationLayout;
 }
 
 export class TimelineRecorder {
@@ -24,7 +27,14 @@ export class TimelineRecorder {
   private startTime = 0;
   private seq = 0;
 
-  start({ lessonId, version = 1, baseFiles, startedAtMs = Date.now() }: StartRecordingOptions): TeacherRecording {
+  start({
+    lessonId,
+    version = 1,
+    baseFiles,
+    startedAtMs = Date.now(),
+    presentationResources,
+    initialPresentationLayout,
+  }: StartRecordingOptions): TeacherRecording {
     this.startTime = startedAtMs;
     this.seq = 0;
 
@@ -36,6 +46,8 @@ export class TimelineRecorder {
       durationMs: 0,
       baseFiles: normalizeFiles(baseFiles),
       events: [],
+      ...(presentationResources ? { presentationResources: structuredClone(presentationResources) } : {}),
+      ...(initialPresentationLayout ? { initialPresentationLayout: structuredClone(initialPresentationLayout) } : {}),
     };
 
     this.append('recording.started', {

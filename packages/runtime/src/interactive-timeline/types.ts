@@ -1,4 +1,5 @@
 import type { RecordingMediaAssetMetadata } from './media.js';
+import type { PresentationLayout, PresentationResource } from './presentation.js';
 
 export type FilesSnapshot = Record<string, string>;
 
@@ -8,6 +9,7 @@ export type TimelineEventType =
   | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
+  | 'presentation.changed'
   | 'playback.marker';
 
 export type TimelineEventOrigin = 'teacher' | 'playback' | 'system';
@@ -49,6 +51,8 @@ export interface TeacherRecording {
   baseFiles: FilesSnapshot;
   events: TimelineEvent[];
   mediaAssets?: RecordingMediaAssetMetadata[];
+  presentationResources?: PresentationResource[];
+  initialPresentationLayout?: PresentationLayout;
   createdByUserId?: string;
   ownerUserId?: string;
   publishedByUserId?: string;

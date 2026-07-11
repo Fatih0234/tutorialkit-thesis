@@ -5,6 +5,7 @@ import { InteractiveButton } from './InteractivePocUi.js';
 
 interface InteractiveWorkspaceSurfaceProps {
   children: ReactNode;
+  presentationLayer?: ReactNode;
   explanationHtml: string;
   explanationOpen: boolean;
   terminalOpen: boolean;
@@ -20,6 +21,7 @@ interface InteractiveWorkspaceSurfaceProps {
 
 export function InteractiveWorkspaceSurface({
   children,
+  presentationLayer,
   explanationHtml,
   explanationOpen,
   terminalOpen,
@@ -52,7 +54,7 @@ export function InteractiveWorkspaceSurface({
   }, [terminalAvailable, terminalOpen, terminalSize]);
 
   return (
-    <section aria-label="Interactive workspace" className="flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor">
+    <section aria-label="Interactive workspace" className="relative flex min-h-0 flex-1 flex-col bg-tk-elements-panel-backgroundColor">
       <nav aria-label="Workspace panels" className="flex h-10 shrink-0 items-center gap-1 border-b border-tk-elements-app-borderColor bg-tk-background-primary px-3">
         <span className="mr-2 text-[10px] font-700 uppercase tracking-[0.12em] text-tk-text-secondary">Workspace</span>
         <InteractiveButton
@@ -142,6 +144,7 @@ export function InteractiveWorkspaceSurface({
           </PanelGroup>
         </Panel>
       </PanelGroup>
+      {presentationLayer}
     </section>
   );
 }

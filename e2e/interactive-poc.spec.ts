@@ -613,6 +613,15 @@ test.describe('interactive timeline POC', () => {
     await terminalToggle.click();
     await expect(page.getByLabel(/live terminal panel/i)).toBeHidden();
 
+    await page.getByRole('button', { name: /show presentation resource: explanation/i }).click();
+    const presentationExplanation = page.locator('[data-presentation-resource="lesson-explanation"]');
+    await expect(presentationExplanation).toHaveAttribute('data-presentation-mode', 'minimized');
+    await page.getByRole('button', { name: /focus explanation/i }).click();
+    await expect(presentationExplanation).toHaveAttribute('data-presentation-mode', 'focused');
+    await expect(presentationExplanation.getByRole('heading', { name: /file tree test/i })).toBeVisible();
+    await page.getByRole('button', { name: /hide explanation/i }).click();
+    await expect(presentationExplanation).toHaveCount(0);
+
     const savedLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.workspaceLayout') || 'null'));
     expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
     expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
@@ -646,6 +655,153 @@ test.describe('interactive timeline POC', () => {
     await expect(page.locator('[data-interactive-workspace-shell]')).toBeHidden();
     await expect(page.getByRole('tab', { name: /output/i })).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toBeHidden();
+  });
+
+  test('website preview keeps one persistent host across presentation modes', async ({ page }) => {
+    await page.getByRole('button', { name: /edit materials/i }).click();
+
+    const preview = page.locator('[data-presentation-resource="website-preview"]');
+    const previewHost = page.locator('[data-presentation-preview-host]');
+
+    await expect(preview).toHaveAttribute('data-presentation-mode', 'minimized');
+    await expect(previewHost).toBeAttached();
+    await previewHost.evaluate((element: HTMLDivElement) => {
+      (window as any).__interactivePreviewHost = element;
+      element.dataset.presentationIdentity = 'persistent-preview';
+    });
+    const iframe = previewHost.locator('iframe').first();
+    await expect(iframe).toBeAttached({ timeout: 20000 });
+    await iframe.evaluate((element: HTMLIFrameElement) => {
+      (window as any).__interactivePreviewFrame = element;
+    });
+    const website = page.frameLocator('[data-presentation-preview-host] iframe').first();
+    await website.getByRole('button', { name: /click the live preview/i }).click();
+    await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /focus website preview/i }).click();
+    await expect(preview).toHaveAttribute('data-presentation-mode', 'focused');
+    await page.getByRole('button', { name: /minimize website preview/i }).click();
+    await expect(preview).toHaveAttribute('data-presentation-mode', 'minimized');
+    await page.getByRole('button', { name: /hide website preview/i }).click();
+    await expect(preview).toHaveAttribute('data-presentation-mode', 'hidden');
+    await page.getByRole('button', { name: /show presentation resource: website preview/i }).click();
+    await expect(preview).toHaveAttribute('data-presentation-mode', 'minimized');
+
+    expect(await previewHost.evaluate((element: HTMLDivElement) =>
+      (window as any).__interactivePreviewHost === element && element.dataset.presentationIdentity === 'persistent-preview')).toBeTruthy();
+    expect(await iframe.evaluate((element: HTMLIFrameElement) => (window as any).__interactivePreviewFrame === element)).toBeTruthy();
+    await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
+  });
+
+  test('teacher presentation cues record and seek deterministic slide layouts', async ({ page }) => {
+    await startTeacherRecording(page);
+
+    const slide = page.locator('[data-presentation-resource="slide-javascript-runtime"]');
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
+    const website = page.frameLocator('[data-presentation-preview-host] iframe').first();
+    await website.getByRole('button', { name: /click the live preview/i }).click({ timeout: 20000 });
+    await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
+    await page.waitForTimeout(250);
+    await page.getByRole('button', { name: /focus javascript runs in the browser/i }).click();
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
+    await page.waitForTimeout(350);
+    await page.getByRole('button', { name: /minimize javascript runs in the browser/i }).click();
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
+
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const presentationEvents = recording.events.filter((event: any) => event.type === 'presentation.changed');
+
+    expect(recording.presentationResources.some((resource: any) => resource.id === 'slide-javascript-runtime')).toBeTruthy();
+    expect(recording.initialPresentationLayout.resources['slide-javascript-runtime']).toBe('minimized');
+    expect(presentationEvents).toHaveLength(2);
+    expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeFalsy();
+    expect(presentationEvents[0].payload.layout.resources['slide-javascript-runtime']).toBe('focused');
+    expect(presentationEvents[1].payload.layout.resources['slide-javascript-runtime']).toBe('minimized');
+
+    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[0].tMs));
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
+    await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[1].tMs));
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized');
+  });
+
+  test('learner can override presentation cues and return to teacher direction', async ({ page, request }) => {
+    const recording: any = createPublishedRecording(
+      'teacher-recording-presentation-override-test',
+      'console.log("presentation complete");\n',
+      7000,
+    );
+    recording.presentationResources = [
+      { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
+      { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
+      {
+        id: 'slide-javascript-runtime',
+        kind: 'slide',
+        title: 'JavaScript runs in the browser',
+        eyebrow: 'Demo slide 1',
+        body: 'A deterministic learner presentation test.',
+      },
+    ];
+    recording.initialPresentationLayout = {
+      resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'minimized' },
+    };
+    recording.events.splice(2, 0,
+      {
+        id: 'event-presentation-focus',
+        seq: 2,
+        tMs: 500,
+        type: 'presentation.changed',
+        payload: {
+          layout: {
+            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'focused' },
+            focusedResourceId: 'slide-javascript-runtime',
+          },
+        },
+        origin: 'teacher',
+      },
+      {
+        id: 'event-presentation-minimize',
+        seq: 3,
+        tMs: 6000,
+        type: 'presentation.changed',
+        payload: {
+          layout: {
+            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'slide-javascript-runtime': 'minimized' },
+          },
+        },
+        origin: 'teacher',
+      },
+    );
+    recording.events.at(-1).seq = 4;
+
+    await seedPublishedRecording(request, recording);
+    const rawBefore = readFileSync(getPublishedRecordingFile(recording.id), 'utf8');
+
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
+
+    const slide = page.locator('[data-presentation-resource="slide-javascript-runtime"]');
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'focused', { timeout: 1800 });
+    await page.getByRole('button', { name: /hide javascript runs in the browser/i }).click();
+    await expect(slide).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
+    await page.waitForTimeout(400);
+    await expect(slide).toHaveCount(0);
+
+    await page.getByRole('button', { name: /follow teacher/i }).click();
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
+    await page.getByRole('button', { name: /minimize javascript runs in the browser/i }).click();
+    await page.getByRole('button', { name: /focus javascript runs in the browser/i }).click();
+    await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
+
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized', { timeout: 7000 });
+    await expect(page.getByRole('button', { name: /follow teacher/i })).toHaveCount(0);
+    expect(readFileSync(getPublishedRecordingFile(recording.id), 'utf8')).toBe(rawBefore);
   });
 
   test('demo sign-in works', async ({ page }) => {

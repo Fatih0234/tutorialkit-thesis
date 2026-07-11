@@ -16,6 +16,7 @@ import {
   InteractiveWorkspaceShell,
 } from './InteractiveExperienceShells.js';
 import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
+import { InteractivePresentationLayer } from './InteractivePresentationLayer.js';
 import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
 import { InteractiveButton } from './InteractivePocUi.js';
 import { InteractiveVideoControls } from './InteractiveVideoControls.js';
@@ -52,10 +53,12 @@ interface TerminalProps extends PanelProps {
   terminalPanelRef: React.RefObject<ImperativePanelHandle>;
   terminalExpanded: React.MutableRefObject<boolean>;
   immersiveTerminalHost: HTMLDivElement | null;
+  immersivePreviewHost: HTMLDivElement | null;
 }
 
 interface EditorSectionProps extends PanelProps {
   onImmersiveTerminalHostChange: (host: HTMLDivElement | null) => void;
+  onImmersivePreviewHostChange: (host: HTMLDivElement | null) => void;
 }
 
 /**
@@ -76,6 +79,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
   const terminalPanelRef = useRef<ImperativePanelHandle>(null);
   const terminalExpanded = useRef(false);
   const [immersiveTerminalHost, setImmersiveTerminalHost] = useState<HTMLDivElement | null>(null);
+  const [immersivePreviewHost, setImmersivePreviewHost] = useState<HTMLDivElement | null>(null);
 
   return (
     <PanelGroup className={resizePanelStyles.PanelGroup} id="right-panel-group" direction="vertical">
@@ -88,6 +92,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
             hasPreviews={hasPreviews}
             hideTerminalPanel={hideTerminalPanel}
             onImmersiveTerminalHostChange={setImmersiveTerminalHost}
+            onImmersivePreviewHostChange={setImmersivePreviewHost}
           />
         </InteractiveExperienceProvider>
       </DialogProvider>
@@ -105,6 +110,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
         terminalExpanded={terminalExpanded}
         hideTerminalPanel={hideTerminalPanel}
         immersiveTerminalHost={immersiveTerminalHost}
+        immersivePreviewHost={immersivePreviewHost}
         hasPreviews={hasPreviews}
         hasEditor={hasEditor}
       />
@@ -122,6 +128,7 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
         terminalExpanded={terminalExpanded}
         hideTerminalPanel={hideTerminalPanel}
         immersiveTerminalHost={immersiveTerminalHost}
+        immersivePreviewHost={immersivePreviewHost}
         hasEditor={hasEditor}
         hasPreviews={hasPreviews}
       />
@@ -129,7 +136,14 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
   );
 }
 
-function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onImmersiveTerminalHostChange }: EditorSectionProps) {
+function EditorSection({
+  theme,
+  tutorialStore,
+  hasEditor,
+  hideTerminalPanel,
+  onImmersiveTerminalHostChange,
+  onImmersivePreviewHostChange,
+}: EditorSectionProps) {
   const [helpAction, setHelpAction] = useState<'solve' | 'reset'>('reset');
   const { experience, dispatchExperience } = useInteractiveExperienceState();
   const [recordingMode, setRecordingMode] = useState<InteractiveRecordingMode>('none');
@@ -441,6 +455,20 @@ function EditorSection({ theme, tutorialStore, hasEditor, hideTerminalPanel, onI
       onExplanationSizeChange={setExplanationPanelSize}
       onTerminalSizeChange={setTerminalPanelSize}
       onTerminalHostChange={onImmersiveTerminalHostChange}
+      presentationLayer={
+        <InteractivePresentationLayer
+          audience={experience.screen === 'learner-player' ? 'learner' : 'teacher'}
+          resources={interactivePoc.controls.presentationResources}
+          layout={interactivePoc.controls.presentationLayout}
+          hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
+          explanationHtml={explanationHtml}
+          onModeChange={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+            ? interactivePoc.controls.onTeacherPresentationModeChange
+            : interactivePoc.controls.onLearnerPresentationModeChange}
+          onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
+          onPreviewHostChange={onImmersivePreviewHostChange}
+        />
+      }
     >
       {editor}
     </InteractiveWorkspaceSurface>
@@ -534,6 +562,7 @@ function PreviewsSection({
   terminalPanelRef,
   terminalExpanded,
   hideTerminalPanel,
+  immersivePreviewHost,
   hasPreviews,
   hasEditor,
 }: TerminalProps) {
@@ -624,13 +653,18 @@ function PreviewsSection({
         'transition-theme border-t border-tk-elements-app-borderColor': hasEditor,
       })}
     >
-      <PreviewPanel
-        ref={previewRef}
-        tutorialStore={tutorialStore}
-        i18n={lesson.data.i18n as I18n}
-        showToggleTerminal={!hideTerminalPanel}
-        toggleTerminal={toggleTerminal}
-      />
+      {immersivePreviewHost
+        ? createPortal(
+            <PreviewPanel
+              ref={previewRef}
+              embedIframes
+              tutorialStore={tutorialStore}
+              i18n={lesson.data.i18n as I18n}
+              showToggleTerminal={false}
+            />,
+            immersivePreviewHost,
+          )
+        : null}
     </Panel>
   );
 }

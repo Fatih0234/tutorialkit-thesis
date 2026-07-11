@@ -32,7 +32,7 @@ Commands, terminal output, process state, and shell timing are outside the recor
 
 ### No iframe or preview-internal recording
 
-Interactions inside a rendered application preview are not captured. The system does not inspect iframe internals, replay DOM interactions, or record browser input within the learner's application.
+Interactions inside a rendered application preview are not captured. The system records teacher presentation cues that show, minimize, focus, or hide the live preview, but it does not inspect iframe internals, replay DOM interactions, or record browser input within the learner's application.
 
 ### No analytics
 
@@ -71,7 +71,7 @@ Build on the deterministic editor seek implementation with playback speed, drift
 
 ### Broader interaction capture
 
-Study terminal and preview interaction schemas only after the editor/file model is stable. Terminal capture requires command/output security and environment reproducibility; iframe capture requires cross-origin, privacy, and deterministic replay decisions. Neither should be treated as a small extension to the current event model.
+Study terminal and preview-internal interaction schemas only after the editor/file model is stable. Terminal capture requires command/output security and environment reproducibility; iframe-input capture requires cross-origin, privacy, and deterministic replay decisions. Presentation cues around the persistent live preview do not solve internal interaction replay, which should not be treated as a small extension to the current event model.
 
 ### Stable package format
 
