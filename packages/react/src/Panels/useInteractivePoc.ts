@@ -22,6 +22,7 @@ import {
   loadCurrentUser,
   logout as logoutCurrentUser,
   materializeTeacherState,
+  materializeWhiteboardScene,
   normalizeFiles,
   normalizePath,
   normalizePresentationLayout,
@@ -50,8 +51,12 @@ import {
   type TeacherRecordingDraftSummary,
   type TimelineEvent,
   type TutorialStore,
+  type WhiteboardPresentationResource,
+  type WhiteboardScene,
+  type WhiteboardSceneChangedPayload,
 } from '@tutorialkit/runtime';
 import { useEffect, useRef, useState } from 'react';
+import { useInteractiveWhiteboard } from './interactive/whiteboard/useInteractiveWhiteboard.js';
 
 export type InteractiveMode = 'teacher-playback' | 'learner-editing' | 'idle';
 export type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
@@ -93,6 +98,8 @@ export type DeckAction = 'next-reveal' | 'previous-reveal' | 'next-slide' | 'pre
 export interface InteractivePocControlsModel {
   isRecording: boolean;
   presentationResources: PresentationResource[];
+  whiteboardScene: WhiteboardScene;
+  whiteboardError: string;
   teacherPresentationLayout: PresentationLayout;
   presentationLayout: PresentationLayout;
   hasLearnerPresentationOverride: boolean;
@@ -171,6 +178,7 @@ export interface InteractivePocControlsModel {
   onTeacherDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
   onLearnerDeckAction: (deckId: string, action: DeckAction, slideIndex?: number) => void;
   onUpdatePresentationDeck: (deck: DeckPresentationResource) => void;
+  onWhiteboardSceneCommit: (scene: WhiteboardScene) => void;
   onFollowTeacherPresentation: () => void;
   onSelectDraftRecording: (recordingId: string) => void;
   onSelectPublishedRecording: (recordingId: string) => void;
@@ -232,9 +240,11 @@ const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
 const CAMERA_PRESENTATION_RESOURCE: PresentationResource = { id: 'instructor-camera', kind: 'camera', title: 'Instructor Camera' };
+const WHITEBOARD_RESOURCE_ID = 'lecture-whiteboard';
 const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
   { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
   { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
+  { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } },
   {
     id: 'javascript-counter-deck', kind: 'deck', title: 'Building a JavaScript Counter', accent: 'indigo',
     slides: [
@@ -260,6 +270,12 @@ function withInstructorCamera(resources: PresentationResource[]): PresentationRe
   return resources.some((resource) => resource.kind === 'camera')
     ? resources
     : [...resources, CAMERA_PRESENTATION_RESOURCE];
+}
+
+function withWhiteboard(resources: PresentationResource[]): PresentationResource[] {
+  return resources.some((resource) => resource.kind === 'whiteboard')
+    ? resources
+    : [...resources, { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } }];
 }
 
 function createDefaultPresentationLayout(): PresentationLayout {
@@ -330,6 +346,7 @@ export function useInteractivePoc({
   const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() => clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
   const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(createDefaultPresentationLayout);
   const [learnerPresentationOverride, setLearnerPresentationOverride] = useState<PresentationLayout | null>(null);
+  const whiteboard = useInteractiveWhiteboard({ elements: [] }, onWhiteboardSceneCommit);
   const [currentUser, setCurrentUserState] = useState<InteractiveUser | null>(null);
   const [devUsers, setDevUsers] = useState<InteractiveUser[]>(() => [...INTERACTIVE_DEV_USERS]);
   const [authStatus, setAuthStatus] = useState('loading');
@@ -866,9 +883,9 @@ export function useInteractivePoc({
   }
 
   function restoreInitialPresentation(recording: TeacherRecording) {
-    const recordedResources = recording.presentationResources?.length
+    const recordedResources = withWhiteboard(recording.presentationResources?.length
       ? recording.presentationResources
-      : DEFAULT_PRESENTATION_RESOURCES;
+      : DEFAULT_PRESENTATION_RESOURCES);
     const hasWebcam = recording.mediaAssets?.some((asset) => asset.kind === 'webcam') ?? false;
     const resources = hasWebcam ? withInstructorCamera(recordedResources) : recordedResources;
     let initialLayout = recording.initialPresentationLayout ?? createPresentationLayout(resources);
@@ -878,6 +895,8 @@ export function useInteractivePoc({
     }
 
     setPresentationResourcesAndLayout(resources, initialLayout);
+    const whiteboardResource = resources.find((resource): resource is WhiteboardPresentationResource => resource.kind === 'whiteboard');
+    whiteboard.applyScene(whiteboardResource?.initialScene ?? { elements: [] }, 'initialization');
   }
 
   function onTeacherPresentationModeChange(resourceId: string, mode: PresentationMode) {
@@ -940,6 +959,22 @@ export function useInteractivePoc({
     setPresentationResourcesAndLayout(nextResources, nextLayout);
   }
 
+  function onWhiteboardSceneCommit(scene: WhiteboardScene) {
+    const recorder = recorderRef.current;
+    if (recorder?.isRecording()) {
+      recorder.append<WhiteboardSceneChangedPayload>('whiteboard.scene.changed', {
+        payload: { resourceId: WHITEBOARD_RESOURCE_ID, scene: structuredClone(scene) },
+      });
+      syncEventCount();
+      return;
+    }
+
+    const nextResources = presentationResourcesRef.current.map((resource) => resource.kind === 'whiteboard' && resource.id === WHITEBOARD_RESOURCE_ID
+      ? { ...resource, initialScene: structuredClone(scene) } satisfies WhiteboardPresentationResource
+      : resource);
+    setPresentationResourcesAndLayout(nextResources, teacherPresentationLayoutRef.current);
+  }
+
   function onFollowTeacherPresentation() {
     learnerPresentationOverrideRef.current = null;
     setLearnerPresentationOverride(null);
@@ -966,6 +1001,12 @@ export function useInteractivePoc({
   }
 
   function applyPlaybackEvent(event: TimelineEvent) {
+    if (event.type === 'whiteboard.scene.changed') {
+      const payload = event.payload as WhiteboardSceneChangedPayload | undefined;
+      if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene) whiteboard.applyScene(payload.scene, 'playback');
+      return;
+    }
+
     if (event.type === 'presentation.changed') {
       const payload = event.payload as PresentationChangedPayload | undefined;
 
@@ -2368,6 +2409,8 @@ export function useInteractivePoc({
     controls: {
       isRecording,
       presentationResources,
+      whiteboardScene: whiteboard.scene,
+      whiteboardError: whiteboard.error,
       teacherPresentationLayout,
       presentationLayout: learnerPresentationOverride ?? teacherPresentationLayout,
       hasLearnerPresentationOverride: learnerPresentationOverride !== null,
@@ -2455,6 +2498,7 @@ export function useInteractivePoc({
       onTeacherDeckAction,
       onLearnerDeckAction,
       onUpdatePresentationDeck,
+      onWhiteboardSceneCommit: whiteboard.commitTeacherScene,
       onFollowTeacherPresentation,
       onSelectDraftRecording,
       onSelectPublishedRecording,

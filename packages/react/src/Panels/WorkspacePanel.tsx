@@ -470,6 +470,10 @@ function EditorSection({
           onPreviewHostChange={onImmersivePreviewHostChange}
           cameraMediaUrl={interactivePoc.controls.mediaKind === 'webcam' ? interactivePoc.controls.mediaPreviewUrl : ''}
           onCameraMediaElementRef={interactivePoc.controls.onMediaElementRef}
+          whiteboardScene={interactivePoc.controls.whiteboardScene}
+          whiteboardReadOnly={experience.screen !== 'teacher-materials' && experience.screen !== 'teacher-recording'}
+          whiteboardError={interactivePoc.controls.whiteboardError}
+          onWhiteboardSceneCommit={interactivePoc.controls.onWhiteboardSceneCommit}
         />
       }
     >

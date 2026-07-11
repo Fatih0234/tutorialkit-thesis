@@ -8,9 +8,11 @@ import type {
   PresentationSlide,
   PresentationSlideElement,
   SlidePresentationResource,
+  WhiteboardScene,
 } from '@tutorialkit/runtime';
 import type { DeckAction } from './useInteractivePoc.js';
 import { InteractiveButton } from './InteractivePocUi.js';
+import { InteractiveWhiteboard } from './interactive/whiteboard/InteractiveWhiteboard.js';
 
 interface Props {
   audience: 'teacher' | 'learner';
@@ -26,14 +28,20 @@ interface Props {
   onPreviewHostChange: (host: HTMLDivElement | null) => void;
   cameraMediaUrl: string;
   onCameraMediaElementRef: (element: HTMLMediaElement | null) => void;
+  whiteboardScene: WhiteboardScene;
+  whiteboardReadOnly: boolean;
+  whiteboardError: string;
+  onWhiteboardSceneCommit: (scene: WhiteboardScene) => void;
 }
 
-export function InteractivePresentationLayer({ audience, resources, layout, hasLearnerOverride, explanationHtml, canEditDeck, onModeChange, onDeckAction, onDeckChange, onFollowTeacher, onPreviewHostChange, cameraMediaUrl, onCameraMediaElementRef }: Props) {
+export function InteractivePresentationLayer({ audience, resources, layout, hasLearnerOverride, explanationHtml, canEditDeck, onModeChange, onDeckAction, onDeckChange, onFollowTeacher, onPreviewHostChange, cameraMediaUrl, onCameraMediaElementRef, whiteboardScene, whiteboardReadOnly, whiteboardError, onWhiteboardSceneCommit }: Props) {
   const focusedResource = resources.find((resource) => resource.id === layout.focusedResourceId);
   const previewResource = resources.find((resource) => resource.kind === 'preview');
   const previewMode = previewResource ? layout.resources[previewResource.id] ?? 'hidden' : 'hidden';
   const cameraResource = resources.find((resource) => resource.kind === 'camera');
   const cameraMode = cameraResource ? layout.resources[cameraResource.id] ?? 'hidden' : 'hidden';
+  const whiteboardResource = resources.find((resource) => resource.kind === 'whiteboard');
+  const whiteboardMode = whiteboardResource ? layout.resources[whiteboardResource.id] ?? 'hidden' : 'hidden';
 
   useEffect(() => {
     if (!focusedResource) return undefined;
@@ -67,9 +75,9 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
       </div>
 
       {audience === 'learner' && hasLearnerOverride ? <div className="pointer-events-auto absolute left-3 top-3 z-50"><InteractiveButton variant="primary" icon="i-ph-broadcast" onClick={onFollowTeacher}>Follow teacher</InteractiveButton></div> : null}
-      {previewMode === 'focused' || cameraMode === 'focused' ? <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm" aria-hidden="true" /> : null}
+      {previewMode === 'focused' || cameraMode === 'focused' || whiteboardMode === 'focused' ? <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm" aria-hidden="true" /> : null}
 
-      {focusedResource && focusedResource.kind !== 'preview' && focusedResource.kind !== 'camera' ? (
+      {focusedResource && focusedResource.kind !== 'preview' && focusedResource.kind !== 'camera' && focusedResource.kind !== 'whiteboard' ? (
         <div data-presentation-focus className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-6 pb-10 backdrop-blur-sm">
           <PresentationFrame resource={focusedResource} mode="focused" onModeChange={onModeChange}>
             {focusedResource.kind === 'deck' ? <DeckContent deck={focusedResource} progress={layout.deckStates?.[focusedResource.id]} compact={false} canEdit={canEditDeck} onAction={onDeckAction} onChange={onDeckChange} /> : null}
@@ -80,7 +88,7 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
       ) : null}
 
       <div className={`absolute left-4 z-10 flex max-w-[45%] flex-col-reverse gap-3 ${cameraMode === 'minimized' && cameraMediaUrl ? 'bottom-60' : 'bottom-4'}`}>
-        {resources.filter((resource) => resource.kind !== 'preview' && resource.kind !== 'camera' && layout.resources[resource.id] === 'minimized').map((resource) => (
+        {resources.filter((resource) => resource.kind !== 'preview' && resource.kind !== 'camera' && resource.kind !== 'whiteboard' && layout.resources[resource.id] === 'minimized').map((resource) => (
           <PresentationFrame key={resource.id} resource={resource} mode="minimized" onModeChange={onModeChange}>
             {resource.kind === 'deck' ? <DeckContent deck={resource} progress={layout.deckStates?.[resource.id]} compact canEdit={false} onAction={onDeckAction} onChange={onDeckChange} /> : null}
             {resource.kind === 'slide' ? <LegacySlideContent resource={resource} compact /> : null}
@@ -90,6 +98,7 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
       </div>
 
       {previewResource ? <section aria-label="Website preview presentation" data-presentation-resource={previewResource.id} data-presentation-mode={previewMode} className={previewContainerClass(previewMode)}><ResourceHeader resource={previewResource} mode={previewMode} onModeChange={onModeChange} /><div ref={onPreviewHostChange} data-presentation-preview-host className="min-h-0 flex-1 overflow-hidden bg-white" /></section> : null}
+      {whiteboardResource ? <section aria-label="Whiteboard presentation" aria-hidden={whiteboardMode === 'hidden'} data-presentation-resource={whiteboardResource.id} data-presentation-mode={whiteboardMode} className={whiteboardContainerClass(whiteboardMode)}><ResourceHeader resource={whiteboardResource} mode={whiteboardMode} onModeChange={onModeChange} /><div className="min-h-0 flex-1"><InteractiveWhiteboard scene={whiteboardScene} readOnly={whiteboardReadOnly} error={whiteboardError} onSceneCommit={onWhiteboardSceneCommit} /></div></section> : null}
       {cameraResource && cameraMediaUrl ? <section aria-label="Instructor Camera presentation" data-presentation-resource={cameraResource.id} data-presentation-mode={cameraMode} className={cameraContainerClass(cameraMode)}><ResourceHeader resource={cameraResource} mode={cameraMode} onModeChange={onModeChange} /><video aria-label="Recorded instructor camera" playsInline preload="auto" src={cameraMediaUrl} ref={onCameraMediaElementRef} className="pointer-events-none min-h-0 flex-1 bg-black object-cover" /></section> : null}
     </div>
   );
@@ -163,6 +172,7 @@ function DeckEditor({ deck, slideIndex, onChange }: { deck: DeckPresentationReso
 
 function LegacySlideContent({ resource, compact = false }: { resource: SlidePresentationResource; compact?: boolean }) { return <div className={`flex h-full flex-col justify-center bg-gradient-to-br from-indigo-100 to-violet-200 text-slate-950 ${compact ? 'p-4' : 'p-12 md:p-16'}`}>{resource.eyebrow ? <p className="font-800 uppercase tracking-[0.18em] text-indigo-700">{resource.eyebrow}</p> : null}<h2 className={`${compact ? 'text-lg' : 'text-5xl'} mt-2 font-800`}>{resource.title}</h2><p className={`${compact ? 'text-xs' : 'text-2xl'} mt-4 text-slate-700`}>{resource.body}</p></div>; }
 function ExplanationContent({ html, compact = false }: { html: string; compact?: boolean }) { return html ? <div className={`markdown-content text-tk-elements-content-textColor ${compact ? 'line-clamp-5 p-4 text-xs' : 'p-8 md:p-12'}`} dangerouslySetInnerHTML={{ __html: html }} /> : <p className="p-6 text-sm text-tk-text-secondary">No lesson explanation is available.</p>; }
-function resourceIcon(resource: PresentationResource): string { if (resource.kind === 'preview') return 'i-ph-browser'; if (resource.kind === 'camera') return 'i-ph-video-camera'; if (resource.kind === 'slide' || resource.kind === 'deck') return 'i-ph-presentation-chart'; return 'i-ph-book-open-text'; }
+function resourceIcon(resource: PresentationResource): string { if (resource.kind === 'preview') return 'i-ph-browser'; if (resource.kind === 'camera') return 'i-ph-video-camera'; if (resource.kind === 'whiteboard') return 'i-ph-chalkboard-teacher'; if (resource.kind === 'slide' || resource.kind === 'deck') return 'i-ph-presentation-chart'; return 'i-ph-book-open-text'; }
 function previewContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[6%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 right-4 h-60 w-[min(34rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
+function whiteboardContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-white shadow-2xl'; if (mode === 'focused') return `${base} inset-[5%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 left-4 h-64 w-[min(26rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
 function cameraContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[8%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 left-4 h-52 w-72 rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }

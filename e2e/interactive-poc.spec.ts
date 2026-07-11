@@ -328,6 +328,19 @@ async function publishAndOpenRecordingAsLearner(page: Page, recording: any) {
   }, recording);
 }
 
+async function drawWhiteboardShape(page: Page, toolName: 'Rectangle' | 'Ellipse' | 'Arrow', start: { x: number; y: number }, end: { x: number; y: number }) {
+  const board = page.getByTestId('interactive-whiteboard');
+  await board.getByRole('radio', { name: toolName, exact: true }).click({ force: true });
+  const canvas = board.locator('canvas.interactive');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Whiteboard canvas is not visible.');
+  await page.mouse.move(box.x + start.x, box.y + start.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(650);
+}
+
 async function startTeacherRecording(page: Page, mode: 'timeline' | 'audio' | 'camera' = 'timeline') {
   const backToSetup = page.getByRole('button', { name: /back to lecture setup|dashboard/i });
 
@@ -675,6 +688,67 @@ test.describe('interactive timeline POC', () => {
       (window as any).__interactivePreviewHost === element && element.dataset.presentationIdentity === 'persistent-preview')).toBeTruthy();
     expect(await iframe.evaluate((element: HTMLIFrameElement) => (window as any).__interactivePreviewFrame === element)).toBeTruthy();
     await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
+  });
+
+  test('teacher whiteboard preparation, recording, publication, and learner seeking are deterministic', async ({ page }) => {
+    test.setTimeout(90_000);
+    await signInAsTeacher(page);
+    await page.getByRole('button', { name: /edit materials/i }).click();
+    await page.getByRole('button', { name: /show presentation resource: whiteboard/i }).click();
+    await page.getByRole('button', { name: /focus whiteboard/i }).click();
+    await drawWhiteboardShape(page, 'Rectangle', { x: 280, y: 220 }, { x: 430, y: 320 });
+    await expect(page.getByTestId('interactive-whiteboard')).toHaveAttribute('data-whiteboard-element-count', '1');
+
+    await page.getByRole('button', { name: /start recording/i }).click();
+    await page.waitForTimeout(200);
+    await drawWhiteboardShape(page, 'Ellipse', { x: 480, y: 260 }, { x: 600, y: 370 });
+    await page.waitForTimeout(250);
+    await drawWhiteboardShape(page, 'Arrow', { x: 360, y: 430 }, { x: 600, y: 470 });
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+
+    const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const boardResource = draft.presentationResources.find((resource: any) => resource.kind === 'whiteboard');
+    const boardEvents = draft.events.filter((event: any) => event.type === 'whiteboard.scene.changed');
+    expect(boardResource.initialScene.elements.filter((element: any) => !element.isDeleted)).toHaveLength(1);
+    expect(boardEvents).toHaveLength(2);
+    expect(boardEvents[0].payload.scene.elements.filter((element: any) => !element.isDeleted)).toHaveLength(2);
+    expect(boardEvents[1].payload.scene.elements.filter((element: any) => !element.isDeleted)).toHaveLength(3);
+
+    await page.getByRole('button', { name: /^publish$/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeAttached();
+    await page.getByRole('button', { name: /dashboard/i }).click();
+    await signOut(page);
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    const learnerBoard = page.getByTestId('interactive-whiteboard');
+    await expect(page.locator('[data-presentation-resource="lecture-whiteboard"]')).toHaveAttribute('data-presentation-mode', 'focused');
+    await expect(learnerBoard).toHaveAttribute('data-whiteboard-readonly', 'true');
+    await page.getByLabel(/lesson timeline/i).fill(String(Math.max(0, boardEvents[0].tMs - 1)));
+    await expect(learnerBoard).toHaveAttribute('data-whiteboard-element-count', '1');
+    await page.getByLabel(/lesson timeline/i).fill(String(boardEvents[0].tMs));
+    await expect(learnerBoard).toHaveAttribute('data-whiteboard-element-count', '2');
+    await page.getByLabel(/lesson timeline/i).fill(String(boardEvents[1].tMs));
+    await expect(learnerBoard).toHaveAttribute('data-whiteboard-element-count', '3');
+    const immutableBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    await expect(learnerBoard.getByRole('radio', { name: 'Rectangle', exact: true })).toHaveCount(0);
+    await page.reload();
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByLabel(/lesson timeline/i).fill(String(boardEvents[1].tMs));
+    await expect(page.getByTestId('interactive-whiteboard')).toHaveAttribute('data-whiteboard-element-count', '3');
+    expect(await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).toBe(immutableBefore);
+  });
+
+  test('remote persistence rejects malformed and oversized whiteboard scenes', async ({ request }) => {
+    await apiDevLogin(request, DEV_TEACHER_USER_ID);
+    const malformed: any = createPublishedRecording('teacher-recording-invalid-whiteboard-test', 'console.log("invalid board");\n', 1000);
+    malformed.presentationResources = [{ id: 'board', kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: Array.from({ length: 1001 }, (_, id) => ({ id })) } }];
+    const response = await request.post('/api/interactive/teacher-recordings', { data: malformed });
+    expect(response.status()).toBe(400);
+    expect(await response.text()).toMatch(/whiteboard scene exceeds/i);
   });
 
   test('teacher presentation cues record and seek deterministic slide layouts', async ({ page }) => {
