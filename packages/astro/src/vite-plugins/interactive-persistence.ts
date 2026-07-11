@@ -1109,6 +1109,42 @@ async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse
     return;
   }
 
+  if (req.method === 'DELETE' && routeParts.length === 2) {
+    const user = await requireTeacherUser(req);
+    const id = assertSafeId(decodeURIComponent(routeParts[1] ?? ''), 'teacher recording id');
+    const recordingPath = getJsonFilePath(dataPaths.teacherRecordings, id);
+    const recordingRaw = await readJsonFile<TeacherRecording>(recordingPath);
+
+    if (!recordingRaw) {
+      sendJson(res, { error: 'Teacher recording was not found.' }, 404);
+      return;
+    }
+
+    const recording = withTeacherOwnershipDefaults(recordingRaw);
+
+    if (recording.ownerUserId !== user.id) {
+      sendJson(res, { error: 'Teacher recording belongs to a different teacher.' }, 403);
+      return;
+    }
+
+    const mediaAssets = await readAllJsonFiles<StoredMediaAssetMetadata>(dataPaths.mediaAssets);
+
+    for (const asset of mediaAssets.filter((item) => item.recordingId === id)) {
+      await rm(path.join(dataPaths.mediaAssets, asset.storedFileName), { force: true });
+      await rm(getJsonFilePath(dataPaths.mediaAssets, asset.id), { force: true });
+    }
+
+    const learnerDeltas = await readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas);
+    await Promise.all(
+      learnerDeltas
+        .filter((delta) => delta.teacherRecordingId === id)
+        .map((delta) => rm(getJsonFilePath(dataPaths.learnerDeltas, delta.id), { force: true })),
+    );
+    await rm(recordingPath, { force: true });
+    sendJson(res, { ok: true });
+    return;
+  }
+
   if (req.method === 'POST' && routeParts.length === 1) {
     const user = await requireTeacherUser(req);
     const inputRecording = normalizeTeacherRecording(await readJsonRequest(req));

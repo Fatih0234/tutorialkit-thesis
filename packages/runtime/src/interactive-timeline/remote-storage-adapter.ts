@@ -1,6 +1,6 @@
 import type { InteractiveUser } from './identity.js';
 import { getRecordingMediaAssetMetadata, type RecordingMediaAsset } from './media.js';
-import { saveLearnerDeltas, saveTeacherRecording } from './storage.js';
+import { clearTeacherRecording, saveLearnerDeltas, saveTeacherRecording } from './storage.js';
 import {
   getTeacherRecordingDraftSummary,
   type InteractiveTimelineStorage,
@@ -193,7 +193,12 @@ export class RemoteInteractiveTimelineStorage implements InteractiveTimelineStor
   }
 
   async deleteTeacherRecordingDraft(_id: string): Promise<void> {
-    // Published recordings are immutable in this POC and are not deleted through the draft API.
+    // Published recordings are not deleted through the draft API.
+  }
+
+  async deletePublishedTeacherRecording(id: string): Promise<void> {
+    await this.requestJson<{ ok: boolean }>(`/teacher-recordings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    clearTeacherRecording(id);
   }
 
   async saveMediaAsset(asset: RecordingMediaAsset): Promise<void> {

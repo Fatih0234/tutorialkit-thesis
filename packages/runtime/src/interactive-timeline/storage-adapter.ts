@@ -42,6 +42,7 @@ export interface InteractiveTimelineStorage {
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void>;
   deleteTeacherRecordingDraft(id: string): Promise<void>;
+  deletePublishedTeacherRecording(id: string): Promise<void>;
   saveMediaAsset(asset: RecordingMediaAsset): Promise<void>;
   loadMediaAsset(assetId: string): Promise<RecordingMediaAsset | undefined>;
   deleteMediaAsset(assetId: string): Promise<void>;
@@ -118,6 +119,10 @@ export class LocalStorageInteractiveTimelineStorage implements InteractiveTimeli
 
   async deleteTeacherRecordingDraft(id: string): Promise<void> {
     clearTeacherRecording(id);
+  }
+
+  async deletePublishedTeacherRecording(_id: string): Promise<void> {
+    throw new Error('Published recording deletion requires remote storage.');
   }
 
   async saveMediaAsset(_asset: RecordingMediaAsset): Promise<void> {

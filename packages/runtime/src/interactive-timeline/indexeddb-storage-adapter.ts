@@ -199,6 +199,10 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
     await this.fallbackStorage.deleteTeacherRecordingDraft(id);
   }
 
+  async deletePublishedTeacherRecording(_id: string): Promise<void> {
+    throw new Error('Published recording deletion requires remote storage.');
+  }
+
   async saveMediaAsset(asset: RecordingMediaAsset): Promise<void> {
     const wroteToIndexedDB = await this.writeMediaAssetToIndexedDB(asset);
 

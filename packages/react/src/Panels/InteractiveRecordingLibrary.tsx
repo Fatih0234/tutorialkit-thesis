@@ -29,7 +29,10 @@ interface InteractiveRecordingLibraryProps {
   actionIcon?: string;
   onOpenRecording: (recordingId: string) => void;
   onDeleteRecording?: (recordingId: string) => void;
+  canDeleteRecording?: (recording: InteractiveRecordingLibraryItem) => boolean;
   deletingRecordingId?: string;
+  deleteLabel?: string;
+  deleteConfirmationText?: string;
 }
 
 export function InteractiveRecordingLibrary({
@@ -41,7 +44,10 @@ export function InteractiveRecordingLibrary({
   actionIcon = 'i-ph-arrow-right',
   onOpenRecording,
   onDeleteRecording,
+  canDeleteRecording,
   deletingRecordingId,
+  deleteLabel = 'Draft',
+  deleteConfirmationText,
 }: InteractiveRecordingLibraryProps) {
   const headingId = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-heading`;
 
@@ -72,17 +78,18 @@ export function InteractiveRecordingLibrary({
                   <InteractiveButton variant="primary" icon={actionIcon} onClick={() => onOpenRecording(recording.id)}>
                     {actionLabel}
                   </InteractiveButton>
-                  {onDeleteRecording ? (
+                  {onDeleteRecording && (canDeleteRecording?.(recording) ?? true) ? (
                     <InteractiveButton
                       variant={isConfirmingDelete ? 'danger' : 'ghost'}
                       icon={isConfirmingDelete ? 'i-ph-warning' : 'i-ph-trash'}
-                      aria-label={isConfirmingDelete ? `Confirm delete ${lessonTitle(recording.lessonId)} draft` : `Delete ${lessonTitle(recording.lessonId)} draft`}
+                      aria-label={isConfirmingDelete ? `Confirm delete ${lessonTitle(recording.lessonId)} ${deleteLabel}` : `Delete ${lessonTitle(recording.lessonId)} ${deleteLabel}`}
                       onClick={() => onDeleteRecording(recording.id)}
                       className={classNames(isConfirmingDelete && 'font-600')}
                     >
                       {isConfirmingDelete ? 'Confirm Delete' : 'Delete'}
                     </InteractiveButton>
                   ) : null}
+                  {isConfirmingDelete && deleteConfirmationText ? <span role="status" className="text-xs text-amber-200">{deleteConfirmationText}</span> : null}
                 </div>
               </li>
             );

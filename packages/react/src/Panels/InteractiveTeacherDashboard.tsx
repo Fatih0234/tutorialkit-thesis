@@ -21,6 +21,7 @@ interface InteractiveTeacherDashboardProps extends InteractivePocControlsModel {
 
 export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardProps) {
   const [deletingDraftId, setDeletingDraftId] = useState('');
+  const [deletingPublishedId, setDeletingPublishedId] = useState('');
   const canStartConfiguredRecording = props.recordingMode === 'none' ? props.canStartRecording : props.canStartMediaRecording;
 
   function deleteDraft(recordingId: string) {
@@ -32,6 +33,16 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
 
     setDeletingDraftId('');
     void props.onDeleteSelectedDraft();
+  }
+
+  function deletePublished(recordingId: string) {
+    if (deletingPublishedId !== recordingId) {
+      setDeletingPublishedId(recordingId);
+      return;
+    }
+
+    setDeletingPublishedId('');
+    props.onDeletePublishedRecording(recordingId);
   }
 
   return (
@@ -107,7 +118,14 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
           actionLabel="View Lesson"
           actionIcon="i-ph-play-circle"
           onOpenRecording={props.onPreviewSelectedPublished}
+          onDeleteRecording={deletePublished}
+          canDeleteRecording={(recording) => props.canDeletePublishedRecording && recording.ownerUserId === props.currentUser?.id}
+          deletingRecordingId={deletingPublishedId}
+          deleteLabel="Lesson"
+          deleteConfirmationText="This removes the lesson, its media, and linked learner experiments."
         />
+        {props.publishedDeleteStatus === 'deleted' ? <p role="status" className="m-0 text-xs text-green-300">Published lesson deleted.</p> : null}
+        {props.publishedDeleteError !== 'none' ? <p role="alert" className="m-0 text-xs text-red-300">{props.publishedDeleteError}</p> : null}
       </InteractiveCard>
     </section>
   );

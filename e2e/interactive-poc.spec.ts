@@ -1147,6 +1147,48 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('button', { name: /view lesson/i })).toBeVisible();
   });
 
+  test('teacher can delete an owned published lesson and its learner work', async ({ page, request }) => {
+    const recording = createPublishedRecording(
+      'teacher-recording-delete-published-test',
+      'console.log("delete published lesson");\n',
+    );
+    const delta = {
+      id: 'learner-delta-delete-published-test',
+      userId: DEV_LEARNER_USER_ID,
+      lessonId: recording.lessonId,
+      teacherRecordingId: recording.id,
+      teacherRecordingVersion: recording.version,
+      teacherTimestampMs: 10,
+      baseTeacherFilesHash: simpleHashFilesForTest(recording.baseFiles),
+      addedOrModified: { '/example.js': '// linked learner work\n' },
+      removed: [],
+      createdAt: '2026-01-01T00:01:00.000Z',
+    };
+
+    await seedPublishedRecording(request, recording);
+    await apiDevLogin(request, DEV_LEARNER_USER_ID);
+    const deltaResponse = await request.post('/api/interactive/learner-deltas', { data: delta });
+    expect(deltaResponse.ok()).toBe(true);
+    const unauthorizedDelete = await request.delete(`/api/interactive/teacher-recordings/${recording.id}`);
+    expect(unauthorizedDelete.status()).toBe(403);
+    await page.reload();
+    await signInAsTeacher(page);
+    await expect(page.getByRole('button', { name: /delete lesson and solution lesson/i })).toBeVisible();
+    await page.getByRole('button', { name: /delete lesson and solution lesson/i }).click();
+    await expect(page.getByText(/removes the lesson, its media, and linked learner experiments/i)).toBeVisible();
+    await page.getByRole('button', { name: /confirm delete lesson and solution lesson/i }).click();
+    await expect(page.getByText(/published lesson deleted/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /view lesson/i })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('button', { name: /view lesson/i })).toHaveCount(0);
+
+    const deletedRecording = await request.get(`/api/interactive/teacher-recordings/${recording.id}`);
+    expect(deletedRecording.status()).toBe(404);
+    await apiDevLogin(request, DEV_LEARNER_USER_ID);
+    const deltasResponse = await request.get(`/api/interactive/learner-deltas?teacherRecordingId=${recording.id}`);
+    expect((await deltasResponse.json()).learnerDeltas).toHaveLength(0);
+  });
+
   test('teacher can publish and reload recording from backend', async ({ page }) => {
     await signInAsTeacher(page);
     await startTeacherRecording(page);

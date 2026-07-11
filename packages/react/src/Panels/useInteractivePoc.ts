@@ -113,6 +113,8 @@ export interface InteractivePocControlsModel {
   publishedStatus: PublishedStatus;
   publishedRecordingId: string;
   publishedError: string;
+  publishedDeleteStatus: string;
+  publishedDeleteError: string;
   recordingStorageSource: RecordingStorageSource;
   recordingDurationMs: number;
   mediaStatus: MediaStatus;
@@ -149,6 +151,7 @@ export interface InteractivePocControlsModel {
   canLoadPublishedRecording: boolean;
   canPreviewPublishedRecording: boolean;
   canDeleteSelectedDraft: boolean;
+  canDeletePublishedRecording: boolean;
   canExportRecording: boolean;
   canImportRecordingPackage: boolean;
   canImportPublishedPackage: boolean;
@@ -183,6 +186,7 @@ export interface InteractivePocControlsModel {
   onPublishRecording: () => void;
   onLoadPublishedRecording: (recordingId?: string) => void;
   onPreviewPublishedRecording: (recordingId?: string) => void;
+  onDeletePublishedRecording: (recordingId: string) => void;
   onToggleIncludeLearnerDeltasInExport: (checked: boolean) => void;
   onSelectImportPackageFile: (file: File | null) => void;
   onExportRecording: () => void;
@@ -350,6 +354,8 @@ export function useInteractivePoc({
   const [publishedStatus, setPublishedStatus] = useState<PublishedStatus>('idle');
   const [publishedRecordingId, setPublishedRecordingId] = useState('none');
   const [publishedError, setPublishedError] = useState('none');
+  const [publishedDeleteStatus, setPublishedDeleteStatus] = useState('idle');
+  const [publishedDeleteError, setPublishedDeleteError] = useState('none');
   const [recordingStorageSource, setRecordingStorageSource] = useState<RecordingStorageSource>('none');
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [mediaStatus, setMediaStatus] = useState<MediaStatus>(getInitialMediaStatus);
@@ -2062,6 +2068,40 @@ export function useInteractivePoc({
     }
   }
 
+  async function deletePublishedRecording(recordingId: string) {
+    if (!recordingId || !canPublishInteractiveRecording(currentUserRef.current) || isRecording) return;
+
+    setPublishedDeleteStatus('deleting');
+    setPublishedDeleteError('none');
+
+    try {
+      await remoteTimelineStorage.deletePublishedTeacherRecording(recordingId);
+
+      if (playbackRecordingRef.current?.id === recordingId && currentRecordingSourceRef.current === 'published') {
+        stopPlaybackDrivers({ pauseMedia: true });
+        playbackRecordingRef.current = null;
+        setCurrentRecordingSource('none');
+        setPublishedRecordingId('none');
+        setPublishedStatus('idle');
+        setRecordingDurationMs(0);
+        setEventCount(0);
+        setNoMedia(getInitialMediaStatus());
+        await syncLearnerDeltaState(undefined, remoteTimelineStorage);
+      }
+
+      setSelectedPublishedRecordingId('');
+      setPublishedDeleteStatus('deleted');
+      await refreshRecordingLibrary();
+    } catch (error) {
+      setPublishedDeleteStatus('error');
+      setPublishedDeleteError(error instanceof Error ? error.message : 'Unable to delete the published lesson.');
+    }
+  }
+
+  function onDeletePublishedRecording(recordingId: string) {
+    void deletePublishedRecording(recordingId);
+  }
+
   async function saveLearnerDelta() {
     if (modeRef.current !== 'learner-editing' || !hasPausedTeacherTimestamp) {
       return false;
@@ -2348,6 +2388,8 @@ export function useInteractivePoc({
       publishedStatus,
       publishedRecordingId,
       publishedError,
+      publishedDeleteStatus,
+      publishedDeleteError,
       recordingStorageSource,
       recordingDurationMs,
       mediaStatus,
@@ -2388,6 +2430,7 @@ export function useInteractivePoc({
         !isRecording &&
         mode === 'idle',
       canDeleteSelectedDraft: hasDraftSelection && !isRecording && mode !== 'teacher-playback',
+      canDeletePublishedRecording: canPublishAsTeacher && !isRecording && publishedDeleteStatus !== 'deleting',
       canExportRecording: hasExportableRecording && !isRecording && mode === 'idle' && exportStatus !== 'exporting',
       canImportRecordingPackage: hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
       canImportPublishedPackage:
@@ -2427,6 +2470,7 @@ export function useInteractivePoc({
       onPublishRecording,
       onLoadPublishedRecording,
       onPreviewPublishedRecording,
+      onDeletePublishedRecording,
       onToggleIncludeLearnerDeltasInExport,
       onSelectImportPackageFile,
       onExportRecording,

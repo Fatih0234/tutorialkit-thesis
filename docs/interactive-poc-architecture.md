@@ -75,7 +75,7 @@ The browser only receives the current user. Session ids are random, meaningless 
 
 `packages/react/src/Panels/InteractiveTeacherDashboard.tsx` renders only Lecture Setup and product-facing recording cards. `WorkspacePanel.tsx` coordinates four teacher stages: `setup`, `materials`, `recording`, and `review`.
 
-Lecture Setup contains initial-file selection, Editor only / microphone / camera-and-microphone modes, **Edit Materials**, and **Start Recording**. Recording uses the dedicated studio and **Stop Recording** action. Recording Review exclusively owns playback, **Save Draft**, and **Publish**. Teacher Studio cards provide **Open Review**, **View Lesson**, and confirmed contextual draft deletion without exposing recording IDs, versions, event counts, storage sources, or media diagnostics.
+Lecture Setup contains initial-file selection, Editor only / microphone / camera-and-microphone modes, **Edit Materials**, and **Start Recording**. Recording uses the dedicated studio and **Stop Recording** action. Recording Review exclusively owns playback, **Save Draft**, and **Publish**. Teacher Studio cards provide **Open Review**, **View Lesson**, confirmed contextual draft deletion, and owner-only confirmed published-lesson deletion without exposing recording IDs, versions, event counts, storage sources, or media diagnostics. Published deletion is a dedicated remote cascade over the exact recording ID, linked media, and learner experiments.
 
 ### Recording libraries
 

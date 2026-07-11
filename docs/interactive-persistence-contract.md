@@ -618,6 +618,10 @@ Rules:
 - returns immutable teacher recording records;
 - current dev implementation sorts newest first by `startedAt`, then `id`.
 
+### `DELETE /api/interactive/teacher-recordings/:id`
+
+Deletes an owned published lesson. The request requires a signed-in teacher and the recording's normalized `ownerUserId` must match the session user. Successful deletion cascades to linked media metadata/files and learner deltas for that exact recording ID. It does not affect unrelated recordings, drafts, media, deltas, or source lesson files. Missing recordings return `404`; learner or non-owner requests are rejected.
+
 ### `POST /api/interactive/media-assets`
 
 Upload a media Blob for a teacher recording. Requires a signed-in teacher/both dev session.
