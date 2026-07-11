@@ -71,12 +71,20 @@ export interface FileChangedPayload {
         slideIndex: 1,
         revealedStep: 2
       }
+    },
+    composition: {
+      preset: 'stage-with-sidecar',
+      primarySurfaceId: 'javascript-counter-deck',
+      secondarySurfaceId: 'website-preview',
+      splitRatio: 0.7,
+      cameraAnchor: 'bottom-right',
+      cameraSize: 'medium'
     }
   }
 }
 ```
 
-Learner presentation overrides and interactions inside the preview iframe never create timeline events.
+Composition snapshots store semantic roles and bounded ratios only. They never contain raw window coordinates or dimensions. Dragging commits on drop and split resizing commits at the completed action boundary. Learner presentation overrides and interactions inside the preview iframe never create timeline events.
 
 ## LearnerDelta
 

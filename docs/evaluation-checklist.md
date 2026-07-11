@@ -14,7 +14,7 @@ Use this checklist to evaluate the current thesis POC candidate. Record the date
 ## Automated acceptance
 
 - [ ] `pnpm build` completes successfully.
-- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **39 passed**.
+- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **40 passed**.
 - [ ] `git diff --check` reports no whitespace errors.
 - [ ] Playwright product actions use user-facing role/text/label locators; CSS scoping is limited to the embedded editor integration where no stable product role identifies the container.
 - [ ] The localStorage compatibility shapes can be inspected at `interactive-poc.teacherRecording` and `interactive-poc.learnerDeltas`.
@@ -39,6 +39,10 @@ git diff --check
 - [ ] **Start Recording** opens the focused full-screen studio with elapsed time, event count, media state, and Stop.
 - [ ] A teacher can record progressive editor changes, stop into **Recording Review**, save, load, and preview a local draft.
 - [ ] The editor player can pause, restart, seek to an intermediate state, and continue deterministically.
+- [ ] Main Stage, Sidecar, and Tray avoid ordinary-resource overlap and stack responsively at compact widths.
+- [ ] Arrange Layout drag/drop and bounded split resizing persist semantic roles/ratios without pixel geometry.
+- [ ] The preview iframe, editor, whiteboard, terminal, and media owners survive composition changes.
+- [ ] Instructor Camera is the only overlay and uses constrained anchors and named sizes.
 - [ ] A teacher can prepare an initial Excalidraw scene and record at least two semantic scene snapshots without raw pointer events.
 - [ ] Whiteboard seeking restores initial, intermediate, and final scenes; learner playback is read-only and leaves teacher JSON unchanged.
 - [ ] Draft, publication, reload, and package round-trip preserve whiteboards; malformed or oversized scenes are rejected.
@@ -54,6 +58,7 @@ git diff --check
 
 - [ ] **Learner Demo** can sign in and open the seeded published lesson.
 - [ ] **Play** replays structured teacher events in deterministic order through the shared seekable editor player.
+- [ ] Learner composition changes remain temporary overrides, and **Follow Teacher** restores the timeline composition.
 - [ ] **Pause and Experiment** pauses playback and permits learner editing.
 - [ ] **Save Experiment** stores a file-level learner delta without changing the teacher recording and renders a timestamped timeline marker.
 - [ ] **Return to Lecture** reconstructs teacher truth at the experiment anchor before continuing playback.
