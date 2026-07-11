@@ -12,6 +12,7 @@ import {
   INTERACTIVE_DEV_TEACHER_USER_ID,
   INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID,
   MAX_WHITEBOARD_TITLE_LENGTH,
+  normalizePresentationLayout,
   sanitizeWhiteboardScene,
   type InteractiveSession,
   type InteractiveUser,
@@ -109,6 +110,14 @@ interface TeacherRecording {
     resources: Record<string, 'hidden' | 'minimized' | 'focused'>;
     focusedResourceId?: string;
     deckStates?: Record<string, { slideIndex: number; revealedStep: number }>;
+    composition?: {
+      preset: 'focus' | 'side-by-side' | 'stage-with-sidecar';
+      primarySurfaceId: string;
+      secondarySurfaceId?: string;
+      splitRatio: number;
+      cameraAnchor: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+      cameraSize: 'small' | 'medium' | 'large';
+    };
   };
   mediaAssets?: RecordingMediaAssetMetadata[];
   createdByUserId?: string;
@@ -237,7 +246,11 @@ function isHttpsRequest(req: IncomingMessage): boolean {
   return Boolean((req.socket as any).encrypted) || req.headers['x-forwarded-proto'] === 'https';
 }
 
-function serializeSessionCookie(req: IncomingMessage, value: string, options: { expires?: Date; maxAgeSeconds?: number } = {}) {
+function serializeSessionCookie(
+  req: IncomingMessage,
+  value: string,
+  options: { expires?: Date; maxAgeSeconds?: number } = {},
+) {
   const segments = [`${SESSION_COOKIE_NAME}=${encodeURIComponent(value)}`, 'HttpOnly', 'SameSite=Lax', 'Path=/'];
 
   if (isHttpsRequest(req)) {
@@ -385,10 +398,14 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
 
   let payload = candidate.payload;
   if (candidate.type === 'whiteboard.scene.changed') {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Whiteboard event payload must be an object.');
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+      throw new Error('Whiteboard event payload must be an object.');
     const whiteboardPayload = payload as { resourceId?: unknown; scene?: unknown };
     if (typeof whiteboardPayload.resourceId !== 'string') throw new Error('Whiteboard resource id is required.');
-    payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+    payload = {
+      resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'),
+      scene: sanitizeWhiteboardScene(whiteboardPayload.scene),
+    };
   }
 
   return {
@@ -450,19 +467,73 @@ function normalizePresentationResources(value: unknown): TeacherRecording['prese
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new Error('Presentation resources must be an array.');
   return value.map((item) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Presentation resource must be an object.');
+    if (!item || typeof item !== 'object' || Array.isArray(item))
+      throw new Error('Presentation resource must be an object.');
     const resource = item as NonNullable<TeacherRecording['presentationResources']>[number];
     const allowedKinds = new Set(['preview', 'explanation', 'slide', 'deck', 'camera', 'whiteboard']);
     if (!allowedKinds.has(resource.kind)) throw new Error('Presentation resource kind is invalid.');
     const id = assertSafeId(resource.id, 'presentation resource id');
-    if (typeof resource.title !== 'string' || !resource.title.trim() || resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH) throw new Error('Presentation resource title is invalid.');
-    if (resource.kind === 'whiteboard') return { id, kind: 'whiteboard' as const, title: resource.title, initialScene: sanitizeWhiteboardScene(resource.initialScene) };
+    if (
+      typeof resource.title !== 'string' ||
+      !resource.title.trim() ||
+      resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH
+    )
+      throw new Error('Presentation resource title is invalid.');
+    if (resource.kind === 'whiteboard')
+      return {
+        id,
+        kind: 'whiteboard' as const,
+        title: resource.title,
+        initialScene: sanitizeWhiteboardScene(resource.initialScene),
+      };
     return { ...resource, id, title: resource.title };
   });
 }
 
+function normalizeStoredPresentationLayout(
+  resources: NonNullable<TeacherRecording['presentationResources']>,
+  value: unknown,
+): TeacherRecording['initialPresentationLayout'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Presentation layout must be an object.');
+  const candidate = value as NonNullable<TeacherRecording['initialPresentationLayout']>;
+  if (!candidate.resources || typeof candidate.resources !== 'object' || Array.isArray(candidate.resources))
+    throw new Error('Presentation layout resources must be an object.');
+  for (const mode of Object.values(candidate.resources))
+    if (mode !== 'hidden' && mode !== 'minimized' && mode !== 'focused')
+      throw new Error('Presentation resource mode is invalid.');
+  const composition = candidate.composition;
+  if (composition) {
+    if (
+      composition.preset !== 'focus' &&
+      composition.preset !== 'side-by-side' &&
+      composition.preset !== 'stage-with-sidecar'
+    )
+      throw new Error('Presentation composition preset is invalid.');
+    if (!Number.isFinite(composition.splitRatio)) throw new Error('Presentation composition split ratio is invalid.');
+    if (!['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(composition.cameraAnchor))
+      throw new Error('Presentation camera anchor is invalid.');
+    if (!['small', 'medium', 'large'].includes(composition.cameraSize))
+      throw new Error('Presentation camera size is invalid.');
+    const surfaceIds = new Set([
+      'workspace-editor',
+      ...resources.filter((resource) => resource.kind !== 'camera').map((resource) => resource.id),
+    ]);
+    if (
+      !surfaceIds.has(composition.primarySurfaceId) ||
+      (composition.secondarySurfaceId && !surfaceIds.has(composition.secondarySurfaceId))
+    )
+      throw new Error('Presentation composition references an unknown surface.');
+  }
+  return normalizePresentationLayout(
+    resources as any,
+    candidate as any,
+  ) as TeacherRecording['initialPresentationLayout'];
+}
+
 function normalizeTeacherRecording(value: unknown): TeacherRecording {
-  const input = value && typeof value === 'object' && 'teacherRecording' in value ? (value as any).teacherRecording : value;
+  const input =
+    value && typeof value === 'object' && 'teacherRecording' in value ? (value as any).teacherRecording : value;
 
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Expected teacher recording object.');
@@ -496,10 +567,30 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
 
   const recordingId = assertSafeId(candidate.id, 'teacher recording id');
   const presentationResources = normalizePresentationResources(candidate.presentationResources);
-  const events = candidate.events.map(normalizeTimelineEvent).sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs));
-  const whiteboardIds = new Set(presentationResources?.filter((resource) => resource.kind === 'whiteboard').map((resource) => resource.id));
+  const events = candidate.events
+    .map(normalizeTimelineEvent)
+    .sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs));
+  const initialPresentationLayout =
+    candidate.initialPresentationLayout === undefined
+      ? undefined
+      : normalizeStoredPresentationLayout(presentationResources ?? [], candidate.initialPresentationLayout);
+  const whiteboardIds = new Set(
+    presentationResources?.filter((resource) => resource.kind === 'whiteboard').map((resource) => resource.id),
+  );
   for (const event of events) {
-    if (event.type === 'whiteboard.scene.changed' && !whiteboardIds.has((event.payload as { resourceId: string }).resourceId)) throw new Error('Whiteboard event references an unknown resource.');
+    if (
+      event.type === 'whiteboard.scene.changed' &&
+      !whiteboardIds.has((event.payload as { resourceId: string }).resourceId)
+    )
+      throw new Error('Whiteboard event references an unknown resource.');
+    if (event.type === 'presentation.changed') {
+      const payload = event.payload as { layout?: unknown } | undefined;
+      if (!payload?.layout) throw new Error('Presentation event layout is required.');
+      event.payload = {
+        ...payload,
+        layout: normalizeStoredPresentationLayout(presentationResources ?? [], payload.layout),
+      };
+    }
   }
 
   return {
@@ -512,10 +603,15 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     baseFiles: normalizeFiles(candidate.baseFiles),
     events,
     presentationResources,
+    initialPresentationLayout,
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
-    createdByUserId: candidate.createdByUserId ? assertSafeId(candidate.createdByUserId, 'createdBy user id') : undefined,
+    createdByUserId: candidate.createdByUserId
+      ? assertSafeId(candidate.createdByUserId, 'createdBy user id')
+      : undefined,
     ownerUserId: candidate.ownerUserId ? assertSafeId(candidate.ownerUserId, 'owner user id') : undefined,
-    publishedByUserId: candidate.publishedByUserId ? assertSafeId(candidate.publishedByUserId, 'publishedBy user id') : undefined,
+    publishedByUserId: candidate.publishedByUserId
+      ? assertSafeId(candidate.publishedByUserId, 'publishedBy user id')
+      : undefined,
     publishedAt: candidate.publishedAt && typeof candidate.publishedAt === 'string' ? candidate.publishedAt : undefined,
   };
 }
@@ -574,7 +670,8 @@ function normalizeLearnerDelta(value: unknown, fallbackUserId?: string): Learner
     addedOrModified: normalizeFiles(candidate.addedOrModified ?? {}),
     removed: candidate.removed.map((filePath) => normalizePath(String(filePath))),
     selectedFile: candidate.selectedFile ? normalizePath(candidate.selectedFile) : undefined,
-    createdAt: candidate.createdAt && typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
+    createdAt:
+      candidate.createdAt && typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
   };
 }
 
@@ -817,7 +914,9 @@ function hasExpectedMediaSignature(buffer: Buffer, mimeType: string): boolean {
   }
 
   if (normalizedMimeType === 'audio/wav' || normalizedMimeType === 'audio/x-wav') {
-    return buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WAVE';
+    return (
+      buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WAVE'
+    );
   }
 
   if (normalizedMimeType === 'audio/ogg') {
@@ -877,18 +976,42 @@ console.log("demo conflict base");
     { id: 'website-preview', kind: 'preview' as const, title: 'Live Counter Preview' },
     { id: 'lesson-explanation', kind: 'explanation' as const, title: 'Counter lesson notes' },
     {
-      id: 'javascript-counter-deck', kind: 'deck' as const, title: 'Building a JavaScript Counter', accent: 'indigo',
+      id: 'javascript-counter-deck',
+      kind: 'deck' as const,
+      title: 'Building a JavaScript Counter',
+      accent: 'indigo',
       slides: [
-        { id: 'counter-state', title: 'JavaScript remembers state', eyebrow: 'Counter concept · 1', elements: [
-          { id: 'state-intro', kind: 'paragraph', text: 'A variable stores the current count between clicks.', revealStep: 0 },
+        {
+          id: 'counter-state',
+          title: 'JavaScript remembers state',
+          eyebrow: 'Counter concept · 1',
+          elements: [
+            {
+              id: 'state-intro',
+              kind: 'paragraph',
+              text: 'A variable stores the current count between clicks.',
+              revealStep: 0,
+            },
           { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
           { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
-        ] },
-        { id: 'counter-dom', title: 'Events update the DOM', eyebrow: 'Counter concept · 2', elements: [
+          ],
+        },
+        {
+          id: 'counter-dom',
+          title: 'Events update the DOM',
+          eyebrow: 'Counter concept · 2',
+          elements: [
           { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
           { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
-          { id: 'dom-code', kind: 'code', language: 'javascript', code: "button.addEventListener('click', () => { count += 1; });", revealStep: 3 },
-        ] },
+            {
+              id: 'dom-code',
+              kind: 'code',
+              language: 'javascript',
+              code: "button.addEventListener('click', () => { count += 1; });",
+              revealStep: 3,
+            },
+          ],
+        },
       ],
     },
   ];
@@ -954,31 +1077,61 @@ createServer(async (request, response) => {
     events: [
       { id: 'demo-event-started', seq: 0, tMs: 0, type: 'recording.started', origin: 'system' },
       {
-        id: 'demo-event-opened', seq: 1, tMs: 0, type: 'file.opened', filePath: '/example.js',
-        payload: { filePath: '/example.js' }, origin: 'teacher',
+        id: 'demo-event-opened',
+        seq: 1,
+        tMs: 0,
+        type: 'file.opened',
+        filePath: '/example.js',
+        payload: { filePath: '/example.js' },
+        origin: 'teacher',
       },
       {
-        id: 'demo-presentation-concept', seq: 2, tMs: 300, type: 'presentation.changed', origin: 'teacher',
+        id: 'demo-presentation-concept',
+        seq: 2,
+        tMs: 300,
+        type: 'presentation.changed',
+        origin: 'teacher',
         payload: { layout: layout('minimized', 'focused', 'javascript-counter-deck', 0, 0) },
       },
       {
-        id: 'demo-presentation-preview', seq: 3, tMs: 900, type: 'presentation.changed', origin: 'teacher',
+        id: 'demo-presentation-preview',
+        seq: 3,
+        tMs: 900,
+        type: 'presentation.changed',
+        origin: 'teacher',
         payload: { layout: layout('focused', 'minimized', 'website-preview', 0, 2) },
       },
       {
-        id: 'demo-presentation-dom', seq: 4, tMs: 1500, type: 'presentation.changed', origin: 'teacher',
+        id: 'demo-presentation-dom',
+        seq: 4,
+        tMs: 1500,
+        type: 'presentation.changed',
+        origin: 'teacher',
         payload: { layout: layout('minimized', 'focused', 'javascript-counter-deck', 1, 1) },
       },
       {
-        id: 'demo-event-conflict-change', seq: 5, tMs: 2000, type: 'file.changed', filePath: '/example.js',
-        payload: { content: finalContent }, origin: 'teacher',
+        id: 'demo-event-conflict-change',
+        seq: 5,
+        tMs: 2000,
+        type: 'file.changed',
+        filePath: '/example.js',
+        payload: { content: finalContent },
+        origin: 'teacher',
       },
       {
-        id: 'demo-presentation-try-it', seq: 6, tMs: 2300, type: 'presentation.changed', origin: 'teacher',
+        id: 'demo-presentation-try-it',
+        seq: 6,
+        tMs: 2300,
+        type: 'presentation.changed',
+        origin: 'teacher',
         payload: { layout: layout('focused', 'minimized', 'website-preview', 1, 3) },
       },
       {
-        id: 'demo-presentation-summary', seq: 7, tMs: 2700, type: 'presentation.changed', origin: 'teacher',
+        id: 'demo-presentation-summary',
+        seq: 7,
+        tMs: 2700,
+        type: 'presentation.changed',
+        origin: 'teacher',
         payload: { layout: layout('minimized', 'minimized', undefined, 1, 3) },
       },
     ],
@@ -1061,7 +1214,8 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, routeParts:
 
   if (req.method === 'POST' && routeParts[1] === 'dev-login') {
     const body = await readJsonRequest(req);
-    const userId = body && typeof body === 'object' && 'userId' in body ? String((body as { userId?: unknown }).userId) : '';
+    const userId =
+      body && typeof body === 'object' && 'userId' in body ? String((body as { userId?: unknown }).userId) : '';
     const user = getDevUser(userId);
 
     if (!user) {
@@ -1356,7 +1510,9 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
       const linkedRecording = await readJsonFile<TeacherRecording>(
         getJsonFilePath(dataPaths.teacherRecordings, metadata.recordingId),
       );
-      const ownerUserId = metadata.ownerUserId ?? (linkedRecording ? withTeacherOwnershipDefaults(linkedRecording).ownerUserId : undefined);
+      const ownerUserId =
+        metadata.ownerUserId ??
+        (linkedRecording ? withTeacherOwnershipDefaults(linkedRecording).ownerUserId : undefined);
 
       if (ownerUserId !== user.id) {
         sendJson(res, { error: 'Media asset belongs to a different teacher.' }, 403);
@@ -1437,7 +1593,9 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
       return;
     }
 
-    const existingMetadata = await readJsonFile<StoredMediaAssetMetadata>(getJsonFilePath(dataPaths.mediaAssets, metadataWithOwner.id));
+    const existingMetadata = await readJsonFile<StoredMediaAssetMetadata>(
+      getJsonFilePath(dataPaths.mediaAssets, metadataWithOwner.id),
+    );
 
     if (existingMetadata) {
       if ((existingMetadata.ownerUserId ?? linkedRecording.ownerUserId) !== user.id) {
@@ -1479,7 +1637,8 @@ function sendJson(res: ServerResponse, value: unknown, statusCode = 200) {
 }
 
 function sendError(res: ServerResponse, error: unknown) {
-  const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number((error as any).statusCode) : 400;
+  const statusCode =
+    typeof error === 'object' && error && 'statusCode' in error ? Number((error as any).statusCode) : 400;
   const message = error instanceof Error ? error.message : 'Interactive persistence request failed.';
 
   sendJson(res, { error: message }, Number.isFinite(statusCode) ? statusCode : 400);
@@ -1493,11 +1652,7 @@ export async function handleInteractivePersistenceRequest(req: IncomingMessage, 
     return;
   }
 
-  const routeParts = url.pathname
-    .slice(API_PREFIX.length)
-    .split('/')
-    .filter(Boolean)
-    .map(decodeURIComponent);
+  const routeParts = url.pathname.slice(API_PREFIX.length).split('/').filter(Boolean).map(decodeURIComponent);
 
   try {
     if (routeParts[0] === 'auth') {
