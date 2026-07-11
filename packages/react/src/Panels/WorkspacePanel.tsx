@@ -349,12 +349,15 @@ function EditorSection({
   }, [lesson.id, hideTerminalPanel]);
 
   useEffect(() => {
-    localStorage.setItem(INTERACTIVE_WORKSPACE_LAYOUT_KEY, JSON.stringify({
+    localStorage.setItem(
+      INTERACTIVE_WORKSPACE_LAYOUT_KEY,
+      JSON.stringify({
       explanationOpen,
       terminalOpen,
       explanationSize,
       terminalSize,
-    }));
+      }),
+    );
   }, [explanationOpen, terminalOpen, explanationSize, terminalSize]);
 
   useEffect(() => {
@@ -456,15 +459,35 @@ function EditorSection({
           audience={experience.screen === 'learner-player' ? 'learner' : 'teacher'}
           resources={interactivePoc.controls.presentationResources}
           layout={interactivePoc.controls.presentationLayout}
+          workspaceContent={editor}
+          canArrange={
+            experience.screen === 'teacher-materials' ||
+            experience.screen === 'teacher-recording' ||
+            experience.screen === 'learner-player'
+          }
           hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
           explanationHtml={explanationHtml}
           canEditDeck={experience.screen === 'teacher-materials'}
-          onModeChange={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+          onModeChange={
+            experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
             ? interactivePoc.controls.onTeacherPresentationModeChange
-            : interactivePoc.controls.onLearnerPresentationModeChange}
-          onDeckAction={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+              : interactivePoc.controls.onLearnerPresentationModeChange
+          }
+          onLayoutPreview={
+            experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+              ? interactivePoc.controls.onTeacherPresentationLayoutPreview
+              : interactivePoc.controls.onLearnerPresentationLayoutChange
+          }
+          onLayoutCommit={
+            experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+              ? interactivePoc.controls.onTeacherPresentationLayoutCommit
+              : interactivePoc.controls.onLearnerPresentationLayoutChange
+          }
+          onDeckAction={
+            experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
             ? interactivePoc.controls.onTeacherDeckAction
-            : interactivePoc.controls.onLearnerDeckAction}
+              : interactivePoc.controls.onLearnerDeckAction
+          }
           onDeckChange={interactivePoc.controls.onUpdatePresentationDeck}
           onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
           onPreviewHostChange={onImmersivePreviewHostChange}
@@ -482,10 +505,13 @@ function EditorSection({
   );
 
   const editorExperience = (
-    <InteractiveExperienceRoot screen={experience.screen} theme={theme} hydrated={isClientReady} mount={experienceMount}>
-      <InteractiveManagementShell active={!isImmersiveExperience}>
-        {managementControls}
-      </InteractiveManagementShell>
+    <InteractiveExperienceRoot
+      screen={experience.screen}
+      theme={theme}
+      hydrated={isClientReady}
+      mount={experienceMount}
+    >
+      <InteractiveManagementShell active={!isImmersiveExperience}>{managementControls}</InteractiveManagementShell>
       <InteractiveWorkspaceShell active={isImmersiveExperience}>
       {experience.screen === 'teacher-materials' ? (
         <InteractiveMaterialPreparation
@@ -498,7 +524,12 @@ function EditorSection({
         />
       ) : null}
       {experience.screen === 'teacher-recording' ? (
-        <InteractiveRecordingStudio model={interactivePoc.controls} lessonId={lesson.id} initialFile={initialFile} onStop={() => void stopConfiguredRecording()} />
+          <InteractiveRecordingStudio
+            model={interactivePoc.controls}
+            lessonId={lesson.id}
+            initialFile={initialFile}
+            onStop={() => void stopConfiguredRecording()}
+          />
       ) : null}
       {experience.screen === 'teacher-review' ? (
         <InteractiveImmersiveHeader
@@ -509,12 +540,27 @@ function EditorSection({
           currentTimeMs={interactivePoc.controls.playheadMs}
           onExit={exitTeacherReview}
           exitLabel="Dashboard"
-          actions={interactivePoc.controls.recordingStorageSource === 'published' ? undefined : (
+            actions={
+              interactivePoc.controls.recordingStorageSource === 'published' ? undefined : (
             <>
-              <InteractiveButton icon="i-ph-floppy-disk" onClick={interactivePoc.controls.onSaveDraft} disabled={!interactivePoc.controls.canSaveDraft}>Save Draft</InteractiveButton>
-              <InteractiveButton variant="primary" icon="i-ph-upload-simple" onClick={interactivePoc.controls.onPublishRecording} disabled={!interactivePoc.controls.canPublishRecording}>Publish</InteractiveButton>
+                  <InteractiveButton
+                    icon="i-ph-floppy-disk"
+                    onClick={interactivePoc.controls.onSaveDraft}
+                    disabled={!interactivePoc.controls.canSaveDraft}
+                  >
+                    Save Draft
+                  </InteractiveButton>
+                  <InteractiveButton
+                    variant="primary"
+                    icon="i-ph-upload-simple"
+                    onClick={interactivePoc.controls.onPublishRecording}
+                    disabled={!interactivePoc.controls.canPublishRecording}
+                  >
+                    Publish
+                  </InteractiveButton>
             </>
-          )}
+              )
+            }
         />
       ) : null}
       {experience.screen === 'learner-player' ? (
@@ -533,7 +579,11 @@ function EditorSection({
         <InteractiveVideoControls
           audience="teacher"
           model={interactivePoc.controls}
-          onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : previewCurrentDraft}
+            onPlay={
+              interactivePoc.controls.playbackStatus === 'paused'
+                ? interactivePoc.controls.onContinuePlayback
+                : previewCurrentDraft
+            }
           onPause={interactivePoc.controls.onPausePreviewPlayback}
         />
       ) : null}
@@ -541,7 +591,11 @@ function EditorSection({
         <InteractiveVideoControls
           audience="learner"
           model={interactivePoc.controls}
-          onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : interactivePoc.controls.onPlayRecording}
+            onPlay={
+              interactivePoc.controls.playbackStatus === 'paused'
+                ? interactivePoc.controls.onContinuePlayback
+                : interactivePoc.controls.onPlayRecording
+            }
           onPause={interactivePoc.controls.onPausePreviewPlayback}
         />
       ) : null}

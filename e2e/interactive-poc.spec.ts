@@ -203,7 +203,10 @@ async function apiDevLogin(request: APIRequestContext, userId: string) {
   expect(response.ok()).toBeTruthy();
 }
 
-async function seedPublishedRecording(request: APIRequestContext, recording: ReturnType<typeof createPublishedRecording>) {
+async function seedPublishedRecording(
+  request: APIRequestContext,
+  recording: ReturnType<typeof createPublishedRecording>,
+) {
   await apiDevLogin(request, DEV_TEACHER_USER_ID);
 
   const response = await request.post('/api/interactive/teacher-recordings', { data: recording });
@@ -241,7 +244,9 @@ async function chooseDemoIdentity(page: Page, learnerName: 'Teacher Demo' | 'Lea
     await identitySelect.selectOption({ label: learnerName });
 
     try {
-      await expect(page.locator('#interactive-demo-identity-heading').locator('xpath=..').getByText(learnerName, { exact: true })).toBeVisible({ timeout: 2500 });
+      await expect(
+        page.locator('#interactive-demo-identity-heading').locator('xpath=..').getByText(learnerName, { exact: true }),
+      ).toBeVisible({ timeout: 2500 });
       return;
     } catch (error) {
       if (attempt === 2) {
@@ -314,7 +319,9 @@ async function openTeacherSection(page: Page) {
 }
 
 async function publishAndOpenRecordingAsLearner(page: Page, recording: any) {
-  const loginResponse = await page.request.post('/api/interactive/auth/dev-login', { data: { userId: DEV_TEACHER_USER_ID } });
+  const loginResponse = await page.request.post('/api/interactive/auth/dev-login', {
+    data: { userId: DEV_TEACHER_USER_ID },
+  });
   expect(loginResponse.ok()).toBe(true);
   const publishResponse = await page.request.post('/api/interactive/teacher-recordings', { data: recording });
   expect(publishResponse.ok()).toBe(true);
@@ -328,7 +335,12 @@ async function publishAndOpenRecordingAsLearner(page: Page, recording: any) {
   }, recording);
 }
 
-async function drawWhiteboardShape(page: Page, toolName: 'Rectangle' | 'Ellipse' | 'Arrow', start: { x: number; y: number }, end: { x: number; y: number }) {
+async function drawWhiteboardShape(
+  page: Page,
+  toolName: 'Rectangle' | 'Ellipse' | 'Arrow',
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
   const board = page.getByTestId('interactive-whiteboard');
   await board.getByRole('radio', { name: toolName, exact: true }).click({ force: true });
   const canvas = board.locator('canvas.interactive');
@@ -349,7 +361,11 @@ async function startTeacherRecording(page: Page, mode: 'timeline' | 'audio' | 'c
   }
 
   const modeName =
-    mode === 'audio' ? /editor \+ microphone/i : mode === 'camera' ? /editor \+ camera \+ microphone/i : /^editor only$/i;
+    mode === 'audio'
+      ? /editor \+ microphone/i
+      : mode === 'camera'
+        ? /editor \+ camera \+ microphone/i
+        : /^editor only$/i;
 
   await page.getByRole('radio', { name: modeName }).check();
   await page.getByRole('button', { name: /^start recording$/i }).click();
@@ -497,7 +513,6 @@ async function prepareLocalConflictResolutionFlow({
   return { editor, learnerEdit, rawBefore, recording };
 }
 
-
 test.describe('interactive timeline POC', () => {
   test.beforeEach(async ({ page, baseURL }) => {
     rmSync(INTERACTIVE_DATA_DIR, { recursive: true, force: true });
@@ -519,13 +534,21 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('option', { name: /teacher demo/i })).toBeAttached();
     await expect(page.getByRole('button', { name: /edit materials/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /^start recording$/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /new recording|save draft|publish recording|export package|import package|demo seed|reset demo data/i })).toHaveCount(0);
-    await expect(page.getByText(/thesis demo walkthrough|debug details|technical status|current draft id|event count/i)).toHaveCount(0);
+    await expect(
+      page.getByRole('button', {
+        name: /new recording|save draft|publish recording|export package|import package|demo seed|reset demo data/i,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText(/thesis demo walkthrough|debug details|technical status|current draft id|event count/i),
+    ).toHaveCount(0);
     await openLearnerSection(page);
 
     await expect(page.getByRole('heading', { name: /interactive lessons/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /available lessons/i })).toBeVisible();
-    await expect(page.getByText(/thesis demo walkthrough|debug details|technical status|recording id|event count/i)).toHaveCount(0);
+    await expect(
+      page.getByText(/thesis demo walkthrough|debug details|technical status|recording id|event count/i),
+    ).toHaveCount(0);
     await expect(page.getByRole('button', { name: /save experiment/i })).toHaveCount(0);
     await expect(page.getByLabel(/lesson timeline/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /pause & try it/i })).toHaveCount(0);
@@ -559,12 +582,15 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
-    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const recording = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'),
+    );
 
     expect(recording.baseFiles['/example.js']).toContain('// prepared before recording');
     expect(
       recording.events.some(
-        (event: any) => event.type === 'file.changed' && event.payload?.content?.includes('// prepared before recording'),
+        (event: any) =>
+          event.type === 'file.changed' && event.payload?.content?.includes('// prepared before recording'),
       ),
     ).toBeFalsy();
   });
@@ -602,10 +628,12 @@ test.describe('interactive timeline POC', () => {
     await expect(presentationExplanation).toHaveAttribute('data-presentation-mode', 'focused');
     await expect(presentationExplanation.getByRole('heading', { name: /file tree test/i })).toBeVisible();
     await page.getByRole('button', { name: /hide explanation/i }).click();
-    await expect(presentationExplanation).toHaveCount(0);
+    await expect(presentationExplanation).toHaveAttribute('data-presentation-mode', 'hidden');
 
     await page.getByRole('button', { name: /focus building a javascript counter/i }).click();
-    const deckRevealPoint = page.locator('[data-presentation-resource="javascript-counter-deck"] p').filter({ hasText: /read the current value/i });
+    const deckRevealPoint = page
+      .locator('[data-presentation-resource="javascript-counter-deck"] p')
+      .filter({ hasText: /read the current value/i });
     await page.keyboard.press('ArrowRight');
     await expect(deckRevealPoint).toBeVisible();
     await page.keyboard.press('ArrowLeft');
@@ -617,9 +645,11 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /add slide/i }).click();
     await expect(page.getByText(/slide 1 \/ 3/i)).toBeVisible();
     await page.getByRole('button', { name: /minimize my counter lecture/i }).click();
-    await expect(page.getByRole('button', { name: /hide presentation resource: my counter lecture/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /hide my counter lecture/i })).toBeVisible();
 
-    const savedLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.workspaceLayout') || 'null'));
+    const savedLayout = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.workspaceLayout') || 'null'),
+    );
     expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
     expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
     expect(savedLayout.terminalSize).toBeGreaterThanOrEqual(18);
@@ -654,6 +684,41 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toBeHidden();
   });
 
+  test('adaptive lesson composition supports semantic drag and responsive resize intent', async ({ page }) => {
+    await page.getByRole('button', { name: /edit materials/i }).click();
+
+    const layer = page.locator('[data-presentation-layer]');
+    const editor = page.locator('[data-composition-surface="workspace-editor"]');
+    const preview = page.locator('[data-composition-surface="website-preview"]');
+    const whiteboard = page.locator('[data-composition-surface="lecture-whiteboard"]');
+    const deck = page.locator('[data-composition-surface="javascript-counter-deck"]');
+    await expect(layer).toHaveAttribute('data-composition-preset', 'stage-with-sidecar');
+    await expect(editor).toHaveAttribute('data-composition-role', 'primary');
+    await expect(preview).toHaveAttribute('data-composition-role', 'secondary');
+    await expect(whiteboard).toHaveAttribute('data-composition-role', 'hidden');
+    await page.getByRole('button', { name: /show presentation resource: whiteboard/i }).click();
+    await expect(whiteboard).toHaveAttribute('data-composition-role', 'tray');
+
+    await page.getByRole('button', { name: /arrange layout/i }).click();
+    await page.locator('[data-composition-tray-item="lecture-whiteboard"]').dragTo(editor);
+    await expect(whiteboard).toHaveAttribute('data-composition-role', 'primary');
+    await expect(editor).toHaveAttribute('data-composition-role', 'tray');
+    await expect(preview).toHaveAttribute('data-composition-role', 'secondary');
+
+    const ratio = page.getByLabel(/stage split ratio/i);
+    await ratio.fill('62');
+    await ratio.press('ArrowLeft');
+    await expect(ratio).toHaveValue('61');
+
+    await page.setViewportSize({ width: 700, height: 900 });
+    await expect(layer).toHaveAttribute('data-composition-responsive', 'stacked');
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(layer).toHaveAttribute('data-composition-responsive', 'split');
+
+    await expect(deck).toHaveAttribute('data-composition-role', 'tray');
+    await expect(page.locator('[data-composition-tray] [data-composition-tray-item]')).toHaveCount(2);
+  });
+
   test('website preview keeps one persistent host across presentation modes', async ({ page }) => {
     await page.getByRole('button', { name: /edit materials/i }).click();
 
@@ -684,13 +749,22 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /show presentation resource: website preview/i }).click();
     await expect(preview).toHaveAttribute('data-presentation-mode', 'minimized');
 
-    expect(await previewHost.evaluate((element: HTMLDivElement) =>
-      (window as any).__interactivePreviewHost === element && element.dataset.presentationIdentity === 'persistent-preview')).toBeTruthy();
-    expect(await iframe.evaluate((element: HTMLIFrameElement) => (window as any).__interactivePreviewFrame === element)).toBeTruthy();
+    expect(
+      await previewHost.evaluate(
+        (element: HTMLDivElement) =>
+          (window as any).__interactivePreviewHost === element &&
+          element.dataset.presentationIdentity === 'persistent-preview',
+      ),
+    ).toBeTruthy();
+    expect(
+      await iframe.evaluate((element: HTMLIFrameElement) => (window as any).__interactivePreviewFrame === element),
+    ).toBeTruthy();
     await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
   });
 
-  test('teacher whiteboard preparation, recording, publication, and learner seeking are deterministic', async ({ page }) => {
+  test('teacher whiteboard preparation, recording, publication, and learner seeking are deterministic', async ({
+    page,
+  }) => {
     test.setTimeout(90_000);
     await signInAsTeacher(page);
     await page.getByRole('button', { name: /edit materials/i }).click();
@@ -702,13 +776,15 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /start recording/i }).click();
     await page.waitForTimeout(200);
     await drawWhiteboardShape(page, 'Ellipse', { x: 480, y: 260 }, { x: 600, y: 370 });
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(550);
     await drawWhiteboardShape(page, 'Arrow', { x: 360, y: 430 }, { x: 600, y: 470 });
     await page.getByRole('button', { name: /stop recording/i }).click();
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
-    const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const draft = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'),
+    );
     const boardResource = draft.presentationResources.find((resource: any) => resource.kind === 'whiteboard');
     const boardEvents = draft.events.filter((event: any) => event.type === 'whiteboard.scene.changed');
     expect(boardResource.initialScene.elements.filter((element: any) => !element.isDeleted)).toHaveLength(1);
@@ -724,7 +800,10 @@ test.describe('interactive timeline POC', () => {
     await openLearnerSection(page);
     await page.getByRole('button', { name: /start lesson/i }).click();
     const learnerBoard = page.getByTestId('interactive-whiteboard');
-    await expect(page.locator('[data-presentation-resource="lecture-whiteboard"]')).toHaveAttribute('data-presentation-mode', 'focused');
+    await expect(page.locator('[data-presentation-resource="lecture-whiteboard"]')).toHaveAttribute(
+      'data-presentation-mode',
+      'focused',
+    );
     await expect(learnerBoard).toHaveAttribute('data-whiteboard-readonly', 'true');
     await page.getByLabel(/lesson timeline/i).fill(String(Math.max(0, boardEvents[0].tMs - 1)));
     await expect(learnerBoard).toHaveAttribute('data-whiteboard-element-count', '1');
@@ -744,11 +823,43 @@ test.describe('interactive timeline POC', () => {
 
   test('remote persistence rejects malformed and oversized whiteboard scenes', async ({ request }) => {
     await apiDevLogin(request, DEV_TEACHER_USER_ID);
-    const malformed: any = createPublishedRecording('teacher-recording-invalid-whiteboard-test', 'console.log("invalid board");\n', 1000);
-    malformed.presentationResources = [{ id: 'board', kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: Array.from({ length: 1001 }, (_, id) => ({ id })) } }];
+    const malformed: any = createPublishedRecording(
+      'teacher-recording-invalid-whiteboard-test',
+      'console.log("invalid board");\n',
+      1000,
+    );
+    malformed.presentationResources = [
+      {
+        id: 'board',
+        kind: 'whiteboard',
+        title: 'Whiteboard',
+        initialScene: { elements: Array.from({ length: 1001 }, (_, id) => ({ id })) },
+      },
+    ];
     const response = await request.post('/api/interactive/teacher-recordings', { data: malformed });
     expect(response.status()).toBe(400);
     expect(await response.text()).toMatch(/whiteboard scene exceeds/i);
+
+    const invalidComposition: any = createPublishedRecording(
+      'teacher-recording-invalid-composition-test',
+      'console.log("invalid composition");\n',
+      1000,
+    );
+    invalidComposition.presentationResources = [{ id: 'preview', kind: 'preview', title: 'Preview' }];
+    invalidComposition.initialPresentationLayout = {
+      resources: { preview: 'minimized' },
+      composition: {
+        preset: 'side-by-side',
+        primarySurfaceId: 'missing',
+        secondarySurfaceId: 'preview',
+        splitRatio: 0.6,
+        cameraAnchor: 'bottom-right',
+        cameraSize: 'medium',
+      },
+    };
+    const compositionResponse = await request.post('/api/interactive/teacher-recordings', { data: invalidComposition });
+    expect(compositionResponse.status()).toBe(400);
+    expect(await compositionResponse.text()).toMatch(/unknown surface/i);
   });
 
   test('teacher presentation cues record and seek deterministic slide layouts', async ({ page }) => {
@@ -779,7 +890,9 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
-    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const recording = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'),
+    );
     const presentationEvents = recording.events.filter((event: any) => event.type === 'presentation.changed');
 
     const deck = recording.presentationResources.find((resource: any) => resource.id === 'javascript-counter-deck');
@@ -788,8 +901,19 @@ test.describe('interactive timeline POC', () => {
     expect(presentationEvents).toHaveLength(5);
     expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeFalsy();
     expect(presentationEvents[0].payload.layout.resources['javascript-counter-deck']).toBe('focused');
-    expect(presentationEvents[2].payload.layout.deckStates['javascript-counter-deck']).toEqual({ slideIndex: 0, revealedStep: 2 });
-    expect(presentationEvents[3].payload.layout.deckStates['javascript-counter-deck']).toEqual({ slideIndex: 1, revealedStep: 0 });
+    expect(presentationEvents[0].payload.layout.composition).toMatchObject({
+      preset: 'focus',
+      primarySurfaceId: 'javascript-counter-deck',
+    });
+    expect(JSON.stringify(presentationEvents[0])).not.toMatch(/\"(x|y|width|height)\"/);
+    expect(presentationEvents[2].payload.layout.deckStates['javascript-counter-deck']).toEqual({
+      slideIndex: 0,
+      revealedStep: 2,
+    });
+    expect(presentationEvents[3].payload.layout.deckStates['javascript-counter-deck']).toEqual({
+      slideIndex: 1,
+      revealedStep: 0,
+    });
     expect(presentationEvents[4].payload.layout.resources['javascript-counter-deck']).toBe('minimized');
 
     await page.getByLabel(/lesson timeline/i).fill(String(presentationEvents[2].tMs));
@@ -810,20 +934,33 @@ test.describe('interactive timeline POC', () => {
       { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
       { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
       {
-        id: 'learner-counter-deck', kind: 'deck', title: 'Learner Counter Deck', slides: [
-          { id: 'learner-state', title: 'State', elements: [
+        id: 'learner-counter-deck',
+        kind: 'deck',
+        title: 'Learner Counter Deck',
+        slides: [
+          {
+            id: 'learner-state',
+            title: 'State',
+            elements: [
             { id: 'learner-state-intro', kind: 'paragraph', text: 'Initial concept', revealStep: 0 },
             { id: 'learner-state-point', kind: 'bullet', text: 'Learner-revealed point', revealStep: 1 },
-          ] },
+            ],
+          },
           { id: 'learner-dom', title: 'DOM update', elements: [] },
         ],
       },
     ];
     recording.initialPresentationLayout = {
-      resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'minimized' },
+      resources: {
+        'website-preview': 'minimized',
+        'lesson-explanation': 'hidden',
+        'learner-counter-deck': 'minimized',
+      },
       deckStates: { 'learner-counter-deck': { slideIndex: 0, revealedStep: 0 } },
     };
-    recording.events.splice(2, 0,
+    recording.events.splice(
+      2,
+      0,
       {
         id: 'event-presentation-focus',
         seq: 2,
@@ -831,7 +968,11 @@ test.describe('interactive timeline POC', () => {
         type: 'presentation.changed',
         payload: {
           layout: {
-            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'focused' },
+            resources: {
+              'website-preview': 'minimized',
+              'lesson-explanation': 'hidden',
+              'learner-counter-deck': 'focused',
+            },
             focusedResourceId: 'learner-counter-deck',
             deckStates: { 'learner-counter-deck': { slideIndex: 0, revealedStep: 0 } },
           },
@@ -845,7 +986,11 @@ test.describe('interactive timeline POC', () => {
         type: 'presentation.changed',
         payload: {
           layout: {
-            resources: { 'website-preview': 'minimized', 'lesson-explanation': 'hidden', 'learner-counter-deck': 'minimized' },
+            resources: {
+              'website-preview': 'minimized',
+              'lesson-explanation': 'hidden',
+              'learner-counter-deck': 'minimized',
+            },
             deckStates: { 'learner-counter-deck': { slideIndex: 1, revealedStep: 0 } },
           },
         },
@@ -867,10 +1012,10 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /reveal next/i }).click();
     await expect(slide.getByText(/learner-revealed point/i)).toBeVisible();
     await page.getByRole('button', { name: /hide learner counter deck/i }).click();
-    await expect(slide).toHaveCount(0);
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'hidden');
     await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
     await page.waitForTimeout(400);
-    await expect(slide).toHaveCount(0);
+    await expect(slide).toHaveAttribute('data-presentation-mode', 'hidden');
 
     await page.getByRole('button', { name: /follow teacher/i }).click();
     await expect(slide).toHaveAttribute('data-presentation-mode', 'focused');
@@ -879,7 +1024,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('button', { name: /follow teacher/i })).toBeVisible();
 
     await expect(slide).toHaveAttribute('data-presentation-mode', 'minimized', { timeout: 7000 });
-    await expect(slide.getByRole('heading', { name: /dom update/i })).toBeVisible();
+    await expect(slide).toHaveAttribute('data-composition-role', 'tray');
     await expect(page.getByRole('button', { name: /follow teacher/i })).toHaveCount(0);
     expect(readFileSync(getPublishedRecordingFile(recording.id), 'utf8')).toBe(rawBefore);
   });
@@ -1002,7 +1147,9 @@ test.describe('interactive timeline POC', () => {
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
 
-    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const recording = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'),
+    );
     const firstCompleteEvent = recording.events.find(
       (event: any) =>
         event.type === 'file.changed' &&
@@ -1014,7 +1161,7 @@ test.describe('interactive timeline POC', () => {
     expect(recording.events.some((event: any) => event.type === 'file.opened' && event.tMs === 0)).toBeTruthy();
 
     await page.getByRole('button', { name: /^play$/i }).click();
-    await expect(editor).toContainText('// progressive first step', { timeout: 1000 });
+    await expect(editor).toContainText('// progressive first step', { timeout: firstCompleteEvent.tMs + 1000 });
     await expect(editor).not.toContainText('// progressive second step');
     await expect(editor).toContainText('// progressive second step', { timeout: 3000 });
     await expect(page.getByText(/playback status:\s*finished/i)).toBeAttached();
@@ -1121,6 +1268,10 @@ test.describe('interactive timeline POC', () => {
 
     await startTeacherRecording(page, 'camera');
     await expect(page.getByText(/media kind:\s*webcam/i)).toBeAttached();
+    await page.getByRole('button', { name: /arrange layout/i }).click();
+    const recordingCamera = page.getByLabel(/instructor camera presentation/i);
+    await recordingCamera.getByLabel(/camera position/i).selectOption('top-left');
+    await expect(recordingCamera).toHaveAttribute('data-camera-anchor', 'top-left');
     await page.waitForTimeout(100);
     await page.getByRole('button', { name: /stop recording/i }).click();
 
@@ -1134,15 +1285,25 @@ test.describe('interactive timeline POC', () => {
     await expect(camera).toHaveAttribute('data-presentation-mode', 'hidden');
     await page.getByRole('button', { name: /show presentation resource: instructor camera/i }).click();
     await expect(camera).toHaveAttribute('data-presentation-mode', 'minimized');
-    await camera.getByRole('button', { name: /focus instructor camera/i }).click();
+    await camera.getByRole('button', { name: /^size$/i }).click();
     await expect(camera).toHaveAttribute('data-presentation-mode', 'focused');
 
     await page.getByRole('button', { name: /save draft/i }).click();
     await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).not.toBeNull();
-    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') ?? 'null'));
-    expect(recording.presentationResources).toContainEqual(expect.objectContaining({ id: 'instructor-camera', kind: 'camera' }));
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording')))
+      .not.toBeNull();
+    const recording = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') ?? 'null'),
+    );
+    expect(recording.presentationResources).toContainEqual(
+      expect.objectContaining({ id: 'instructor-camera', kind: 'camera' }),
+    );
     expect(recording.initialPresentationLayout.resources['instructor-camera']).toBe('minimized');
+    expect(
+      recording.events.find((event: any) => event.type === 'presentation.changed')?.payload.layout.composition
+        .cameraAnchor,
+    ).toBe('top-left');
   });
 
   test('media playback drives the structured timeline playhead', async ({ page }) => {
@@ -1508,7 +1669,10 @@ test.describe('interactive timeline POC', () => {
   });
 
   test('server scopes mismatched learner userId to the signed-in user', async ({ request }) => {
-    const recording = createPublishedRecording('teacher-recording-mismatched-user-test', '// mismatched user final edit\n');
+    const recording = createPublishedRecording(
+      'teacher-recording-mismatched-user-test',
+      '// mismatched user final edit\n',
+    );
 
     await seedPublishedRecording(request, recording);
     await apiDevLogin(request, DEV_LEARNER_USER_ID);
@@ -1888,7 +2052,9 @@ test.describe('interactive timeline POC', () => {
     await page.waitForTimeout(300);
 
     const rawDuringLearnerEdit = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
-    const learnerDeltasDuringLearnerEdit = await page.evaluate(() => localStorage.getItem('interactive-poc.learnerDeltas'));
+    const learnerDeltasDuringLearnerEdit = await page.evaluate(() =>
+      localStorage.getItem('interactive-poc.learnerDeltas'),
+    );
 
     expect(rawDuringLearnerEdit).toBe(rawBefore);
     expect(learnerDeltasDuringLearnerEdit === null || learnerDeltasDuringLearnerEdit === '[]').toBe(true);
@@ -1966,7 +2132,9 @@ test.describe('interactive timeline POC', () => {
   });
 
   test('checkpoint restoration applies learner-added and removed files', async ({ page }) => {
-    const recording = createConflictResolutionRecording({ recordingId: 'teacher-recording-added-file-checkpoint-test' });
+    const recording = createConflictResolutionRecording({
+      recordingId: 'teacher-recording-added-file-checkpoint-test',
+    });
     const checkpointTimestampMs = 500;
     const delta = {
       id: 'learner-delta-added-file-checkpoint-test',
@@ -1982,7 +2150,9 @@ test.describe('interactive timeline POC', () => {
       createdAt: '2026-01-01T00:01:00.000Z',
     };
 
-    const loginResponse = await page.request.post('/api/interactive/auth/dev-login', { data: { userId: DEV_TEACHER_USER_ID } });
+    const loginResponse = await page.request.post('/api/interactive/auth/dev-login', {
+      data: { userId: DEV_TEACHER_USER_ID },
+    });
     expect(loginResponse.ok()).toBe(true);
     const publishResponse = await page.request.post('/api/interactive/teacher-recordings', { data: recording });
     expect(publishResponse.ok()).toBe(true);
@@ -2006,7 +2176,8 @@ test.describe('interactive timeline POC', () => {
 
     await expect(page.getByRole('button', { name: 'learner-experiment.js', pressed: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'example.html' })).toHaveCount(0);
-    await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText('// learner-created checkpoint file');
+    await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toContainText(
+      '// learner-created checkpoint file',
+    );
   });
-
 });
