@@ -3,7 +3,7 @@ import { normalizeFiles, normalizePath } from './path.js';
 import type { InteractiveTimelineStorage, LearnerDeltaQuery } from './storage-adapter.js';
 import type { LearnerDelta, TeacherRecording, TimelineEvent } from './types.js';
 import { MAX_WHITEBOARD_TITLE_LENGTH, sanitizeWhiteboardScene } from './whiteboard.js';
-import { normalizePresentationLayout, type PresentationLayout, type PresentationResource } from './presentation.js';
+import type { PresentationResource } from './presentation.js';
 
 export interface InteractiveRecordingPackageMediaAsset {
   metadata: RecordingMediaAssetMetadata;
@@ -111,27 +111,9 @@ function normalizePresentationResources(value: unknown): PresentationResource[] 
   return value.map((item) => {
     const resource = assertObject(item, 'Expected presentation resource object.') as Partial<PresentationResource>;
     const id = assertSafeId(resource.id, 'presentation resource id');
-    if (
-      typeof resource.title !== 'string' ||
-      !resource.title.trim() ||
-      resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH
-    )
-      throw new Error('Presentation resource title is invalid.');
-    if (resource.kind === 'whiteboard')
-      return {
-        id,
-        kind: 'whiteboard',
-        title: resource.title,
-        initialScene: sanitizeWhiteboardScene(resource.initialScene),
-      };
-    if (
-      resource.kind !== 'preview' &&
-      resource.kind !== 'explanation' &&
-      resource.kind !== 'camera' &&
-      resource.kind !== 'slide' &&
-      resource.kind !== 'deck'
-    )
-      throw new Error('Presentation resource kind is invalid.');
+    if (typeof resource.title !== 'string' || !resource.title.trim() || resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH) throw new Error('Presentation resource title is invalid.');
+    if (resource.kind === 'whiteboard') return { id, kind: 'whiteboard', title: resource.title, initialScene: sanitizeWhiteboardScene(resource.initialScene) };
+    if (resource.kind !== 'preview' && resource.kind !== 'explanation' && resource.kind !== 'camera' && resource.kind !== 'slide' && resource.kind !== 'deck') throw new Error('Presentation resource kind is invalid.');
     return { ...resource, id, title: resource.title } as PresentationResource;
   });
 }
@@ -158,10 +140,7 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
   let payload = normalizeTimelinePayload(candidate.payload);
   if (candidate.type === 'whiteboard.scene.changed') {
     const whiteboardPayload = assertObject(candidate.payload, 'Whiteboard event payload must be an object.');
-    payload = {
-      resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'),
-      scene: sanitizeWhiteboardScene(whiteboardPayload.scene),
-    };
+    payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
   }
 
   return {
@@ -177,10 +156,7 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
 }
 
 function normalizeMediaMetadata(value: unknown, fallbackRecordingId: string): RecordingMediaAssetMetadata {
-  const candidate = assertObject(
-    value,
-    'Expected media asset metadata object.',
-  ) as Partial<RecordingMediaAssetMetadata>;
+  const candidate = assertObject(value, 'Expected media asset metadata object.') as Partial<RecordingMediaAssetMetadata>;
   const recordingId = candidate.recordingId ?? fallbackRecordingId;
 
   if (candidate.kind !== 'audio' && candidate.kind !== 'webcam') {
@@ -234,22 +210,6 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
   }
 
   const recordingId = assertSafeId(candidate.id, 'teacher recording id');
-  const presentationResources = normalizePresentationResources(candidate.presentationResources);
-  const initialPresentationLayout =
-    candidate.initialPresentationLayout === undefined
-      ? undefined
-      : normalizeImportedPresentationLayout(presentationResources ?? [], candidate.initialPresentationLayout);
-  const events = candidate.events
-    .map(normalizeTimelineEvent)
-    .sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs));
-  for (const event of events) {
-    if (event.type !== 'presentation.changed') continue;
-    const payload = assertObject(event.payload, 'Presentation event payload must be an object.');
-    event.payload = {
-      ...payload,
-      layout: normalizeImportedPresentationLayout(presentationResources ?? [], payload.layout),
-    };
-  }
 
   return {
     ...candidate,
@@ -259,59 +219,16 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     startedAt: candidate.startedAt,
     durationMs: candidate.durationMs,
     baseFiles: normalizeFiles(candidate.baseFiles ?? {}),
-    events,
-    presentationResources,
-    initialPresentationLayout,
+    events: candidate.events
+      .map(normalizeTimelineEvent)
+      .sort((a, b) => (a.tMs === b.tMs ? a.seq - b.seq : a.tMs - b.tMs)),
+    presentationResources: normalizePresentationResources(candidate.presentationResources),
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
     createdByUserId: optionalSafeId(candidate.createdByUserId, 'createdBy user id'),
     ownerUserId: optionalSafeId(candidate.ownerUserId, 'owner user id'),
     publishedByUserId: optionalSafeId(candidate.publishedByUserId, 'publishedBy user id'),
     publishedAt: typeof candidate.publishedAt === 'string' ? candidate.publishedAt : undefined,
   };
-}
-
-function normalizeImportedPresentationLayout(resources: PresentationResource[], value: unknown): PresentationLayout {
-  const candidate = assertObject(value, 'Expected presentation layout object.') as Partial<PresentationLayout>;
-  const resourceModes = assertObject(candidate.resources, 'Presentation layout resources must be an object.');
-  for (const [id, mode] of Object.entries(resourceModes)) {
-    assertSafeId(id, 'presentation layout resource id');
-    if (mode !== 'hidden' && mode !== 'minimized' && mode !== 'focused')
-      throw new Error('Presentation resource mode is invalid.');
-  }
-  if (candidate.composition !== undefined) {
-    const composition = assertObject(candidate.composition, 'Presentation composition must be an object.');
-    if (
-      composition.preset !== 'focus' &&
-      composition.preset !== 'side-by-side' &&
-      composition.preset !== 'stage-with-sidecar'
-    )
-      throw new Error('Presentation composition preset is invalid.');
-    if (typeof composition.primarySurfaceId !== 'string')
-      throw new Error('Presentation composition primary surface is invalid.');
-    if (composition.secondarySurfaceId !== undefined && typeof composition.secondarySurfaceId !== 'string')
-      throw new Error('Presentation composition secondary surface is invalid.');
-    if (typeof composition.splitRatio !== 'number' || !Number.isFinite(composition.splitRatio))
-      throw new Error('Presentation composition split ratio is invalid.');
-    if (
-      composition.cameraAnchor !== 'top-left' &&
-      composition.cameraAnchor !== 'top-right' &&
-      composition.cameraAnchor !== 'bottom-left' &&
-      composition.cameraAnchor !== 'bottom-right'
-    )
-      throw new Error('Presentation camera anchor is invalid.');
-    if (composition.cameraSize !== 'small' && composition.cameraSize !== 'medium' && composition.cameraSize !== 'large')
-      throw new Error('Presentation camera size is invalid.');
-    const validIds = new Set([
-      'workspace-editor',
-      ...resources.filter((resource) => resource.kind !== 'camera').map((resource) => resource.id),
-    ]);
-    if (
-      !validIds.has(composition.primarySurfaceId) ||
-      (composition.secondarySurfaceId && !validIds.has(composition.secondarySurfaceId))
-    )
-      throw new Error('Presentation composition references an unknown surface.');
-  }
-  return normalizePresentationLayout(resources, candidate as PresentationLayout);
 }
 
 function normalizeLearnerDelta(value: unknown): LearnerDelta {
@@ -325,11 +242,7 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
     throw new Error('Learner delta teacherRecordingVersion must be a number.');
   }
 
-  if (
-    typeof candidate.teacherTimestampMs !== 'number' ||
-    !Number.isFinite(candidate.teacherTimestampMs) ||
-    candidate.teacherTimestampMs < 0
-  ) {
+  if (typeof candidate.teacherTimestampMs !== 'number' || !Number.isFinite(candidate.teacherTimestampMs) || candidate.teacherTimestampMs < 0) {
     throw new Error('Learner delta teacherTimestampMs must be non-negative.');
   }
 
@@ -375,10 +288,7 @@ function isBlob(value: unknown): value is Blob {
 }
 
 function validateMediaPackageEntry(value: unknown, recordingId: string): InteractiveRecordingPackageMediaAsset {
-  const candidate = assertObject(
-    value,
-    'Expected package media asset object.',
-  ) as Partial<InteractiveRecordingPackageMediaAsset>;
+  const candidate = assertObject(value, 'Expected package media asset object.') as Partial<InteractiveRecordingPackageMediaAsset>;
   const metadata = normalizeMediaMetadata(candidate.metadata, recordingId);
 
   if (metadata.recordingId !== recordingId) {
@@ -560,9 +470,7 @@ export function validateRecordingPackage(value: unknown): InteractiveRecordingPa
     .filter((asset) => Boolean(asset.blob || asset.dataBase64));
   const teacherMediaAssets = teacherRecording.mediaAssets ?? mediaAssets.map((asset) => asset.metadata);
 
-  const learnerDeltas = Array.isArray(candidate.learnerDeltas)
-    ? candidate.learnerDeltas.map(normalizeLearnerDelta)
-    : undefined;
+  const learnerDeltas = Array.isArray(candidate.learnerDeltas) ? candidate.learnerDeltas.map(normalizeLearnerDelta) : undefined;
 
   return {
     formatVersion: SUPPORTED_FORMAT_VERSION,
@@ -591,8 +499,7 @@ export async function importRecordingPackage(
   const availableMediaIds = new Set(validatedPackage.mediaAssets.map((asset) => asset.metadata.id));
   const sourceMediaReferences = sourceRecording.mediaAssets ?? [];
   const missingMediaCount = sourceMediaReferences.filter((metadata) => !availableMediaIds.has(metadata.id)).length;
-  const warnings =
-    missingMediaCount > 0 ? [`${missingMediaCount} media asset(s) were skipped because package data was missing.`] : [];
+  const warnings = missingMediaCount > 0 ? [`${missingMediaCount} media asset(s) were skipped because package data was missing.`] : [];
 
   for (const asset of validatedPackage.mediaAssets) {
     mediaIdMap.set(asset.metadata.id, shouldImportAsCopy ? createCopyId(asset.metadata.id) : asset.metadata.id);
@@ -625,8 +532,7 @@ export async function importRecordingPackage(
         : undefined,
     createdByUserId: target.importedByUserId ?? sourceRecording.createdByUserId,
     ownerUserId: target.importedByUserId ?? sourceRecording.ownerUserId,
-    publishedByUserId:
-      target.mode === 'published' ? (target.importedByUserId ?? sourceRecording.publishedByUserId) : undefined,
+    publishedByUserId: target.mode === 'published' ? target.importedByUserId ?? sourceRecording.publishedByUserId : undefined,
     publishedAt: target.mode === 'published' ? now : undefined,
   };
 
