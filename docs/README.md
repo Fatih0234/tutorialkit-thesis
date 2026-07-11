@@ -34,7 +34,7 @@ The current lifecycle is:
 - [`limitations-and-future-work.md`](./limitations-and-future-work.md)
 - [`implementation-timeline.md`](./implementation-timeline.md)
 
-The validated current Playwright expectation is **39 passed** in `interactive-poc.spec.ts`.
+The validated current Playwright expectation is **40 passed** in `interactive-poc.spec.ts`.
 
 ## Historical evidence
 

@@ -2,6 +2,14 @@
 
 The immersive workspace presents the live website preview, lesson explanation, an ordered slide deck, an Excalidraw whiteboard, and an optional recorded instructor camera as timeline-directed resources. A resource has one canonical layout mode: `hidden`, `minimized`, or `focused`; only one resource may be focused.
 
+## Simple layered windows
+
+The **Resources** toolbar remains the only window launcher. Website Preview uses the fixed right window. Whiteboard, deck, legacy slides, and presentation explanation use the same fixed left window position. Multiple left resources may remain minimized and mounted, but they overlap rather than stacking vertically. The most recently selected resource is placed in front while covered resources preserve their content and state.
+
+A toolbar click opens a hidden resource, brings a covered minimized resource forward, or hides the already-frontmost resource. Window headers retain Focus, Minimize, and Hide. Instructor Camera remains its own small corner overlay rather than joining the left window layer. There are no draggable windows, freeform coordinates, responsive composition presets, Main Stage, Sidecar, or split controls.
+
+`PresentationLayout.frontmostBySide` stores only the semantic front window for `left` and `right`. Teacher changes are included in complete `presentation.changed` snapshots; learner changes remain temporary overrides. No z-index values or pixel geometry are persisted.
+
 ## Deck model
 
 A lecture deck is one resource in the resource bar, regardless of slide count:
@@ -34,6 +42,10 @@ interface PresentationLayout {
     slideIndex: number;
     revealedStep: number;
   }>;
+  frontmostBySide?: {
+    left?: string;
+    right?: string;
+  };
 }
 ```
 
