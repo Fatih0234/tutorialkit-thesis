@@ -2,7 +2,7 @@
 
 This repository is a thesis proof of concept built on TutorialKit. It implements the interactivity layer for recording a teacher's editor/file actions, replaying them for a learner, pausing for learner-owned edits, and safely saving/restoring those edits without mutating the teacher timeline.
 
-The release-candidate demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, timestamped learner-experiment markers, optional narration/webcam attachments, local drafts, file-backed published lessons, demo identity and ownership checks, portable recording packages, and deterministic demo seed/reset controls. It is not a production authentication or persistence system.
+The current demo includes a separated Lecture Setup → Material Preparation → full-screen Recording Studio → Recording Review flow, a shared seekable editor player for teachers and learners, timestamped learner-experiment markers, optional narration and synchronized Instructor Camera, local drafts, file-backed published lessons, and demo identity/ownership checks. Portable packages and deterministic fixture controls remain supported contracts outside the minimal default UI. It is not a production authentication or persistence system.
 
 ## Quick start
 
@@ -66,7 +66,7 @@ Expected interactive POC result after published-lesson management: **37 passed**
 
 ## Management experience
 
-Teacher Studio now focuses on lecture setup and existing recordings. Material editing and recording open dedicated immersive workspaces; saving and publishing are available only where they are meaningful, on Recording Review. Interactive Lessons presents published lectures as simple lesson cards with one **Start Lesson** action.
+Teacher Studio now focuses on lecture setup and existing recordings. Material editing and recording open dedicated immersive workspaces; saving and publishing are available only on Recording Review. Existing published review is read-only, publication consumes the matching draft, and owners can permanently delete a published lesson through a confirmed card action that also removes linked media and learner experiments. Interactive Lessons presents published lectures as simple lesson cards with one **Start Lesson** action.
 
 Technical status, package import/export, and demo seed/reset capabilities remain part of the POC contracts and automated validation but are intentionally absent from the default product interface. `.interactive-data/` remains gitignored local development persistence.
 
@@ -74,6 +74,7 @@ For the complete teacher and learner-experiment walkthrough, see [the thesis dem
 
 ## Documentation
 
+- [Documentation map and source-of-truth guide](./docs/README.md)
 - [Architecture summary](./docs/thesis-architecture-summary.md)
 - [Detailed POC architecture](./docs/interactive-poc-architecture.md)
 - [Immersive teacher and learner experience](./docs/immersive-interactive-experience.md)
@@ -86,9 +87,11 @@ For the complete teacher and learner-experiment walkthrough, see [the thesis dem
 - [Limitations and future work](./docs/limitations-and-future-work.md)
 - [Implementation timeline](./docs/implementation-timeline.md)
 
+`docs/00-context.md` through `docs/05-acceptance-criteria.md`, `docs/local-findings.md`, and `agent-tasks/phase-*.md` are retained historical planning/baseline evidence. They describe the incremental starting phases, not the current product surface; use the architecture, persistence, and experience documents above as the current source of truth.
+
 ## Core safety properties
 
-- Saved teacher recordings are immutable.
+- Saved teacher-recording content is immutable; only explicit owner-authorized deletion removes an entire publication.
 - Learner work is stored separately and scoped to the signed-in learner.
 - Playback-applied changes are guarded from recording.
 - Internal file paths use leading-slash form.

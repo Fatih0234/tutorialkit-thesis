@@ -101,3 +101,15 @@ This refinement replaced later-teacher-event conflict prompts with the product's
 ## Immersive product-shell refinement
 
 This refinement separated Teacher Studio and Interactive Lessons management from the active editor surface. An explicit session reducer now controls dashboard, library, preparation, recording, review, and learner-player screens. Preparation and playback use a full-viewport shell around the same real editor; review and learner playback share a full-width bottom video timeline, keyboard seek controls, synchronized media, learner markers, and a My Experiments drawer. The runtime event, recording, learner-delta, storage, and API contracts remain unchanged.
+
+## Instructor Camera and minimal-management refinement
+
+Optional webcam media became a synchronized **Instructor Camera** presentation resource with hide/minimize/focus/reopen behavior and no independent transport. Teacher Studio and Interactive Lessons were then reduced to product decisions only: setup and recording cards for teachers, and one Start Lesson action for learners. Package, fixture, debug, and technical controls remain supported contracts but are absent from default UI; Save Draft and Publish belong only to immersive Recording Review.
+
+## Draft/publication lifecycle correction
+
+The compatibility recording mirror stopped acting as authoritative draft storage. Legacy unpublished migration now runs once; published review never creates a draft; successful publication removes the matching local IndexedDB draft/media; matching draft deletion also clears the mirror. Published review is read-only and requires an explicit future duplicate/version action before editing.
+
+## Published-lesson deletion
+
+Teacher owners gained a confirmed **Delete Lesson** card action backed by a dedicated remote DELETE operation. The backend verifies teacher ownership and cascades over the exact publication, linked media metadata/files, and linked learner deltas while preserving unrelated local drafts, publications, assets, experiments, and lesson source files. This does not weaken recording-content immutability: deletion removes the complete resource rather than modifying its timeline.

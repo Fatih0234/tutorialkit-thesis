@@ -1,6 +1,6 @@
 # Thesis evaluation checklist
 
-Use this checklist to evaluate the Milestone I release candidate. Record the date, commit, operator, environment, and evidence link or note for each run.
+Use this checklist to evaluate the current thesis POC candidate. Record the date, commit, operator, environment, and evidence link or note for each run.
 
 ## Evaluation record
 
@@ -14,7 +14,7 @@ Use this checklist to evaluate the Milestone I release candidate. Record the dat
 ## Automated acceptance
 
 - [ ] `pnpm build` completes successfully.
-- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **39 passed**.
+- [ ] The full `interactive-poc.spec.ts` Playwright suite completes with **37 passed**.
 - [ ] `git diff --check` reports no whitespace errors.
 - [ ] Playwright product actions use user-facing role/text/label locators; CSS scoping is limited to the embedded editor integration where no stable product role identifies the container.
 - [ ] The localStorage compatibility shapes can be inspected at `interactive-poc.teacherRecording` and `interactive-poc.learnerDeltas`.
@@ -32,20 +32,20 @@ git diff --check
 
 ## Teacher evidence
 
-- [ ] **Teacher Demo** can sign in through **Demo Identity**.
-- [ ] **Demo Seed** creates `demo-interactive-conflict-flow` and it appears in **Published Lessons**.
+- [ ] **Teacher Demo** can sign in through the compact **Account** control.
+- [ ] Teacher Studio contains only Lecture Setup, draft cards, and Published Lesson cards—no package, demo, debug, technical, or duplicate save/publish controls.
 - [ ] **Lecture Setup** hides the editor and separates initial-file/media choices from material preparation.
 - [ ] **Edit Materials** changes the starting workspace while recording remains off, and those changes enter `baseFiles` rather than timeline events.
 - [ ] **Start Recording** opens the focused full-screen studio with elapsed time, event count, media state, and Stop.
 - [ ] A teacher can record progressive editor changes, stop into **Recording Review**, save, load, and preview a local draft.
 - [ ] The editor player can pause, restart, seek to an intermediate state, and continue deterministically.
 - [ ] A teacher-created file can be restored by structured playback.
-- [ ] A teacher can publish and reload a recording through the development backend.
-- [ ] A changed repost under an existing published recording id receives a conflict response, proving published recording immutability.
-- [ ] A teacher can export a JSON package and import it as a new draft copy.
-- [ ] A teacher can import a package as a new published copy.
-- [ ] Imported media plays when bytes are present; missing media degrades to timeline-clock playback with a warning.
-- [ ] **Reset Demo Data** requires confirmation and leaves non-demo records intact.
+- [ ] A teacher can publish and reload a recording through the development backend; the matching local draft disappears after successful publication.
+- [ ] Opening published Recording Review is read-only, exposes neither Save Draft nor Publish, creates no draft, and leaves recording bytes unchanged.
+- [ ] A changed repost under an existing published recording id receives a conflict response, proving content immutability.
+- [ ] An owner can confirm **Delete Lesson** and the publication, linked media, and linked learner deltas remain deleted after reload.
+- [ ] A learner cannot delete a publication, and unrelated drafts/publications/learner work remain intact.
+- [ ] Retained package import/export and demo seed/reset capabilities pass their automated contract coverage despite being absent from default UI.
 
 ## Learner evidence
 

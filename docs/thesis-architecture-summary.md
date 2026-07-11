@@ -13,7 +13,7 @@ flowchart LR
   subgraph UI[React product interface]
     TS[Teacher Studio]
     LL[Learner Lesson]
-    DI[Demo Identity]
+    DI[Account / demo session]
   end
 
   Hook[useInteractivePoc]
@@ -60,8 +60,9 @@ Only `RemoteInteractiveTimelineStorage` performs interactivity-layer `fetch` cal
 4. Optional microphone or webcam media begins from the same local start time and remains an attachment to the structured recording.
 5. Stopping enters **Recording Review**; the shared editor player provides play, pause, restart, and deterministic seek before save/publish.
 6. Saving writes a local IndexedDB draft and media blobs.
-7. Publishing sends immutable recording JSON and associated media to the development backend. Reposting changed JSON under the same recording id is rejected.
-8. Export can package the recording, media, and optionally the current user's learner work without altering the source.
+7. Publishing sends immutable recording JSON and associated media to the development backend, removes the matching local draft/media, and switches review to the read-only published source.
+8. Reviewing a publication never creates a draft. An owner may explicitly confirm whole-lesson deletion, which removes the publication, linked media, and linked learner experiments.
+9. Retained export capability can package recording/media and optional current-user learner work without altering the source, although package controls are absent from default UI.
 
 ## Learner Lesson flow
 
@@ -87,7 +88,7 @@ interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
-Media is never mirrored into localStorage. If IndexedDB is unavailable, timeline-only operations can fall back to `LocalStorageInteractiveTimelineStorage`.
+Media is never mirrored into localStorage. Legacy recording migration is one-time and unpublished-only, so a published playback mirror cannot become a draft. Matching draft deletion clears the mirror. If IndexedDB is unavailable, timeline-only operations can fall back to `LocalStorageInteractiveTimelineStorage`.
 
 ## Published development storage
 
@@ -109,13 +110,13 @@ An exceptional recording-version or historical-base-hash mismatch reports that t
 
 ## Identity and ownership model
 
-The demo supplies fixed, non-sequential teacher and learner user ids. Login creates a random server-side session under `.interactive-data/sessions/`; the `interactive_session` cookie contains only that random id and is `HttpOnly`, `SameSite=Lax`, and scoped to `/`. Teacher roles gate publishing, media upload, published import, seed, and reset. Learner roles gate remote delta save/restore, and delta queries are user-scoped.
+The demo supplies fixed, non-sequential teacher and learner user ids. Login creates a random server-side session under `.interactive-data/sessions/`; the `interactive_session` cookie contains only that random id and is `HttpOnly`, `SameSite=Lax`, and scoped to `/`. Teacher roles gate publishing, media upload, owner-authorized publication deletion, published import, seed, and reset. Learner roles gate remote delta save/restore, and delta queries are user-scoped.
 
 This proves ownership boundaries but is intentionally not production authentication: there are no passwords, OAuth/OIDC, account recovery, production authorization administration, or durable user database.
 
 ## Architectural invariants
 
-- Teacher recordings remain immutable after save/publish.
+- Teacher-recording content remains immutable after save/publish; deletion is an explicit owner-authorized whole-resource operation.
 - Learner deltas remain separate and user-scoped.
 - Paths are normalized to leading-slash form.
 - Programmatic playback/restore is guarded from recording.

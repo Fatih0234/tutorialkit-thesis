@@ -58,7 +58,7 @@ Keyboard commands outside editable controls are:
 
 ## Teacher flow
 
-Teacher Studio contains focused lecture setup plus product-facing draft and published-lesson cards. It does not expose technical status, package, demo, or duplicate persistence controls. Material preparation opens the isolated editor without recording. Recording uses the minimal red studio HUD. Review reuses the same bottom video controls and exclusively owns Dashboard, Save Draft, and Publish.
+Teacher Studio contains focused lecture setup plus product-facing draft and published-lesson cards. It does not expose technical status, package, demo, or duplicate persistence controls. Material preparation opens the isolated editor without recording. Recording uses the minimal red studio HUD. Review reuses the same bottom video controls and exclusively owns Dashboard, Save Draft, and Publish for unsaved/local-draft sources. Published review is read-only. Publishing consumes the matching draft; confirmed owner-only publication deletion remains a contextual management-card action.
 
 ## Preserved invariants
 

@@ -1,6 +1,6 @@
 # Interactive persistence contract
 
-This document defines the persistence contract for the interactive tutorial thesis demo. Milestone C added a backend/dev publish and load path for teacher recordings, timeline events, media assets, and learner deltas while keeping local IndexedDB draft storage. Milestone D added product-facing teacher and learner flows. Milestone E added a minimal demo identity/session layer and ownership enforcement on top of the same storage contract. Milestone F added explicit conflict resolution UX without changing persistence writes. Milestone G added portable export/import packages plus deterministic demo seed/reset hardening. Milestone H polished product copy, demo guidance, destructive-action confirmation, friendly import errors, missing-media import fallback, and thesis demo documentation without changing the storage architecture. Milestone I freezes that behavior and adds release/evaluation documentation only. It does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
+This document defines the current persistence contract for the interactive tutorial thesis demo. The milestone sequence introduced backend/dev publication, local IndexedDB drafts, product-facing teacher/learner flows, demo identity and ownership, learner experiments, package portability, and deterministic fixtures. Later product refinements added immersive recording/playback, presentation resources, strict draft/publication separation, and explicit owner-only published-lesson deletion without replacing the same adapter boundary. The result remains a development POC: it does not add external auth providers, OAuth/OIDC, real passwords, MFA, a production database, paid/cloud object storage, analytics, automatic merge, or production persistence infrastructure.
 
 The contract preserves the local-draft plus remote-published storage behavior. The current learner UX interprets each `LearnerDelta` as a timestamped experiment checkpoint, as described in `docs/learner-timeline-experiments.md`; this changes restoration semantics and presentation without changing the persisted delta shape or adapter boundary.
 
@@ -51,20 +51,19 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
 The current product UI uses the existing adapters and ownership boundary as follows:
 
 - the **Teacher Studio** lists local drafts from IndexedDB and Published Lessons from `/api/interactive/teacher-recordings`;
-- the **Learner Lesson** view lists Published Lessons only;
+- the **Learner Lesson** navigation tab opens the **Interactive Lessons** library, which lists Published Lessons only;
 - **Save Experiment** persists a user-scoped `LearnerDelta` and presents it as a timestamped marker;
 - **Return to Lecture** reconstructs teacher truth at the anchor timestamp before playback continues;
 - selecting a marker reconstructs the historical teacher base and applies the latest learner checkpoint at that timestamp;
 - later teacher edits do not create a normal conflict because no merge with a later state is attempted;
 - unsaved work uses save/discard/cancel loss protection without adding persistence writes;
-- **Export Package** creates a thesis-demo JSON package with teacher recording JSON, media metadata, and base64 media data;
-- **Import as Draft** writes a package copy to IndexedDB local draft storage;
-- **Import as Published** writes a package copy to remote/dev storage and requires a teacher/both demo session;
-- **Demo Seed** creates a deterministic `demo-interactive-conflict-flow` recording with fake audio media and a future conflict-producing teacher edit;
-- **Reset Demo Data** asks for inline confirmation, then deletes only `demo-` prefixed records and explicitly clears demo localStorage mirrors;
-- **Discard Draft** and **Delete Draft** also require inline confirmation;
-- package import errors are surfaced as friendly status text, unsupported package versions are explicit, and missing package media is skipped so structured replay can fall back to the timeline clock;
-- “Teacher Studio” and “Learner Lesson” remain product UI sections, and publish/import/demo/save/restore actions check the demo session user role.
+- **Save Draft** and **Publish** exist only in immersive Recording Review; reviewing an existing publication is read-only and never creates a draft;
+- successful publication consumes the matching local draft and local media while preserving the published compatibility mirror;
+- **Delete Draft** is a confirmed local card action and clears a matching compatibility mirror so deletion survives refresh;
+- owned published cards provide confirmed **Delete Lesson**, backed by an owner-authorized remote cascade over the recording, media, and linked learner deltas;
+- package export/import and deterministic demo seed/reset remain supported runtime/dev capabilities for fixtures and diagnostics but are intentionally absent from the minimal default UI;
+- package import errors remain friendly, unsupported versions remain explicit, and missing package media falls back to timeline-clock playback;
+- product-facing publish, deletion, import/demo, save, and restore operations enforce the applicable demo-session role and ownership rules.
 
 `TeacherRecordingDraftSummary` now includes `mediaKind` so list views can show `none`, `audio`, or `webcam` without loading media blobs. Media blobs remain outside localStorage.
 
@@ -964,7 +963,7 @@ Validate that:
 - missing media data is not fatal for import; the copied recording skips missing media references and falls back to timeline-clock playback;
 - import-as-copy generates new safe recording/media ids on collision avoidance;
 - import-as-published requires a signed-in teacher/both session;
-- imported published recordings remain immutable after import.
+- imported published recording content remains immutable after import; only explicit owner-authorized deletion can remove the complete publication resource.
 
 ### Learner delta creation
 
@@ -1068,6 +1067,7 @@ interface InteractiveTimelineStorage {
   loadTeacherRecordingDraft(id: string): Promise<TeacherRecording | undefined>;
   saveTeacherRecordingDraft(recording: TeacherRecording): Promise<void>;
   deleteTeacherRecordingDraft(id: string): Promise<void>;
+  deletePublishedTeacherRecording(id: string): Promise<void>;
   saveMediaAsset(asset: RecordingMediaAsset): Promise<void>;
   loadMediaAsset(assetId: string): Promise<RecordingMediaAsset | undefined>;
   deleteMediaAsset(assetId: string): Promise<void>;
@@ -1082,7 +1082,7 @@ Backend implementation path:
 3. use `RemoteInteractiveTimelineStorage` for published/backend demo data;
 4. keep `.interactive-data/` as a dev-only storage implementation;
 5. choose a production media binary strategy before production media uploads (object storage, database Blob, or local file store);
-6. keep Playwright tests asserting teacher immutability, media draft load/preview, published media load/preview, fallback no-media playback, and learner delta recoverability;
+6. keep Playwright tests asserting recording-content immutability, draft/publication separation, owner-authorized publication cascade deletion, media draft/load preview, fallback no-media playback, and learner delta recoverability;
 7. only remove localStorage mirror assumptions after backend behavior matches the local POC.
 
 ## 7. Open decisions

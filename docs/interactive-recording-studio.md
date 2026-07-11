@@ -54,7 +54,9 @@ Stopping finalizes the timeline and optional media, then opens Recording Review.
 - a seekable editor timeline;
 - optional recorded audio playback;
 - optional synchronized Instructor Camera presentation resource without independent media controls;
-- save, publish, export, and return-to-setup actions.
+- Dashboard plus Save Draft and Publish actions for newly stopped/local-draft recordings.
+
+Published recordings use the same player in read-only review: the header shows **Published** and omits Save Draft/Publish. Successful publication removes the matching local draft/media. Package export remains an underlying compatibility capability but is not a default review action.
 
 Seeking pauses playback, restores `baseFiles`, reapplies ordered events through the chosen timestamp, restores file/scroll state, and aligns loaded media to the same timestamp. Play after seeking continues from the materialized state.
 
@@ -77,7 +79,7 @@ File remove/rename capture remains unavailable because the current rendered file
 
 Learner Lesson uses the shared `InteractiveVideoControls` inside a full-viewport editor shell. A custom video-style track spans the bottom of the viewport while an accessible range control supplies keyboard and assistive-technology seek behavior. A learner may play, pause, restart, or seek before selecting **Pause and Experiment**. Entering learner mode captures the current teacher timestamp and keeps learner deltas keyed to that materialized teacher state.
 
-Teacher recordings remain immutable. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Return to Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
+Teacher-recording content remains immutable while published; explicit owner deletion removes the whole lesson rather than mutating it. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Return to Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
 
 ## Main implementation files
 

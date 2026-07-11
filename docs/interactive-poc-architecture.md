@@ -31,7 +31,7 @@ Important invariants:
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **File-level deltas only.** The POC does not compute text patches, merge hunks, or run automatic merges.
 - **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
-- **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing, import-as-published, demo seed, and demo reset require a demo teacher/both session.
+- **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing/import/fixtures require a demo teacher/both session; whole-publication deletion additionally requires matching teacher ownership.
 - **Export packages are thesis-demo artifacts.** The package format is JSON-first for thesis portability. It is not a stable public API and does not replace the structured replay or storage adapter contracts.
 
 ## 1. Current user flow
@@ -162,9 +162,9 @@ Loads the selected local teacher recording draft from IndexedDB through the asyn
 
 Previews the currently loaded/saved draft using the same timeline playback engine as learner playback. If a media asset is loaded, the media element drives timeline time via `media.currentTime * 1000`; otherwise the fallback `TimelinePlaybackClock` drives replay. Preview does not start recording and does not mutate the saved draft.
 
-### Discard Draft
+### Discard Draft compatibility action
 
-Clears the current in-memory draft/media selection and marks the Teacher Studio as discarded. Milestone H requires an inline confirmation before discarding. Normal discard keeps persisted localStorage compatibility keys in place and does not delete learner deltas or IndexedDB media assets. The separate **Reset Demo Data** control is the only action that explicitly clears demo compatibility keys.
+The internal compatibility model can clear an in-memory draft/media selection without deleting persisted data. This is not exposed on the current minimal Teacher Studio; persisted drafts use the explicit, confirmed **Delete Draft** card action instead.
 
 ### Delete Draft
 
@@ -181,9 +181,10 @@ Behavior:
 - uploads each media Blob with `FormData` to `/api/interactive/media-assets` after the server verifies the media belongs to a recording owned by the teacher;
 - stores only media metadata on `TeacherRecording.mediaAssets`;
 - marks the current recording source as `published` so learner deltas use the remote adapter;
-- does not delete the local IndexedDB draft.
+- deletes the successfully published matching IndexedDB draft and its local media so it appears only under Published Lessons;
+- retains the published recording in the compatibility mirror for playback inspection without treating that mirror as a draft.
 
-Published teacher recordings are treated as immutable and owner-scoped. Re-publishing the same id with different JSON is rejected by the dev backend, and a different teacher cannot claim an existing recording id.
+Published recording content is immutable while it exists: re-publishing the same id with different JSON is rejected, and a different teacher cannot claim an existing recording id. The owner can explicitly delete the whole published lesson through the separate destructive lifecycle below.
 
 ### Load Published Lesson
 
@@ -199,17 +200,21 @@ Behavior:
 
 ### Preview Published Lesson
 
-Previews the currently loaded published recording using the same playback engine as local draft preview. If media exists, `HTMLMediaElement.currentTime * 1000` drives the structured timeline. If no media exists, `TimelinePlaybackClock` remains the fallback. Preview does not mutate the published recording.
+Previews the currently loaded published recording using the same playback engine as local draft preview. Published Recording Review is read-only: it shows **Published** and does not expose **Save Draft** or **Publish**. If media exists, `HTMLMediaElement.currentTime * 1000` drives the structured timeline. If no media exists, `TimelinePlaybackClock` remains the fallback. Preview never creates a local draft or mutates the publication.
 
-### Export Package
+### Delete Published Lesson
 
-The Teacher Studio export action resolves the selected published recording first, then the selected/current local draft as a fallback. The export helper loads the immutable `TeacherRecording`, associated media metadata, and associated media Blob data through the active storage adapter.
+An owner-only, two-step **Delete Lesson** / **Confirm Delete** card action calls `DELETE /api/interactive/teacher-recordings/:id`. The dev backend verifies the teacher session and normalized recording owner, then deletes that exact recording, linked media metadata/files, and learner deltas. Unrelated drafts, recordings, media, learner work, and lesson source files remain intact. Deleting a currently loaded publication also clears its playback selection and matching compatibility mirror.
+
+### Export Package compatibility capability
+
+The retained package export capability resolves the selected published recording first, then the selected/current local draft as a fallback. The export helper loads the immutable `TeacherRecording`, associated media metadata, and associated media Blob data through the active storage adapter.
 
 The downloaded package is JSON-first. Media blobs are serialized to base64 inside the package for portability between thesis demo machines. The helper creates a temporary object URL for the JSON Blob download and revokes that URL after triggering the download. Export does not mutate the teacher recording, does not expose dev session ids, and includes learner deltas only when **Include My Learner Work** is selected. That optional learner export is scoped to the current signed-in user.
 
-### Import Package
+### Import Package compatibility capability
 
-The Teacher Studio package import flow accepts the JSON package format, validates it, normalizes paths to leading-slash form, and imports as a copy by generating a new recording id and new media asset ids.
+The retained package import flow accepts the JSON package format, validates it, normalizes paths to leading-slash form, and imports as a copy by generating a new recording id and new media asset ids.
 
 Import targets:
 
@@ -218,9 +223,9 @@ Import targets:
 
 Import does not run automatic merge, does not apply learner deltas by default, and does not remove existing recordings. Imported published recordings appear in the learner published lesson list after refresh/load. Unsupported package versions and malformed JSON show friendly import status messages. Packages that reference media without including media data still import the structured recording copy; missing media is skipped with an import warning and playback falls back to the deterministic timeline clock.
 
-### Demo Seed and Reset Demo Data
+### Demo Seed and Reset compatibility capabilities
 
-Milestone H keeps deterministic thesis demo controls and adds inline confirmation for reset:
+Deterministic seed/reset endpoints and client methods remain available for automated fixtures and diagnostics but are not exposed in the current minimal management UI:
 
 - **Demo Seed** calls `/api/interactive/demo/seed` as a signed-in teacher/both user. It recreates `demo-interactive-conflict-flow` with deterministic base files, timeline events, a future teacher change on `/example.js`, and a fake silent `audio/wav` media asset. The recording is designed for the conflict walkthrough: learner pauses before the future teacher edit, saves work, resumes teacher playback, then chooses an explicit conflict restore option.
 - **Reset Demo Data** asks for confirmation, then calls `/api/interactive/demo/reset` as a signed-in teacher/both user. It deletes only server-side records whose ids or linked recording ids use the `demo-` prefix. The client also deletes local IndexedDB draft/media records with the same prefix and clears the localStorage compatibility keys because the button is explicitly labeled as a demo reset.
@@ -515,7 +520,7 @@ Current object stores:
 - `learnerDeltas`, keyed by `LearnerDelta.id`;
 - `mediaAssets`, keyed by `RecordingMediaAsset.id`, including Blob data and indexed by `recordingId`.
 
-The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. It migrates existing localStorage values into IndexedDB without deleting the old keys. Media persistence requires IndexedDB; when IndexedDB is unavailable, recording can continue as timeline-only and media save/load reports an error/unavailable state instead of crashing.
+The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. A migration marker allows at most one import of an unpublished legacy localStorage recording when IndexedDB has no drafts; published playback mirrors are never migrated as drafts. Deleting a matching draft clears its mirror. Media persistence requires IndexedDB; when IndexedDB is unavailable, recording can continue as timeline-only and media save/load reports an error/unavailable state instead of crashing.
 
 ### `interactive-poc.teacherRecording` compatibility mirror
 
@@ -556,6 +561,7 @@ The backend/dev server exposes:
 POST /api/interactive/teacher-recordings
 GET  /api/interactive/teacher-recordings
 GET  /api/interactive/teacher-recordings/:id
+DELETE /api/interactive/teacher-recordings/:id
 POST /api/interactive/learner-deltas
 GET  /api/interactive/learner-deltas?lessonId=&teacherRecordingId=
 GET  /api/interactive/learner-deltas/latest?lessonId=&teacherRecordingId=
@@ -702,11 +708,11 @@ This module intentionally has no backend/API implementation.
 
 ### `storage-adapter.ts`
 
-Defines the async `InteractiveTimelineStorage` boundary used by React. It includes teacher recording, learner delta, teacher draft, and media asset methods. `LocalStorageInteractiveTimelineStorage` remains as the compatibility/fallback adapter for timeline data and intentionally does not mirror media blobs.
+Defines the async `InteractiveTimelineStorage` boundary used by React. It includes teacher recording, learner delta, teacher draft, explicit published-recording deletion, and media asset methods. `LocalStorageInteractiveTimelineStorage` remains as the compatibility/fallback adapter for timeline data and intentionally does not mirror media blobs.
 
 ### `indexeddb-storage-adapter.ts`
 
-Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts, learner deltas, and media assets to IndexedDB, migrates existing localStorage values when possible, mirrors latest teacher/learner metadata back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable. Media blobs are stored only in the `mediaAssets` object store.
+Implements `IndexedDBInteractiveTimelineStorage`. It writes teacher drafts, learner deltas, and media assets to IndexedDB, performs a one-time unpublished-only legacy migration, mirrors latest teacher/learner metadata back to the legacy keys, and falls back to `LocalStorageInteractiveTimelineStorage` when IndexedDB is unavailable. Media blobs are stored only in the `mediaAssets` object store.
 
 ### `remote-storage-adapter.ts`
 
@@ -775,7 +781,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractiveTeacherDashboard.tsx`
 
-Renders Lecture Setup plus local/published recording management, package tools, demo controls, media preview, and teacher status text. Recording Review now lives in the isolated immersive shell.
+Renders only Lecture Setup and product-facing local/published recording cards. Draft and owner-only publication deletion are contextual confirmed card actions. Package/demo/debug/technical controls and duplicate save/publish actions are absent; Recording Review lives in the isolated immersive shell and exclusively owns Save Draft and Publish.
 
 ### `InteractiveRecordingStudio.tsx`
 

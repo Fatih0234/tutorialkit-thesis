@@ -83,4 +83,4 @@ Design a user study with separate teacher and learner tasks. Candidate measures 
 
 ### Product and accessibility refinement
 
-Conduct keyboard, screen-reader, color/contrast, responsive-layout, empty-state, and error-recovery studies. Replace debug-oriented status density with progressive disclosure while retaining an evidence mode suitable for diagnosis and teaching demonstrations.
+Conduct keyboard, screen-reader, color/contrast, responsive-layout, empty-state, destructive-confirmation, and error-recovery studies. Validate that the minimal management surfaces and immersive controls retain sufficient status feedback without reintroducing technical/debug density.

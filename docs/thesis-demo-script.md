@@ -66,15 +66,15 @@ The normal product interface intentionally omits seed/reset and package tooling.
 4. Select **Start Recording**, confirm the full-screen red **Recording in progress** studio appears, edit `example.js`, and select **Stop Recording**.
 5. In immersive **Recording Review**, click **Save Draft**.
 6. Demonstrate play, pause, restart, and the seekable editor timeline.
-7. Click **Publish** to write the immutable recording to `.interactive-data/`.
-8. Return to Teacher Studio and use the recording card's **View Lesson** action to show the published replay path.
+7. Click **Publish** to write immutable recording content to `.interactive-data/`; return to Teacher Studio and show that the matching Draft card is gone.
+8. Use **View Lesson** and confirm published review is read-only: it shows **Published** and offers neither **Save Draft** nor **Publish**.
 
 ## 6. Learner walkthrough
 
 1. Switch to **Learner Lesson**.
 2. In the **Account** selector, choose **Learner Demo**.
 3. Click **Start Lesson** on a published lesson card and point out that management disappears into a full-screen editor player.
-5. Use the round **Play** control on the full-width bottom timeline.
+4. Use the round **Play** control on the full-width bottom timeline.
 6. Click **Pause and Experiment** while playback is running.
 7. Edit `example.js`.
 8. Confirm the **Unsaved changes** indicator appears.
@@ -89,8 +89,8 @@ The seeded demo is deterministic. Its retained legacy id is `demo-interactive-co
 
 Flow:
 
-1. Seed the demo as Teacher Demo.
-2. In the **Demo Identity** selector, choose **Sign in as Learner Demo**.
+1. Prepare the seeded recording through the automated fixture/API (seed is intentionally absent from default UI).
+2. In the compact **Account** selector, choose **Learner Demo**.
 3. Open and play the Published Lesson.
 4. Click **Pause and Experiment** before the teacher's later `/example.js` edit.
 5. Add a learner edit to `/example.js`.
@@ -100,7 +100,7 @@ Flow:
 9. Click the saved marker.
 10. Verify the historical teacher state plus learner edit reappears, without a conflict prompt.
 
-No merge runs. The teacher recording and learner checkpoint remain separate immutable-source artifacts.
+No merge runs. Teacher-recording content and learner checkpoints remain separate artifacts. Optionally return as Teacher Demo and demonstrate the owner-only two-step **Delete Lesson** flow last; it intentionally removes this publication and its linked experiments.
 
 ## 8. Package compatibility
 
