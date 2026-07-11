@@ -110,10 +110,6 @@ Optional webcam media became a synchronized **Instructor Camera** presentation r
 
 The compatibility recording mirror stopped acting as authoritative draft storage. Legacy unpublished migration now runs once; published review never creates a draft; successful publication removes the matching local IndexedDB draft/media; matching draft deletion also clears the mirror. Published review is read-only and requires an explicit future duplicate/version action before editing.
 
-## Adaptive lesson composition
-
-The overlapping hidden/minimized/focused presentation windows were replaced by a semantic responsive compositor. The real editor and presentation resources now occupy Main Stage, optional Sidecar, and compact Tray roles under Focus, Side-by-side, or Stage with Sidecar presets. Teachers arrange valid zones by drag/drop or explicit actions and resize with a bounded ratio; completed actions remain full `presentation.changed` snapshots with no pixel geometry. Learners receive local overrides and Follow Teacher restoration. Compact widths stack stages, persistent resource owners survive movement, and Instructor Camera is the only overlay with four anchors and three named sizes. Legacy layouts map deterministically and package format 1 remains additive.
-
 ## Excalidraw whiteboard resource
 
 A native Excalidraw whiteboard joined the presentation-resource union with hidden/minimized/focused layout controlled by existing `presentation.changed` snapshots. Material Preparation captures an initial JSON scene; recording emits debounced `whiteboard.scene.changed` snapshots after meaningful content actions; seeking materializes the scene by timestamp; and learner playback uses read-only view mode. Runtime and remote validators strip transient Excalidraw state and enforce 1,000-element/512 KiB limits. Drafts, publications, compatibility storage, and package format 1 preserve the additive resource/event data. Image insertion is intentionally disabled in this first version.

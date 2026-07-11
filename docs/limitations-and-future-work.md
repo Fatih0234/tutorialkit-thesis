@@ -26,10 +26,6 @@ Conflict detection reports later teacher edits that touch learner-changed files.
 
 `LearnerDelta` stores complete contents of added/modified files plus removed paths. It does not store text patches, syntax-aware operations, change hunks, collaborative operations, or CRDT state. Restore currently updates existing TutorialKit workspace files; full file-tree add/remove restoration is not a finished product feature.
 
-### Constrained composition rather than desktop windows
-
-Resources use semantic Main Stage, Sidecar, Tray, and camera-anchor roles. Arbitrary floating coordinates, overlapping ordinary windows, freeform dimensions, multiple simultaneous sidecars, and persistent learner layout preferences are intentionally excluded. Compact layouts stack at a fixed compositor threshold. A future production version could add more validated templates or container-aware breakpoints without changing timeline events into pixel geometry.
-
 ### Whiteboard snapshot limits
 
 The first Excalidraw whiteboard stores complete JSON scene snapshots after a 450 ms quiet action boundary. It does not record pointer movement, collaborate in real time, accept learner annotations, overlay drawings on other resources, export images/PDF, or recognize handwriting. Image insertion is disabled, and scenes are capped at 1,000 elements/512 KiB. Because Excalidraw has no universal public gesture-complete callback, rapid actions inside one debounce window may coalesce into one correct final snapshot. A later version should evaluate periodic checkpoints plus validated object operations to reduce event size.

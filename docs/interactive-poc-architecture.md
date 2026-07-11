@@ -448,9 +448,7 @@ interface WhiteboardSceneChangedPayload {
 }
 ```
 
-Whiteboards are `PresentationResource` values with an `initialScene`; semantic Main Stage/Sidecar/Tray placement stays exclusively in presentation layout snapshots. Material Preparation updates the initial scene, recording stores complete semantic scene snapshots after meaningful debounced actions, and seeking replays ordered snapshots without pointer animation. Excalidraw is isolated behind the React whiteboard adapter; learners use read-only view mode. Server/package normalization limits each scene to 1,000 elements and 512 KiB, strips transient app state, and rejects malformed references. Image insertion is disabled in v1.
-
-`PresentationLayout` retains legacy visibility fields and optionally carries a canonical `PresentationComposition`: Focus, Side-by-side, or Stage with Sidecar; reserved `workspace-editor` or resource IDs for Main Stage and Sidecar; a bounded 0.5–0.8 split ratio; and constrained camera anchor/size. This is semantic intent only—no pixel position or dimensions are recorded. Old layouts without this field are mapped deterministically in memory and are not rewritten merely by review.
+Whiteboards are `PresentationResource` values with an `initialScene`; hidden/minimized/focused state stays exclusively in presentation layout snapshots. Material Preparation updates the initial scene, recording stores complete semantic scene snapshots after meaningful debounced actions, and seeking replays ordered snapshots without pointer animation. Excalidraw is isolated behind the React whiteboard adapter; learners use read-only view mode. Server/package normalization limits each scene to 1,000 elements and 512 KiB, strips transient app state, and rejects malformed references. Image insertion is disabled in v1.
 
 Ordering contract:
 
@@ -788,7 +786,7 @@ type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-reco
 
 ### `InteractivePocControls.tsx`
 
-`packages/react/src/Panels/InteractivePocControls.tsx` supplies management content only. `InteractiveExperienceProvider` owns explicit screen transitions; `InteractiveExperienceRoot` portals the product into the dedicated Astro mount; management and persistent workspace shells enforce valid visibility; `WorkspacePanel.tsx` provides TutorialStore/editor integration; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `InteractivePresentationLayer.tsx` owns the adaptive Main Stage/Sidecar/Tray composition, responsive stacking, arrangement controls, and anchored camera geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, learner behavior, and teacher/learner presentation state. The existing terminal and preview iframe each have one persistent immersive host and never fall back into management.
+`packages/react/src/Panels/InteractivePocControls.tsx` supplies management content only. `InteractiveExperienceProvider` owns explicit screen transitions; `InteractiveExperienceRoot` portals the product into the dedicated Astro mount; management and persistent workspace shells enforce valid visibility; `WorkspacePanel.tsx` provides TutorialStore/editor integration; `InteractiveWorkspaceSurface.tsx` owns the collapsible explanation/editor/terminal geometry; `InteractivePresentationLayer.tsx` owns hidden/minimized/focused preview, explanation, and multi-slide deck geometry; `useInteractivePoc` remains the compatibility facade for recording, playback, storage, learner behavior, and teacher/learner presentation state. The existing terminal and preview iframe each have one persistent immersive host and never fall back into management.
 
 ### `InteractiveTeacherDashboard.tsx`
 
