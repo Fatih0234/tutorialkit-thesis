@@ -1,5 +1,7 @@
+import { normalizeEditorSelectionPayload } from './editor-selection.js';
 import { getRecordingMediaAssetMetadata, type RecordingMediaAsset, type RecordingMediaAssetMetadata } from './media.js';
 import { normalizeFiles, normalizePath } from './path.js';
+import { normalizeTeacherPointerClickPayload, normalizeTeacherPointerPayload } from './pointer.js';
 import type { InteractiveTimelineStorage, LearnerDeltaQuery } from './storage-adapter.js';
 import type { LearnerDelta, TeacherRecording, TimelineEvent } from './types.js';
 import { MAX_WHITEBOARD_TITLE_LENGTH, sanitizeWhiteboardScene } from './whiteboard.js';
@@ -138,9 +140,15 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
   }
 
   let payload = normalizeTimelinePayload(candidate.payload);
-  if (candidate.type === 'whiteboard.scene.changed') {
+  if (candidate.type === 'editor.selection.changed') {
+    payload = normalizeEditorSelectionPayload(candidate.payload);
+  } else if (candidate.type === 'whiteboard.scene.changed') {
     const whiteboardPayload = assertObject(candidate.payload, 'Whiteboard event payload must be an object.');
     payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+  } else if (candidate.type === 'pointer.changed') {
+    payload = normalizeTeacherPointerPayload(candidate.payload);
+  } else if (candidate.type === 'pointer.clicked') {
+    payload = normalizeTeacherPointerClickPayload(candidate.payload);
   }
 
   return {

@@ -12,6 +12,9 @@ import {
   INTERACTIVE_DEV_TEACHER_USER_ID,
   INTERACTIVE_LEGACY_LOCAL_LEARNER_USER_ID,
   MAX_WHITEBOARD_TITLE_LENGTH,
+  normalizeEditorSelectionPayload,
+  normalizeTeacherPointerClickPayload,
+  normalizeTeacherPointerPayload,
   sanitizeWhiteboardScene,
   type InteractiveSession,
   type InteractiveUser,
@@ -385,11 +388,17 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
   }
 
   let payload = candidate.payload;
-  if (candidate.type === 'whiteboard.scene.changed') {
+  if (candidate.type === 'editor.selection.changed') {
+    payload = normalizeEditorSelectionPayload(payload);
+  } else if (candidate.type === 'whiteboard.scene.changed') {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Whiteboard event payload must be an object.');
     const whiteboardPayload = payload as { resourceId?: unknown; scene?: unknown };
     if (typeof whiteboardPayload.resourceId !== 'string') throw new Error('Whiteboard resource id is required.');
     payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+  } else if (candidate.type === 'pointer.changed') {
+    payload = normalizeTeacherPointerPayload(payload);
+  } else if (candidate.type === 'pointer.clicked') {
+    payload = normalizeTeacherPointerClickPayload(payload);
   }
 
   return {

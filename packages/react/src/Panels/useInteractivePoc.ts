@@ -21,8 +21,12 @@ import {
   listDevUsers,
   loadCurrentUser,
   logout as logoutCurrentUser,
+  HIDDEN_TEACHER_POINTER,
   materializeTeacherState,
   materializeWhiteboardScene,
+  normalizeEditorSelectionPayload,
+  normalizeTeacherPointerClickPayload,
+  normalizeTeacherPointerPayload,
   normalizeFiles,
   normalizePath,
   normalizePresentationLayout,
@@ -35,6 +39,7 @@ import {
   simpleHashFiles,
   type DeckPresentationResource,
   type EditorScrolledPayload,
+  type EditorSelectionChangedPayload,
   type FileChangedPayload,
   type FilesSnapshot,
   type InteractiveTimelineStorage,
@@ -47,6 +52,9 @@ import {
   type PresentationResource,
   type RecordingMediaAsset,
   type RecordingMediaKind,
+  type TeacherPointerButton,
+  type TeacherPointerChangedPayload,
+  type TeacherPointerClickedPayload,
   type TeacherRecording,
   type TeacherRecordingDraftSummary,
   type TimelineEvent,
@@ -55,7 +63,7 @@ import {
   type WhiteboardScene,
   type WhiteboardSceneChangedPayload,
 } from '@tutorialkit/runtime';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useInteractiveWhiteboard } from './interactive/whiteboard/useInteractiveWhiteboard.js';
 
 export type InteractiveMode = 'teacher-playback' | 'learner-editing' | 'idle';
@@ -132,6 +140,9 @@ export interface InteractivePocControlsModel {
   mediaPreviewUrl: string;
   mediaMimeType: string;
   liveMediaStream: MediaStream | null;
+  teacherPointer: TeacherPointerChangedPayload;
+  teacherPointerClickButton: TeacherPointerButton | null;
+  teacherPointerClickSequence: number;
   draftRecordings: InteractiveRecordingLibraryItem[];
   publishedRecordings: InteractiveRecordingLibraryItem[];
   selectedDraftId: string;
@@ -216,6 +227,8 @@ export interface InteractivePocControlsModel {
   onDiscardAndResumeTeacher: () => void;
   onCancelResumeTeacher: () => void;
   onMediaElementRef: (element: HTMLMediaElement | null) => void;
+  onTeacherPointerChange: (pointer: TeacherPointerChangedPayload) => void;
+  onTeacherPointerClick: (click: TeacherPointerClickedPayload) => void;
 }
 
 export interface UseInteractivePocOptions {
@@ -228,10 +241,12 @@ export interface UseInteractivePocOptions {
 
 export interface UseInteractivePocResult {
   controls: InteractivePocControlsModel;
+  playbackEditorSelection: (EditorSelectionChangedPayload & { filePath: string }) | null;
   onFileSelect: (filePath: string | undefined) => void;
   onFileCreated: (filePath: string, content?: string) => void;
   onWorkspaceLayoutChange: () => void;
   onEditorScroll: (position: EditorScrollPosition) => void;
+  onEditorSelectionChange: (selection: EditorSelectionChangedPayload) => void;
   onEditorChange: (update: EditorChangeUpdate) => void;
 }
 
@@ -344,6 +359,12 @@ export function useInteractivePoc({
   const presentationResourcesRef = useRef<PresentationResource[]>(clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
   const teacherPresentationLayoutRef = useRef<PresentationLayout>(createDefaultPresentationLayout());
   const learnerPresentationOverrideRef = useRef<PresentationLayout | null>(null);
+  const lastRecordedPointerRef = useRef<TeacherPointerChangedPayload | null>(null);
+  const pointerClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [teacherPointer, setTeacherPointer] = useState<TeacherPointerChangedPayload>({ ...HIDDEN_TEACHER_POINTER });
+  const [playbackEditorSelection, setPlaybackEditorSelection] = useState<(EditorSelectionChangedPayload & { filePath: string }) | null>(null);
+  const [teacherPointerClickButton, setTeacherPointerClickButton] = useState<TeacherPointerButton | null>(null);
+  const [teacherPointerClickSequence, setTeacherPointerClickSequence] = useState(0);
   const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() => clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
   const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(createDefaultPresentationLayout);
   const [learnerPresentationOverride, setLearnerPresentationOverride] = useState<PresentationLayout | null>(null);
@@ -876,11 +897,26 @@ export function useInteractivePoc({
   }
 
   function applyTeacherPresentationLayout(layout: PresentationLayout) {
-    const nextLayout = normalizePresentationLayout(presentationResourcesRef.current, layout);
+    const resources = presentationResourcesRef.current;
+    const previousTeacherLayout = teacherPresentationLayoutRef.current;
+    const previousLearnerOverride = learnerPresentationOverrideRef.current;
+    const nextLayout = normalizePresentationLayout(resources, layout);
+    let nextLearnerOverride: PresentationLayout | null = null;
+
+    // Camera visibility is a personal learner preference. Keep an explicit camera
+    // override when an unrelated teacher presentation cue replaces the layout.
+    for (const resource of resources) {
+      if (resource.kind !== 'camera') continue;
+      const learnerMode = previousLearnerOverride?.resources[resource.id];
+      if (learnerMode && learnerMode !== previousTeacherLayout.resources[resource.id]) {
+        nextLearnerOverride = setPresentationMode(resources, nextLearnerOverride ?? nextLayout, resource.id, learnerMode);
+      }
+    }
+
     teacherPresentationLayoutRef.current = nextLayout;
-    learnerPresentationOverrideRef.current = null;
+    learnerPresentationOverrideRef.current = nextLearnerOverride;
     setTeacherPresentationLayout(nextLayout);
-    setLearnerPresentationOverride(null);
+    setLearnerPresentationOverride(nextLearnerOverride);
   }
 
   function restoreInitialPresentation(recording: TeacherRecording) {
@@ -1001,7 +1037,44 @@ export function useInteractivePoc({
     }
   }
 
-  function applyPlaybackEvent(event: TimelineEvent) {
+  function applyPlaybackEvent(event: TimelineEvent, animatePointerClick = true) {
+    if (event.type === 'editor.selection.changed') {
+      if (!event.filePath) return;
+      try {
+        setPlaybackEditorSelection({ filePath: normalizePath(event.filePath), ...normalizeEditorSelectionPayload(event.payload) });
+      } catch {
+        setPlaybackEditorSelection(null);
+      }
+      return;
+    }
+
+    if (event.type === 'pointer.clicked') {
+      try {
+        const click = normalizeTeacherPointerClickPayload(event.payload);
+        setTeacherPointer({ surface: click.surface, x: click.x, y: click.y, visible: true, ...(click.coordinateSpaceVersion ? { coordinateSpaceVersion: click.coordinateSpaceVersion } : {}), ...(click.anchor ? { anchor: click.anchor } : {}) });
+        clearTimeout(pointerClickTimeoutRef.current);
+        if (animatePointerClick) {
+          setTeacherPointerClickButton(click.button);
+          setTeacherPointerClickSequence((sequence) => sequence + 1);
+          pointerClickTimeoutRef.current = setTimeout(() => setTeacherPointerClickButton(null), 650);
+        } else {
+          setTeacherPointerClickButton(null);
+        }
+      } catch {
+        setTeacherPointerClickButton(null);
+      }
+      return;
+    }
+
+    if (event.type === 'pointer.changed') {
+      try {
+        setTeacherPointer(normalizeTeacherPointerPayload(event.payload));
+      } catch {
+        setTeacherPointer({ ...HIDDEN_TEACHER_POINTER });
+      }
+      return;
+    }
+
     if (event.type === 'whiteboard.scene.changed') {
       const payload = event.payload as WhiteboardSceneChangedPayload | undefined;
       if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene) whiteboard.applyScene(payload.scene, 'playback');
@@ -1096,13 +1169,18 @@ export function useInteractivePoc({
 
     startPlaybackGuard();
     isApplyingPlaybackRef.current = true;
+    setTeacherPointer({ ...HIDDEN_TEACHER_POINTER });
+    setPlaybackEditorSelection(null);
+    setTeacherPointerClickButton(null);
+    clearTimeout(pointerClickTimeoutRef.current);
     restoreInitialPresentation(recording);
     applyRecordingBaseFiles(recording);
+    tutorialStore.setCurrentDocumentScrollPosition({ top: 0, left: 0 });
 
     let nextEventIndex = 0;
 
     while (nextEventIndex < events.length && events[nextEventIndex]!.tMs <= targetMs) {
-      applyPlaybackEvent(events[nextEventIndex]!);
+      applyPlaybackEvent(events[nextEventIndex]!, false);
       nextEventIndex += 1;
     }
 
@@ -1497,6 +1575,12 @@ export function useInteractivePoc({
         payload: { filePath: normalizePath(selectedFile) },
         tMs: 0,
       });
+      const initialScroll = tutorialStore.currentDocument.get()?.scroll ?? { top: 0, left: 0 };
+      recorder.append<EditorScrolledPayload>('editor.scrolled', {
+        filePath: selectedFile,
+        payload: { top: initialScroll.top, left: initialScroll.left },
+        tMs: 0,
+      });
     }
 
     if (mediaRecorder) {
@@ -1522,6 +1606,11 @@ export function useInteractivePoc({
     setDraftStatus('unsaved');
     setCurrentDraftId(recording.id);
     setRecordingDurationMs(0);
+    lastRecordedPointerRef.current = null;
+    clearTimeout(pointerClickTimeoutRef.current);
+    setTeacherPointerClickButton(null);
+    setTeacherPointer({ ...HIDDEN_TEACHER_POINTER });
+    setPlaybackEditorSelection(null);
     setIsRecording(true);
     setEventCount(recording.events.length);
 
@@ -2346,6 +2435,39 @@ export function useInteractivePoc({
     syncEventCount();
   }
 
+  const onTeacherPointerChange = useCallback((pointer: TeacherPointerChangedPayload) => {
+    const recorder = recorderRef.current;
+    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+    let normalized: TeacherPointerChangedPayload;
+    try { normalized = normalizeTeacherPointerPayload(pointer); } catch { return; }
+    const previous = lastRecordedPointerRef.current;
+    if (previous && previous.surface === normalized.surface && previous.visible === normalized.visible &&
+      Math.abs(previous.x - normalized.x) < 0.002 && Math.abs(previous.y - normalized.y) < 0.002) return;
+    recorder.append<TeacherPointerChangedPayload>('pointer.changed', { payload: normalized });
+    lastRecordedPointerRef.current = normalized;
+    setEventCount(recorder.getRecording()?.events.length ?? 0);
+  }, []);
+
+  function onEditorSelectionChange(selection: EditorSelectionChangedPayload) {
+    const recorder = recorderRef.current;
+    const filePath = getCurrentFilePath();
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+    let normalized: EditorSelectionChangedPayload;
+    try { normalized = normalizeEditorSelectionPayload(selection); } catch { return; }
+    recorder.append<EditorSelectionChangedPayload>('editor.selection.changed', { filePath, payload: normalized });
+    syncEventCount();
+  }
+
+  const onTeacherPointerClick = useCallback((click: TeacherPointerClickedPayload) => {
+    const recorder = recorderRef.current;
+    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+    let normalized: TeacherPointerClickedPayload;
+    try { normalized = normalizeTeacherPointerClickPayload(click); } catch { return; }
+    recorder.append<TeacherPointerClickedPayload>('pointer.clicked', { payload: normalized });
+    lastRecordedPointerRef.current = { surface: normalized.surface, x: normalized.x, y: normalized.y, visible: true, ...(normalized.coordinateSpaceVersion ? { coordinateSpaceVersion: normalized.coordinateSpaceVersion } : {}), ...(normalized.anchor ? { anchor: normalized.anchor } : {}) };
+    setEventCount(recorder.getRecording()?.events.length ?? 0);
+  }, []);
+
   function onEditorChange(update: EditorChangeUpdate) {
     if (typeof update.content !== 'string') {
       return;
@@ -2383,6 +2505,7 @@ export function useInteractivePoc({
     return () => {
       stopPlaybackDrivers({ pauseMedia: true });
       mediaRecorderRef.current?.abort();
+      clearTimeout(pointerClickTimeoutRef.current);
       hiddenMediaElementRef.current?.pause();
       hiddenMediaElementRef.current = null;
       revokeCurrentMediaObjectUrl();
@@ -2407,6 +2530,7 @@ export function useInteractivePoc({
   const hasSelectedImportPackage = importPackageFileName !== 'none';
 
   return {
+    playbackEditorSelection,
     controls: {
       isRecording,
       presentationResources,
@@ -2444,6 +2568,9 @@ export function useInteractivePoc({
       mediaPreviewUrl,
       mediaMimeType,
       liveMediaStream,
+      teacherPointer,
+      teacherPointerClickButton,
+      teacherPointerClickSequence,
       draftRecordings,
       publishedRecordings,
       selectedDraftId,
@@ -2537,11 +2664,14 @@ export function useInteractivePoc({
       onDiscardAndResumeTeacher,
       onCancelResumeTeacher,
       onMediaElementRef,
+      onTeacherPointerChange,
+      onTeacherPointerClick,
     },
     onFileSelect,
     onFileCreated,
     onWorkspaceLayoutChange,
     onEditorScroll,
+    onEditorSelectionChange,
     onEditorChange,
   };
 }

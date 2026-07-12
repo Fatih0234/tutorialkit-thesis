@@ -89,7 +89,7 @@ Scenes are JSON-only, limited to 1,000 elements and 512 KiB. Stable background/g
 
 ## Instructor camera
 
-A webcam recording captures camera and microphone together. Its synchronized video is exposed as an **Instructor Camera** resource, initially minimized in a safe lower-left slot while the website preview remains lower-right. Learners can hide, minimize, focus, and reopen it using the same temporary override behavior as other resources.
+A webcam recording captures camera and microphone together. Its synchronized video is exposed as an **Instructor Camera** resource, initially minimized in a safe lower-left slot while the website preview remains lower-right. Learners can hide, minimize, focus, and reopen it. Unlike teacher-directed lesson resources, an explicit learner camera choice survives unrelated teacher presentation cues; **Follow teacher** clears that personal override.
 
 The camera `<video>` remains mounted even while hidden so it can continue serving as the authoritative media clock. It deliberately has no native controls or independent pointer interaction: play, pause, restart, and seek belong exclusively to the lecture transport. During recording, the teacher still sees the separate muted live monitor in the recording header.
 
@@ -99,7 +99,9 @@ Older webcam recordings without a camera resource receive this resource and mini
 
 `PreviewPanel` and its existing WebContainer iframe are reused. The iframe node is embedded in one persistent presentation host and resized between hidden, minimized, and focused geometry. Its JavaScript state and user interaction survive these transitions.
 
-Clicks, DOM mutations, form input, and navigation inside the iframe are deliberately not recorded. The timeline records presentation intent around a live preview, not preview internals.
+DOM mutations, form input, navigation, and click targets inside the iframe are deliberately not recorded. A preview may explicitly install the pointer-only TutorialKit bridge, which reports normalized teacher cursor coordinates and left/right button gestures through a source-, origin-, and nonce-validated message channel. This narrow exception supports the synthetic playback cursor and click pulse without recording preview content or target semantics.
+
+Pointer calibration can be inspected locally by setting `interactive-poc.pointerDebug` to `true` in localStorage and reloading. The temporary red crosshair marks the exact calculated hotspot independently from the cursor SVG, with normalized and screen coordinates. It is disabled by default and is not recording data.
 
 ## Compatibility
 

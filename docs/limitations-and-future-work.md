@@ -38,9 +38,9 @@ The first Excalidraw whiteboard stores complete JSON scene snapshots after a 450
 
 Commands, terminal output, process state, and shell timing are outside the recording schema. The timeline covers editor/file interactions and optional media only.
 
-### No iframe or preview-internal recording
+### Pointer-only preview bridge
 
-Interactions inside a rendered application preview are not captured. The system records teacher presentation cues that show, minimize, focus, or hide the live preview, but it does not inspect iframe internals, replay DOM interactions, or record browser input within the learner's application.
+Rendered application previews remain opaque by default. A tutorial project may explicitly install the pointer-only bridge to report normalized teacher cursor coordinates and left/right button gestures for the synthetic playback cursor. The bridge does not inspect click targets or replay native context menus, DOM mutations, form input, navigation, or application state; previews without it provide no internal cursor movement.
 
 ### No analytics
 

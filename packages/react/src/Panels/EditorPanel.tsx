@@ -6,7 +6,10 @@ import {
   type EditorDocument,
   type OnChangeCallback as OnEditorChange,
   type OnScrollCallback as OnEditorScroll,
+  type EditorPointerCoordinateApi,
+  type EditorSelectionRange,
   type OnSelectionChangeCallback as OnEditorSelectionChange,
+  type OnSelectionRangeChangeCallback as OnEditorSelectionRangeChange,
 } from '../core/CodeMirrorEditor/index.js';
 import { FileTree } from '../core/FileTree.js';
 import type { Theme } from '../core/types.js';
@@ -30,6 +33,9 @@ interface Props {
   onEditorChange?: OnEditorChange;
   onEditorScroll?: OnEditorScroll;
   onEditorSelectionChange?: OnEditorSelectionChange;
+  onEditorSelectionRangeChange?: OnEditorSelectionRangeChange;
+  playbackSelection?: EditorSelectionRange | null;
+  onPointerCoordinateApiChange?: (api: EditorPointerCoordinateApi | null) => void;
   onHelpClick?: () => void;
   onFileSelect?: (value?: string) => void;
   onFileTreeChange?: ComponentProps<typeof FileTree>['onFileChange'];
@@ -50,6 +56,9 @@ export function EditorPanel({
   onEditorChange,
   onEditorScroll,
   onEditorSelectionChange,
+  onEditorSelectionRangeChange,
+  playbackSelection,
+  onPointerCoordinateApiChange,
   onHelpClick,
   onFileSelect,
   onFileTreeChange,
@@ -110,6 +119,9 @@ export function EditorPanel({
             onScroll={onEditorScroll}
             onChange={onEditorChange}
             onSelectionChange={onEditorSelectionChange}
+            onSelectionRangeChange={onEditorSelectionRangeChange}
+            playbackSelection={playbackSelection}
+            onPointerCoordinateApiChange={onPointerCoordinateApiChange}
           />
         </div>
       </Panel>

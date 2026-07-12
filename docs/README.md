@@ -30,12 +30,13 @@ The current lifecycle is:
 ## Operation and evidence
 
 - [`thesis-demo-script.md`](./thesis-demo-script.md)
+- [`interactive-counter-demo.md`](./interactive-counter-demo.md) — ready-to-record counter lecture, learner challenge, and shot sequence.
 - [`evaluation-checklist.md`](./evaluation-checklist.md)
 - [`release-checklist.md`](./release-checklist.md)
 - [`limitations-and-future-work.md`](./limitations-and-future-work.md)
 - [`implementation-timeline.md`](./implementation-timeline.md)
 
-The validated current Playwright expectation is **40 passed** in `interactive-poc.spec.ts`.
+The validated current Playwright expectation is **43 passed** in `interactive-poc.spec.ts`.
 
 ## Historical evidence
 

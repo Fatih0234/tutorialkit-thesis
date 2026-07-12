@@ -4,7 +4,7 @@ import type { I18n } from '@tutorialkit/types';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
-import type { EditorTextSelection } from '../core/CodeMirrorEditor/index.js';
+import type { EditorPointerCoordinateApi, EditorTextSelection } from '../core/CodeMirrorEditor/index.js';
 import { DialogProvider } from '../core/Dialog.js';
 import type { Theme } from '../core/types.js';
 import resizePanelStyles from '../styles/resize-panel.module.css';
@@ -160,6 +160,7 @@ function EditorSection({
   const [experienceMount, setExperienceMount] = useState<HTMLElement | null>(null);
   const [editorSelection, setEditorSelection] = useState<EditorTextSelection | null>(null);
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
+  const editorPointerApiRef = useRef<EditorPointerCoordinateApi | null>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
   const currentDocument = useStore(tutorialStore.currentDocument);
   const lessonFullyLoaded = useStore(tutorialStore.lessonFullyLoaded);
@@ -402,6 +403,27 @@ function EditorSection({
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
   }, [isRecordingStudio]);
 
+  const getEditorPointerApis = useCallback(() => {
+    const domApis = [...document.querySelectorAll<HTMLElement>('.cm-editor')]
+      .map((element) => (element as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }).__tutorialKitPointerCoordinateApi)
+      .filter((api): api is EditorPointerCoordinateApi => Boolean(api));
+    return editorPointerApiRef.current && !domApis.includes(editorPointerApiRef.current) ? [editorPointerApiRef.current, ...domApis] : domApis;
+  }, []);
+  const getEditorPointerAnchor = useCallback((clientX: number, clientY: number) => {
+    for (const api of getEditorPointerApis()) {
+      const position = api.positionAtCoordinates(clientX, clientY);
+      if (position) return { kind: 'editor' as const, ...position };
+    }
+    return null;
+  }, [getEditorPointerApis]);
+  const resolveEditorPointerAnchor = useCallback((anchor: { filePath: string; documentOffset: number; offsetX: number; offsetY: number }) => {
+    for (const api of getEditorPointerApis()) {
+      const coordinates = api.coordinatesAtPosition(anchor);
+      if (coordinates) return coordinates;
+    }
+    return null;
+  }, [getEditorPointerApis]);
+
   const managementControls = (
     <InteractivePocControls
       {...interactivePoc.controls}
@@ -451,6 +473,11 @@ function EditorSection({
         onEditorScroll={interactivePoc.onEditorScroll}
         onEditorChange={interactivePoc.onEditorChange}
         onEditorSelectionChange={setEditorSelection}
+        onEditorSelectionRangeChange={interactivePoc.onEditorSelectionChange}
+        playbackSelection={(experience.screen === 'teacher-review' || experience.screen === 'learner-player') && interactivePoc.controls.mode !== 'learner-editing' && interactivePoc.playbackEditorSelection?.filePath === selectedFile
+          ? interactivePoc.playbackEditorSelection
+          : null}
+        onPointerCoordinateApiChange={(api) => { editorPointerApiRef.current = api; }}
       />
     </div>
   );
@@ -512,7 +539,21 @@ function EditorSection({
   );
 
   const editorExperience = (
-    <InteractiveExperienceRoot screen={experience.screen} theme={theme} hydrated={isClientReady} mount={experienceMount}>
+    <InteractiveExperienceRoot
+      screen={experience.screen}
+      theme={theme}
+      hydrated={isClientReady}
+      mount={experienceMount}
+      captureTeacherPointer={experience.screen === 'teacher-recording' && interactivePoc.controls.isRecording}
+      teacherPointer={interactivePoc.controls.teacherPointer}
+      teacherPointerClickButton={interactivePoc.controls.teacherPointerClickButton}
+      teacherPointerClickSequence={interactivePoc.controls.teacherPointerClickSequence}
+      showTeacherPointer={experience.screen === 'teacher-review' || (experience.screen === 'learner-player' && interactivePoc.controls.mode !== 'learner-editing')}
+      onTeacherPointerChange={interactivePoc.controls.onTeacherPointerChange}
+      onTeacherPointerClick={interactivePoc.controls.onTeacherPointerClick}
+      getEditorPointerAnchor={getEditorPointerAnchor}
+      resolveEditorPointerAnchor={resolveEditorPointerAnchor}
+    >
       <InteractiveManagementShell active={!isImmersiveExperience}>
         {managementControls}
       </InteractiveManagementShell>

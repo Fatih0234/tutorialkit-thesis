@@ -408,6 +408,9 @@ type TimelineEventType =
   | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
+  | 'editor.selection.changed'
+  | 'pointer.changed'
+  | 'pointer.clicked'
   | 'presentation.changed'
   | 'whiteboard.scene.changed'
   | 'playback.marker';
@@ -442,9 +445,32 @@ interface EditorScrolledPayload {
   left: number;
 }
 
+interface EditorSelectionChangedPayload {
+  anchor: number;
+  head: number;
+}
+
 interface WhiteboardSceneChangedPayload {
   resourceId: string;
   scene: WhiteboardScene;
+}
+
+interface TeacherPointerChangedPayload {
+  surface: 'experience' | 'workspace' | 'preview';
+  x: number;
+  y: number;
+  visible: boolean;
+  coordinateSpaceVersion?: 2 | 3;
+  anchor?: EditorPointerAnchor | ElementPointerAnchor;
+}
+
+interface TeacherPointerClickedPayload {
+  surface: 'experience' | 'workspace' | 'preview';
+  x: number;
+  y: number;
+  button: 'left' | 'right';
+  coordinateSpaceVersion?: 2 | 3;
+  anchor?: EditorPointerAnchor | ElementPointerAnchor;
 }
 ```
 

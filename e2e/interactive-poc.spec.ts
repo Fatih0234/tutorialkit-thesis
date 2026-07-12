@@ -537,6 +537,26 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByRole('tab', { name: /output|terminal/i })).toHaveCount(0);
   });
 
+  test('interactive counter fixture provides a ready learner exercise and teacher solution', async ({ page, baseURL }) => {
+    const counterUrl = new URL('/tests/file-tree/interactive-counter', baseURL ?? FALLBACK_POC_URL);
+    await page.goto(counterUrl.toString());
+    await expect(page.locator('[data-interactive-hydrated="true"]')).toBeAttached();
+    await expect(page.getByText('Interactive Counter Lab', { exact: true }).first()).toBeAttached();
+
+    await page.getByRole('button', { name: /edit materials/i }).click();
+    await page.getByRole('button', { name: 'example.js' }).click();
+
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    await expect(editor).toContainText('Learner challenge: decrease the count without going below zero.');
+    await expect(editor).toContainText('Learner challenge: reset the count to zero.');
+    await expect(page.getByRole('button', { name: 'styles.css' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /solve/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /solve/i }).click();
+    await expect(editor).toContainText('count = Math.max(0, count - 1);');
+    await expect(editor).toContainText('count = 0;');
+  });
+
   test('teacher prepares materials separately before recording', async ({ page }) => {
     await expect(page.getByRole('textbox', { name: 'Editor' }).first()).toBeHidden();
     await page.getByRole('button', { name: /edit materials/i }).click();
@@ -728,6 +748,174 @@ test.describe('interactive timeline POC', () => {
       (window as any).__interactivePreviewHost === element && element.dataset.presentationIdentity === 'persistent-preview')).toBeTruthy();
     expect(await iframe.evaluate((element: HTMLIFrameElement) => (window as any).__interactivePreviewFrame === element)).toBeTruthy();
     await expect(website.getByText(/clicked 1 time/i)).toBeVisible();
+  });
+
+  test('editor scrolling and text selection replay with the teacher pointer', async ({ page }) => {
+    await page.getByRole('button', { name: /edit materials/i }).click();
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    await editor.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.insertText(`\n${Array.from({ length: 140 }, (_, index) => `// scroll replay line ${index + 1}`).join('\n')}`);
+    await page.waitForTimeout(250);
+    await page.locator('.cm-scroller').first().evaluate((element) => element.scrollTo({ top: 0, left: 0 }));
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /hide presentation resource: website preview/i }).click();
+    await page.getByRole('button', { name: /hide presentation resource: building a javascript counter/i }).click();
+    await page.getByRole('button', { name: /exit preparation/i }).click();
+    await startTeacherRecording(page);
+    await page.waitForTimeout(1600);
+
+    const scroller = page.locator('.cm-scroller').first();
+    await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight, left: 0 }));
+    await page.waitForTimeout(250);
+    await editor.click({ position: { x: 220, y: 80 } });
+    await page.keyboard.press('Shift+Home');
+    const teacherSelection = scroller.locator('.cm-selectionBackground').first();
+    await expect(teacherSelection).toBeVisible();
+    await page.waitForTimeout(200);
+    const teacherSelectionBox = await teacherSelection.boundingBox();
+    expect(teacherSelectionBox).not.toBeNull();
+    const teacherEditorBox = await scroller.boundingBox();
+    expect(teacherEditorBox).not.toBeNull();
+    const pointerTarget = { x: teacherEditorBox!.x + Math.min(300, teacherEditorBox!.width / 2), y: teacherEditorBox!.y + Math.min(100, teacherEditorBox!.height / 2) };
+    await page.mouse.click(pointerTarget.x, pointerTarget.y);
+    await page.waitForTimeout(250);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).not.toBeNull();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const scrollEvent = recording.events.findLast((event: any) => event.type === 'editor.scrolled');
+    const selectionEvent = recording.events.findLast((event: any) => event.type === 'editor.selection.changed' && event.payload?.anchor !== event.payload?.head);
+    const pointerEvent = recording.events.findLast((event: any) => event.type === 'pointer.clicked' && event.payload?.anchor?.kind === 'editor');
+    expect(scrollEvent?.payload.top).toBeGreaterThan(0);
+    expect(selectionEvent).toBeTruthy();
+    expect(pointerEvent).toBeTruthy();
+    expect(pointerEvent.payload.coordinateSpaceVersion).toBe(3);
+    expect(pointerEvent.payload.anchor).toMatchObject({ kind: 'editor', filePath: selectionEvent.filePath });
+    expect(recording.events.filter((event: any) => event.type === 'file.changed')).toHaveLength(0);
+
+    await page.setViewportSize({ width: 1500, height: 720 });
+    await page.getByLabel(/lesson timeline/i).fill(String(pointerEvent.tMs));
+    await expect.poll(() => scroller.evaluate((element) => Math.round(element.scrollTop))).toBe(Math.round(scrollEvent.payload.top));
+    const replaySelection = scroller.locator('.cm-selectionBackground').first();
+    await expect(replaySelection).toBeVisible();
+    await expect(page.locator('[data-teacher-pointer]')).toHaveAttribute('data-pointer-visible', 'true');
+    await page.waitForTimeout(120);
+    const replaySelectionBox = await replaySelection.boundingBox();
+    const replayPointerBox = await page.locator('[data-teacher-pointer]').boundingBox();
+    const replayHotspotBox = await page.locator('[data-pointer-hotspot]').boundingBox();
+    const replayScrollerBox = await scroller.boundingBox();
+    const replayEditorBox = await editor.boundingBox();
+    expect(replaySelectionBox).not.toBeNull();
+    expect(replayPointerBox).not.toBeNull();
+    expect(replayEditorBox).not.toBeNull();
+    expect(replayHotspotBox).not.toBeNull();
+    expect(replayScrollerBox).not.toBeNull();
+    expect(Math.abs((replayHotspotBox!.x - replayScrollerBox!.x) - 300)).toBeLessThanOrEqual(2);
+    expect(Math.abs((replayHotspotBox!.y - replayScrollerBox!.y) - 100)).toBeLessThanOrEqual(2);
+    expect(replayPointerBox!.y).toBeGreaterThanOrEqual(replayEditorBox!.y);
+    expect(replayPointerBox!.y).toBeLessThanOrEqual(replayEditorBox!.y + replayEditorBox!.height);
+
+    await page.getByLabel(/lesson timeline/i).fill('0');
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0);
+  });
+
+  test('workspace-relative pointer stays aligned when playback controls resize the presentation', async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('interactive-poc.pointerDebug', 'true'));
+    await page.reload();
+    await expect(page.locator('[data-interactive-hydrated="true"]')).toBeAttached();
+    await startTeacherRecording(page);
+    await page.waitForTimeout(1600);
+    await page.getByRole('button', { name: /focus building a javascript counter/i }).click();
+    const revealButton = page.getByRole('button', { name: /reveal next/i });
+    await expect(revealButton).toBeVisible();
+    await revealButton.click();
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).not.toBeNull();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const revealClick = recording.events.findLast((event: any) => event.type === 'pointer.clicked' && event.payload?.surface === 'workspace');
+    expect(revealClick?.payload.coordinateSpaceVersion).toBe(3);
+    expect(revealClick?.payload.anchor).toMatchObject({ kind: 'element', id: 'deck:javascript-counter-deck:next-reveal' });
+    await page.getByLabel(/lesson timeline/i).fill(String(revealClick.tMs));
+    await expect(revealButton).toBeVisible();
+    await expect(page.locator('[data-teacher-pointer]')).toHaveAttribute('data-pointer-surface', 'workspace');
+    await page.waitForTimeout(120);
+    const buttonBox = await revealButton.boundingBox();
+    const crosshairCenterBox = await page.locator('[data-pointer-debug-center]').boundingBox();
+    expect(buttonBox).not.toBeNull();
+    expect(crosshairCenterBox).not.toBeNull();
+    const buttonCenter = { x: buttonBox!.x + buttonBox!.width / 2, y: buttonBox!.y + buttonBox!.height / 2 };
+    const crosshairCenter = { x: crosshairCenterBox!.x + crosshairCenterBox!.width / 2, y: crosshairCenterBox!.y + crosshairCenterBox!.height / 2 };
+    expect(Math.abs(crosshairCenter.x - buttonCenter.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(crosshairCenter.y - buttonCenter.y)).toBeLessThanOrEqual(1);
+    await page.evaluate(() => localStorage.removeItem('interactive-poc.pointerDebug'));
+  });
+
+  test('teacher pointer records across the workspace and bridged website preview', async ({ page, baseURL }) => {
+    const counterUrl = new URL('/tests/file-tree/interactive-counter', baseURL ?? FALLBACK_POC_URL);
+    await page.goto(counterUrl.toString());
+    await expect(page.locator('[data-interactive-hydrated="true"]')).toBeAttached();
+    await startTeacherRecording(page);
+
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    await editor.hover({ position: { x: 80, y: 60 } });
+    await page.waitForTimeout(120);
+    const previewFrame = page.frameLocator('[data-presentation-preview-host] iframe').first();
+    await expect(previewFrame.locator('body')).toBeVisible({ timeout: 20000 });
+    await expect.poll(() => previewFrame.locator('body').evaluate(() => Boolean((window as any).__tutorialKitPointerBridgeEnabled))).toBe(true);
+    await previewFrame.locator('body').hover({ position: { x: 120, y: 100 } });
+    await page.waitForTimeout(150);
+    await previewFrame.locator('body').click({ button: 'right', position: { x: 120, y: 100 } });
+    await page.waitForTimeout(100);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+    await expect(page.getByText(/draft status:\s*saved/i)).toBeAttached();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).not.toBeNull();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    const pointerEvents = recording.events.filter((event: any) => event.type === 'pointer.changed' || event.type === 'pointer.clicked');
+    expect(pointerEvents.some((event: any) => event.payload?.surface === 'workspace' && event.payload?.visible)).toBeTruthy();
+    const previewEvent = pointerEvents.find((event: any) => event.payload?.surface === 'preview' && event.payload?.visible);
+    expect(previewEvent?.payload.x).toBeGreaterThanOrEqual(0);
+    expect(previewEvent?.payload.x).toBeLessThanOrEqual(1);
+    expect(previewEvent?.payload.y).toBeGreaterThanOrEqual(0);
+    expect(previewEvent?.payload.y).toBeLessThanOrEqual(1);
+    const rightClickEvent = pointerEvents.find((event: any) => event.type === 'pointer.clicked' && event.payload?.surface === 'preview' && event.payload?.button === 'right');
+    expect(rightClickEvent).toBeTruthy();
+
+    await expect(page.locator('[data-pointer-click-animation="right"]')).toHaveCount(0);
+    await page.getByRole('button', { name: /^play$/i }).click();
+    await expect.poll(() => page.locator('[data-teacher-pointer]').getAttribute('data-pointer-click-sequence'), { timeout: Math.max(3000, rightClickEvent.tMs + 1500) }).not.toBe('0');
+
+    await page.getByLabel(/lesson timeline/i).fill(String(previewEvent.tMs));
+    const teacherPointer = page.locator('[data-teacher-pointer]');
+    await expect(teacherPointer).toHaveAttribute('data-pointer-surface', 'preview');
+    await expect(teacherPointer).toHaveAttribute('data-pointer-visible', 'true');
+    await page.waitForTimeout(120);
+    const pointerBox = await teacherPointer.boundingBox();
+    const iframeBox = await page.locator('[data-presentation-preview-host] iframe').first().boundingBox();
+    expect(pointerBox).not.toBeNull();
+    expect(iframeBox).not.toBeNull();
+    expect(pointerBox!.x).toBeGreaterThanOrEqual(iframeBox!.x - 2);
+    expect(pointerBox!.y).toBeGreaterThanOrEqual(iframeBox!.y - 2);
+    expect(pointerBox!.x).toBeLessThanOrEqual(iframeBox!.x + iframeBox!.width + 2);
+    expect(pointerBox!.y).toBeLessThanOrEqual(iframeBox!.y + iframeBox!.height + 2);
+
+    await publishAndOpenRecordingAsLearner(page, recording);
+    await page.getByLabel(/lesson timeline/i).fill(String(previewEvent.tMs));
+    await expect(page.locator('[data-teacher-pointer]')).toHaveAttribute('data-pointer-surface', 'preview');
+    await expect(page.locator('[data-teacher-pointer]')).toHaveAttribute('data-pointer-visible', 'true');
+    const learnerRecordingBefore = await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'));
+    await page.mouse.move(30, 30);
+    await page.waitForTimeout(120);
+    expect(await page.evaluate(() => localStorage.getItem('interactive-poc.teacherRecording'))).toBe(learnerRecordingBefore);
   });
 
   test('same-side resource windows overlap and the toolbar records which window is in front', async ({ page }) => {

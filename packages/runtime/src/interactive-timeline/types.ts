@@ -9,6 +9,9 @@ export type TimelineEventType =
   | 'file.created'
   | 'file.changed'
   | 'editor.scrolled'
+  | 'editor.selection.changed'
+  | 'pointer.changed'
+  | 'pointer.clicked'
   | 'presentation.changed'
   | 'whiteboard.scene.changed'
   | 'playback.marker';
@@ -41,6 +44,50 @@ export interface FileOpenedPayload {
 export interface EditorScrolledPayload {
   top: number;
   left: number;
+}
+
+export interface EditorSelectionChangedPayload {
+  anchor: number;
+  head: number;
+}
+
+export type TeacherPointerSurface = 'experience' | 'workspace' | 'preview';
+
+export interface EditorPointerAnchor {
+  kind: 'editor';
+  filePath: string;
+  documentOffset: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface ElementPointerAnchor {
+  kind: 'element';
+  id: string;
+  xWithinElement: number;
+  yWithinElement: number;
+}
+
+export type TeacherPointerAnchor = EditorPointerAnchor | ElementPointerAnchor;
+
+export interface TeacherPointerChangedPayload {
+  surface: TeacherPointerSurface;
+  x: number;
+  y: number;
+  visible: boolean;
+  coordinateSpaceVersion?: 2 | 3;
+  anchor?: TeacherPointerAnchor;
+}
+
+export type TeacherPointerButton = 'left' | 'right';
+
+export interface TeacherPointerClickedPayload {
+  surface: TeacherPointerSurface;
+  x: number;
+  y: number;
+  button: TeacherPointerButton;
+  coordinateSpaceVersion?: 2 | 3;
+  anchor?: TeacherPointerAnchor;
 }
 
 export interface TeacherRecording {
