@@ -33,6 +33,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
     "@astrojs/mdx": "^3.1.1",
     "@astrojs/react": "^3.6.0",
     "@expressive-code/plugin-collapsible-sections": "^0.35.3",
@@ -46,6 +47,7 @@
     "@types/react": "^18.3.3",
     "@unocss/reset": "^0.62.2",
     "@webcontainer/api": "1.5.1",
+    "ai": "^6.0.0",
     "astro": "^4.15.0",
     "astro-expressive-code": "^0.35.3",
     "chokidar": "3.6.0",
@@ -62,7 +64,8 @@
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
     "unocss": "^0.59.4",
-    "zod": "3.23.8"
+    "vite": "^5.4.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@tutorialkit/types": "workspace:*",

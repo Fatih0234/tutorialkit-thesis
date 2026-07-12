@@ -176,7 +176,7 @@ function getDataRoot(): string {
   return process.env.TUTORIALKIT_INTERACTIVE_DATA_DIR ?? path.join(findRepositoryRoot(), '.interactive-data');
 }
 
-function getDataPaths() {
+export function getDataPaths() {
   const root = getDataRoot();
 
   return {
@@ -295,7 +295,7 @@ async function readCurrentSession(req: IncomingMessage): Promise<InteractiveSess
   return session;
 }
 
-async function getAuthenticatedUser(req: IncomingMessage): Promise<InteractiveUser | undefined> {
+export async function getAuthenticatedUser(req: IncomingMessage): Promise<InteractiveUser | undefined> {
   const session = await readCurrentSession(req);
 
   return session ? getDevUser(session.userId) : undefined;
@@ -642,7 +642,7 @@ function getAllowedLearnerUserIds(user: InteractiveUser): string[] {
   return userIds;
 }
 
-function getJsonFilePath(directory: string, id: string): string {
+export function getJsonFilePath(directory: string, id: string): string {
   return path.join(directory, `${assertSafeId(id, 'id')}.json`);
 }
 
@@ -659,7 +659,7 @@ async function ensureDataDirectories() {
   return dataPaths;
 }
 
-async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
+export async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
   try {
     return JSON.parse(await readFile(filePath, 'utf8')) as T;
   } catch (error: any) {

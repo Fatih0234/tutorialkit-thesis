@@ -21,6 +21,7 @@ import { BinaryContent } from './BinaryContent.js';
 import { getTheme, reconfigureTheme } from './cm-theme.js';
 import { indentKeyBinding } from './indent.js';
 import { getLanguage } from './languages.js';
+import { getEditorTextSelection, type EditorTextSelection } from './selection.js';
 
 export interface EditorDocument {
   value: string | Uint8Array;
@@ -50,6 +51,8 @@ export interface EditorUpdate {
 
 export type OnChangeCallback = (update: EditorUpdate) => void;
 export type OnScrollCallback = (position: ScrollPosition) => void;
+export type OnSelectionChangeCallback = (selection: EditorTextSelection | null) => void;
+export type { EditorTextSelection } from './selection.js';
 
 interface Props {
   theme: Theme;
@@ -60,6 +63,7 @@ interface Props {
   autoFocusOnDocumentChange?: boolean;
   onChange?: OnChangeCallback;
   onScroll?: OnScrollCallback;
+  onSelectionChange?: OnSelectionChangeCallback;
   className?: string;
   settings?: EditorSettings;
 }
@@ -74,6 +78,7 @@ export function CodeMirrorEditor({
   autoFocusOnDocumentChange = false,
   onScroll,
   onChange,
+  onSelectionChange,
   theme,
   settings,
   className = '',
@@ -88,11 +93,13 @@ export function CodeMirrorEditor({
   const editorStatesRef = useRef<EditorStates>();
   const onScrollRef = useRef(onScroll);
   const onChangeRef = useRef(onChange);
+  const onSelectionChangeRef = useRef(onSelectionChange);
 
   const isBinaryFile = doc?.value instanceof Uint8Array;
 
   onScrollRef.current = onScroll;
   onChangeRef.current = onChange;
+  onSelectionChangeRef.current = onSelectionChange;
   docRef.current = doc;
   themeRef.current = theme;
 
@@ -113,6 +120,13 @@ export function CodeMirrorEditor({
         const selectionChanged =
           newSelection !== previousSelection &&
           (newSelection === undefined || previousSelection === undefined || !newSelection.eq(previousSelection));
+
+        if (selectionChanged && docRef.current && typeof docRef.current.value === 'string') {
+          const { anchor, head } = view.state.selection.main;
+          onSelectionChangeRef.current?.(
+            getEditorTextSelection(docRef.current.filePath, view.state.doc.toString(), anchor, head),
+          );
+        }
 
         if (
           docRef.current &&

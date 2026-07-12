@@ -1,9 +1,10 @@
 import { useStore } from '@nanostores/react';
-import { normalizePath, type TutorialStore } from '@tutorialkit/runtime';
+import { normalizeFiles, normalizePath, type TutorialStore } from '@tutorialkit/runtime';
 import type { I18n } from '@tutorialkit/types';
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
+import type { EditorTextSelection } from '../core/CodeMirrorEditor/index.js';
 import { DialogProvider } from '../core/Dialog.js';
 import type { Theme } from '../core/types.js';
 import resizePanelStyles from '../styles/resize-panel.module.css';
@@ -32,6 +33,8 @@ import type { InteractiveRecordingMode } from './InteractiveTeacherDashboard.js'
 import { PreviewPanel, type ImperativePreviewHandle } from './PreviewPanel.js';
 import { TerminalPanel } from './TerminalPanel.js';
 import { useInteractivePoc } from './useInteractivePoc.js';
+import { AiHelperWindow } from './interactive/ai/AiHelperWindow.js';
+import { makeAiContext, useAiTutor } from './interactive/ai/useAiTutor.js';
 
 const DEFAULT_TERMINAL_SIZE = 25;
 const INTERACTIVE_WORKSPACE_LAYOUT_KEY = 'interactive-poc.workspaceLayout';
@@ -155,6 +158,7 @@ function EditorSection({
   const [explanationHtml, setExplanationHtml] = useState('');
   const [isClientReady, setIsClientReady] = useState(false);
   const [experienceMount, setExperienceMount] = useState<HTMLElement | null>(null);
+  const [editorSelection, setEditorSelection] = useState<EditorTextSelection | null>(null);
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
   const currentDocument = useStore(tutorialStore.currentDocument);
@@ -170,6 +174,14 @@ function EditorSection({
     lessonFullyLoaded,
     storeRef,
   });
+  const aiRecordingId = interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId;
+  const aiContext = useMemo(() => {
+    if (!aiRecordingId || !interactivePoc.controls.currentUser || interactivePoc.controls.currentUser.role === 'teacher') return null;
+    const workspaceFiles = normalizeFiles(tutorialStore.takeSnapshot().files);
+    if (currentDocument && typeof currentDocument.value === 'string') workspaceFiles[normalizePath(currentDocument.filePath)] = currentDocument.value;
+    return makeAiContext({ lessonId: lesson.id, title: lesson.id, recordingId: aiRecordingId, version: interactivePoc.controls.recordingVersion, timestampMs: interactivePoc.controls.playheadMs, mode: interactivePoc.controls.mode === 'learner-editing' ? 'experimenting' : 'following-teacher', selectedFilePath: selectedFile ? normalizePath(selectedFile) : null, workspaceFiles });
+  }, [aiRecordingId, interactivePoc.controls.currentUser, interactivePoc.controls.recordingVersion, interactivePoc.controls.playheadMs, interactivePoc.controls.mode, lesson.id, selectedFile, currentDocument, tutorialStore]);
+  const aiTutor = useAiTutor(aiContext, aiRecordingId || null);
 
   const filePaths = files
     .filter((file) => file.type === 'file')
@@ -366,6 +378,10 @@ function EditorSection({
   }, [storeRef]);
 
   useEffect(() => {
+    setEditorSelection(null);
+  }, [selectedFile, experience.screen]);
+
+  useEffect(() => {
     if (!selectedFile && filePaths[0]) {
       tutorialStore.setSelectedFile(filePaths[0]);
     }
@@ -434,12 +450,14 @@ function EditorSection({
         selectedFile={selectedFile}
         onEditorScroll={interactivePoc.onEditorScroll}
         onEditorChange={interactivePoc.onEditorChange}
+        onEditorSelectionChange={setEditorSelection}
       />
     </div>
   );
 
   const editorSurface = (
     <InteractiveWorkspaceSurface
+      aiControl={experience.screen === 'learner-player' && interactivePoc.controls.currentUser?.role === 'learner' ? <AiHelperWindow tutor={aiTutor} editorSelection={editorSelection} /> : null}
       explanationHtml={explanationHtml}
       explanationOpen={explanationOpen}
       terminalOpen={terminalOpen}

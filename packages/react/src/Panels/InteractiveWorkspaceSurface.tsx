@@ -6,6 +6,7 @@ import { InteractiveButton } from './InteractivePocUi.js';
 interface InteractiveWorkspaceSurfaceProps {
   children: ReactNode;
   presentationLayer?: ReactNode;
+  aiControl?: ReactNode;
   explanationHtml: string;
   explanationOpen: boolean;
   terminalOpen: boolean;
@@ -22,6 +23,7 @@ interface InteractiveWorkspaceSurfaceProps {
 export function InteractiveWorkspaceSurface({
   children,
   presentationLayer,
+  aiControl,
   explanationHtml,
   explanationOpen,
   terminalOpen,
@@ -78,6 +80,7 @@ export function InteractiveWorkspaceSurface({
           Terminal
         </InteractiveButton>
         {terminalAvailable ? <span className="ml-auto hidden text-xs text-tk-text-secondary sm:inline">Terminal activity is live and is not included in playback.</span> : null}
+        {aiControl}
       </nav>
 
       <PanelGroup direction="horizontal" className="min-h-0 flex-1">

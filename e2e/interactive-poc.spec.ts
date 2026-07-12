@@ -1441,6 +1441,42 @@ test.describe('interactive timeline POC', () => {
     expect(seedResponse.ok()).toBe(true);
   });
 
+  test('learner explicitly attaches selected editor code to AI without changing lesson state', async ({ page, request }) => {
+    const recording = createPublishedRecording('teacher-recording-ai-selection-test', 'console.log("selected code");\n', 1000);
+
+    await seedPublishedRecording(request, recording);
+    await signInAsLearner(page);
+    await openLearnerSection(page);
+    await page.getByRole('button', { name: /start lesson/i }).click();
+    await page.getByRole('button', { name: /^play$/i }).click();
+    await expect(page.getByRole('button', { name: 'example.js', pressed: true })).toBeVisible();
+
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    const before = await editor.textContent();
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+A');
+
+    const attach = page.getByRole('button', { name: /ask ai about selected code/i });
+    await expect(attach).toBeVisible();
+    await attach.click();
+    await expect(page.getByText(/example\.js · line 1/i)).toBeVisible();
+
+    await page.getByRole('textbox', { name: /ask the ai learning assistant/i }).fill('Explain this selection.');
+    const aiRequestPromise = page.waitForRequest((request) => request.url().endsWith('/api/interactive/ai/chat'));
+    const aiResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/interactive/ai/chat'));
+    await page.getByRole('button', { name: /^send$/i }).click();
+    const [aiRequest, aiResponse] = await Promise.all([aiRequestPromise, aiResponsePromise]);
+    expect(aiResponse.status()).toBe(200);
+    expect(aiRequest.postDataJSON().context.selection).toEqual(expect.objectContaining({ filePath: '/example.js', startLine: 1, endLine: 1 }));
+    await expect(page.getByText(/received selected code|I can explain code/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /remove selected code attachment/i })).toHaveCount(0);
+    await expect(editor).toHaveText(before ?? '');
+
+    const storedResponse = await request.get(`/api/interactive/teacher-recordings/${recording.id}`);
+    expect(storedResponse.ok()).toBe(true);
+    expect((await storedResponse.json()).teacherRecording).toEqual(expect.objectContaining(recording));
+  });
+
   test('learner can open a published recording and save work remotely', async ({ page, request }) => {
     const finalContent = 'console.log("remote learner base");\n// remote teacher final edit\n';
     const recording = createPublishedRecording('teacher-recording-remote-delta-test', finalContent);

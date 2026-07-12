@@ -86,6 +86,7 @@ For the complete teacher and learner-experiment walkthrough, see [the thesis dem
 - [Release checklist](./docs/release-checklist.md)
 - [Limitations and future work](./docs/limitations-and-future-work.md)
 - [Implementation timeline](./docs/implementation-timeline.md)
+- [Learner AI Learning Assistant](./docs/ai-learning-assistant.md)
 
 `docs/00-context.md` through `docs/05-acceptance-criteria.md`, `docs/local-findings.md`, and `agent-tasks/phase-*.md` are retained historical planning/baseline evidence. They describe the incremental starting phases, not the current product surface; use the architecture, persistence, and experience documents above as the current source of truth.
 

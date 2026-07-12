@@ -6,6 +6,7 @@ import { updateMarkdownConfig } from './remark/index.js';
 import { tutorialkitCore } from './vite-plugins/core.js';
 import { userlandCSS, watchUserlandCSS } from './vite-plugins/css.js';
 import { interactivePersistence } from './vite-plugins/interactive-persistence.js';
+import { interactiveAi } from './vite-plugins/interactive-ai/index.js';
 import { overrideComponents, type OverrideComponentsOptions } from './vite-plugins/override-components.js';
 import { tutorialkitStore } from './vite-plugins/store.js';
 import { WebContainerFiles } from './webcontainer-files/index.js';
@@ -80,6 +81,7 @@ export interface Options {
 }
 
 export { createInteractivePersistenceMiddleware } from './vite-plugins/interactive-persistence.js';
+export { handleInteractiveAiRequest } from './vite-plugins/interactive-ai/index.js';
 
 export default function createPlugin({
   defaultRoutes = true,
@@ -133,6 +135,7 @@ export default function createPlugin({
               userlandCSS,
               tutorialkitStore,
               tutorialkitCore,
+              interactiveAi,
               interactivePersistence,
               overrideComponents({ components, defaultRoutes: !!defaultRoutes }),
               process.env.TUTORIALKIT_VITE_INSPECT ? (await import('vite-plugin-inspect')).default() : null,

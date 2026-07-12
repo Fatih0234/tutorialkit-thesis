@@ -4,7 +4,10 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { createInteractivePersistenceMiddleware } from '../../packages/astro/dist/index.js';
+import {
+  createInteractivePersistenceMiddleware,
+  handleInteractiveAiRequest,
+} from '../../packages/astro/dist/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -71,6 +74,11 @@ async function resolveStaticFile(urlPathname) {
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+  if (url.pathname.startsWith('/api/interactive/ai')) {
+    void handleInteractiveAiRequest(req, res, () => apiMiddleware(req, res, () => sendNotFound(res)));
+    return;
+  }
 
   if (url.pathname.startsWith('/api/interactive')) {
     apiMiddleware(req, res, () => sendNotFound(res));

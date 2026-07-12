@@ -2,3 +2,4 @@ export type { Command, Commands, PreviewInfo, Step, Steps } from './webcontainer
 export { safeBoot } from './webcontainer/index.js';
 export { TutorialStore } from './store/index.js';
 export * from './interactive-timeline/index.js';
+export * from './interactive-ai/index.js';

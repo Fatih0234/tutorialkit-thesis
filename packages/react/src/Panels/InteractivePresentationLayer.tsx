@@ -72,7 +72,7 @@ export function InteractivePresentationLayer({ audience, resources, layout, hasL
 
   return (
     <div data-presentation-layer className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
-      <div className={`pointer-events-auto absolute right-3 top-3 z-30 max-w-[70%] flex-wrap justify-end gap-1 rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary/95 p-1.5 shadow-lg ${focusedResource ? 'hidden' : 'flex'}`}>
+      <div className={`pointer-events-auto absolute right-3 top-14 z-30 max-w-[70%] flex-wrap justify-end gap-1 rounded-lg border border-tk-elements-app-borderColor bg-tk-background-primary/95 p-1.5 shadow-lg ${focusedResource ? 'hidden' : 'flex'}`}>
         <span className="self-center px-2 text-[10px] font-700 uppercase tracking-[0.12em] text-tk-text-secondary">Resources</span>
         {resources.filter((resource) => resource.kind !== 'camera' || Boolean(cameraMediaUrl)).map((resource) => (
           <InteractiveButton key={resource.id} variant="ghost" icon={resourceIcon(resource)} aria-pressed={layout.resources[resource.id] !== 'hidden'} aria-label={`${layout.resources[resource.id] === 'hidden' ? 'Show' : layout.resources[resource.id] === 'minimized' && (resource.kind === 'preview' ? layout.frontmostBySide?.right : resource.kind !== 'camera' ? layout.frontmostBySide?.left : resource.id) !== resource.id ? 'Bring forward' : 'Hide'} presentation resource: ${resource.title}`} onClick={() => onToolbarResourceClick(resource)}>

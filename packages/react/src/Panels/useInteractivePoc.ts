@@ -123,6 +123,7 @@ export interface InteractivePocControlsModel {
   publishedDeleteStatus: string;
   publishedDeleteError: string;
   recordingStorageSource: RecordingStorageSource;
+  recordingVersion: number;
   recordingDurationMs: number;
   mediaStatus: MediaStatus;
   mediaKind: MediaKindStatus;
@@ -2434,6 +2435,7 @@ export function useInteractivePoc({
       publishedDeleteStatus,
       publishedDeleteError,
       recordingStorageSource,
+      recordingVersion: playbackRecordingRef.current?.version ?? currentDraftRecordingRef.current?.version ?? 1,
       recordingDurationMs,
       mediaStatus,
       mediaKind,

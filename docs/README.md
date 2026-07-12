@@ -14,6 +14,7 @@ Read these documents as the current source of truth, in this order:
 6. [`interactive-recording-studio.md`](./interactive-recording-studio.md) — teacher preparation, recording, and review.
 7. [`learner-timeline-experiments.md`](./learner-timeline-experiments.md) — learner checkpoint behavior.
 8. [`presentation-resource-layer.md`](./presentation-resource-layer.md) — preview, explanation, progressive deck, and Instructor Camera resources.
+9. [`ai-learning-assistant.md`](./ai-learning-assistant.md) — learner-only contextual AI assistant boundaries and operation.
 
 The current lifecycle is:
 

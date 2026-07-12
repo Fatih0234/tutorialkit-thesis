@@ -6,6 +6,7 @@ import {
   type EditorDocument,
   type OnChangeCallback as OnEditorChange,
   type OnScrollCallback as OnEditorScroll,
+  type OnSelectionChangeCallback as OnEditorSelectionChange,
 } from '../core/CodeMirrorEditor/index.js';
 import { FileTree } from '../core/FileTree.js';
 import type { Theme } from '../core/types.js';
@@ -28,6 +29,7 @@ interface Props {
   allowEditPatterns?: ComponentProps<typeof FileTree>['allowEditPatterns'];
   onEditorChange?: OnEditorChange;
   onEditorScroll?: OnEditorScroll;
+  onEditorSelectionChange?: OnEditorSelectionChange;
   onHelpClick?: () => void;
   onFileSelect?: (value?: string) => void;
   onFileTreeChange?: ComponentProps<typeof FileTree>['onFileChange'];
@@ -47,6 +49,7 @@ export function EditorPanel({
   allowEditPatterns,
   onEditorChange,
   onEditorScroll,
+  onEditorSelectionChange,
   onHelpClick,
   onFileSelect,
   onFileTreeChange,
@@ -106,6 +109,7 @@ export function EditorPanel({
             autoFocusOnDocumentChange={!isMobile()}
             onScroll={onEditorScroll}
             onChange={onEditorChange}
+            onSelectionChange={onEditorSelectionChange}
           />
         </div>
       </Panel>
