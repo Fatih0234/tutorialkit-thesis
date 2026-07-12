@@ -578,6 +578,21 @@ test.describe('interactive timeline POC', () => {
     await expect(explanationToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(terminalToggle).toHaveAttribute('aria-pressed', 'false');
 
+    const resourceToolbar = page.getByRole('navigation', { name: /presentation resources/i });
+    const helpButton = page.getByRole('button', { name: /^(reset|solve)$/i });
+    const editor = page.getByRole('textbox', { name: 'Editor' });
+    await expect(resourceToolbar).toBeVisible();
+    await expect(helpButton).toBeVisible();
+    const resourceToolbarBox = await resourceToolbar.boundingBox();
+    const helpButtonBox = await helpButton.boundingBox();
+    const editorBox = await editor.boundingBox();
+    expect(resourceToolbarBox).not.toBeNull();
+    expect(helpButtonBox).not.toBeNull();
+    expect(editorBox).not.toBeNull();
+    expect(resourceToolbarBox!.y + resourceToolbarBox!.height).toBeLessThanOrEqual(helpButtonBox!.y + 1);
+    expect(helpButtonBox!.y + helpButtonBox!.height).toBeLessThanOrEqual(editorBox!.y + 1);
+    await helpButton.click();
+
     await explanationToggle.click();
     const explanation = page.getByRole('complementary', { name: /lesson explanation/i });
     await expect(explanation).toBeVisible();
@@ -623,6 +638,31 @@ test.describe('interactive timeline POC', () => {
     expect(savedLayout).toMatchObject({ explanationOpen: false, terminalOpen: false });
     expect(savedLayout.explanationSize).toBeGreaterThanOrEqual(18);
     expect(savedLayout.terminalSize).toBeGreaterThanOrEqual(18);
+  });
+
+  test('presentation resources remain accessible without covering the editor at narrow widths', async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 720 });
+    await page.getByRole('button', { name: /edit materials/i }).click();
+
+    const resourceToolbar = page.getByRole('navigation', { name: /presentation resources/i });
+    const helpButton = page.getByRole('button', { name: /^(reset|solve)$/i });
+    const editor = page.getByRole('textbox', { name: 'Editor' });
+    const whiteboardButton = page.getByRole('button', { name: /show presentation resource: whiteboard/i });
+    await expect(resourceToolbar).toBeVisible();
+    await expect(helpButton).toBeVisible();
+    await whiteboardButton.scrollIntoViewIfNeeded();
+    await whiteboardButton.click();
+    await expect(page.locator('[data-presentation-resource="lecture-whiteboard"]')).toHaveAttribute('data-presentation-mode', 'minimized');
+
+    const resourceToolbarBox = await resourceToolbar.boundingBox();
+    const helpButtonBox = await helpButton.boundingBox();
+    const editorBox = await editor.boundingBox();
+    expect(resourceToolbarBox).not.toBeNull();
+    expect(helpButtonBox).not.toBeNull();
+    expect(editorBox).not.toBeNull();
+    expect(resourceToolbarBox!.y + resourceToolbarBox!.height).toBeLessThanOrEqual(helpButtonBox!.y + 1);
+    expect(helpButtonBox!.y + helpButtonBox!.height).toBeLessThanOrEqual(editorBox!.y + 1);
+    await helpButton.click();
   });
 
   test('terminal stays in the immersive recording and review workspace only', async ({ page }) => {

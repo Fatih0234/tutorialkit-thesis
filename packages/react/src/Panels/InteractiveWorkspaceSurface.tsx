@@ -6,6 +6,7 @@ import { InteractiveButton } from './InteractivePocUi.js';
 interface InteractiveWorkspaceSurfaceProps {
   children: ReactNode;
   presentationLayer?: ReactNode;
+  presentationToolbar?: ReactNode;
   aiControl?: ReactNode;
   explanationHtml: string;
   explanationOpen: boolean;
@@ -23,6 +24,7 @@ interface InteractiveWorkspaceSurfaceProps {
 export function InteractiveWorkspaceSurface({
   children,
   presentationLayer,
+  presentationToolbar,
   aiControl,
   explanationHtml,
   explanationOpen,
@@ -83,7 +85,10 @@ export function InteractiveWorkspaceSurface({
         {aiControl}
       </nav>
 
-      <PanelGroup direction="horizontal" className="min-h-0 flex-1">
+      {presentationToolbar}
+
+      <div className="relative min-h-0 flex-1">
+        <PanelGroup direction="horizontal" className="h-full min-h-0">
         <Panel
           ref={explanationRef}
           id="interactive-explanation"
@@ -146,8 +151,9 @@ export function InteractiveWorkspaceSurface({
             </Panel>
           </PanelGroup>
         </Panel>
-      </PanelGroup>
-      {presentationLayer}
+        </PanelGroup>
+        {presentationLayer}
+      </div>
     </section>
   );
 }

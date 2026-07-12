@@ -17,7 +17,7 @@ import {
   InteractiveWorkspaceShell,
 } from './InteractiveExperienceShells.js';
 import { InteractiveMaterialPreparation } from './InteractiveMaterialPreparation.js';
-import { InteractivePresentationLayer } from './InteractivePresentationLayer.js';
+import { InteractivePresentationLayer, InteractivePresentationToolbar } from './InteractivePresentationLayer.js';
 import { InteractiveRecordingStudio } from './InteractiveRecordingStudio.js';
 import { InteractiveButton } from './InteractivePocUi.js';
 import { InteractiveVideoControls } from './InteractiveVideoControls.js';
@@ -455,9 +455,26 @@ function EditorSection({
     </div>
   );
 
+  const presentationAudience = experience.screen === 'learner-player' ? 'learner' : 'teacher';
+  const onPresentationModeChange = experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
+    ? interactivePoc.controls.onTeacherPresentationModeChange
+    : interactivePoc.controls.onLearnerPresentationModeChange;
+  const cameraMediaUrl = interactivePoc.controls.mediaKind === 'webcam' ? interactivePoc.controls.mediaPreviewUrl : '';
+
   const editorSurface = (
     <InteractiveWorkspaceSurface
       aiControl={experience.screen === 'learner-player' && interactivePoc.controls.currentUser?.role === 'learner' ? <AiHelperWindow tutor={aiTutor} editorSelection={editorSelection} /> : null}
+      presentationToolbar={
+        <InteractivePresentationToolbar
+          audience={presentationAudience}
+          resources={interactivePoc.controls.presentationResources}
+          layout={interactivePoc.controls.presentationLayout}
+          hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
+          cameraMediaUrl={cameraMediaUrl}
+          onModeChange={onPresentationModeChange}
+          onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
+        />
+      }
       explanationHtml={explanationHtml}
       explanationOpen={explanationOpen}
       terminalOpen={terminalOpen}
@@ -471,22 +488,17 @@ function EditorSection({
       onTerminalHostChange={onImmersiveTerminalHostChange}
       presentationLayer={
         <InteractivePresentationLayer
-          audience={experience.screen === 'learner-player' ? 'learner' : 'teacher'}
           resources={interactivePoc.controls.presentationResources}
           layout={interactivePoc.controls.presentationLayout}
-          hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
           explanationHtml={explanationHtml}
           canEditDeck={experience.screen === 'teacher-materials'}
-          onModeChange={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
-            ? interactivePoc.controls.onTeacherPresentationModeChange
-            : interactivePoc.controls.onLearnerPresentationModeChange}
+          onModeChange={onPresentationModeChange}
           onDeckAction={experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
             ? interactivePoc.controls.onTeacherDeckAction
             : interactivePoc.controls.onLearnerDeckAction}
           onDeckChange={interactivePoc.controls.onUpdatePresentationDeck}
-          onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
           onPreviewHostChange={onImmersivePreviewHostChange}
-          cameraMediaUrl={interactivePoc.controls.mediaKind === 'webcam' ? interactivePoc.controls.mediaPreviewUrl : ''}
+          cameraMediaUrl={cameraMediaUrl}
           onCameraMediaElementRef={interactivePoc.controls.onMediaElementRef}
           whiteboardScene={interactivePoc.controls.whiteboardScene}
           whiteboardReadOnly={experience.screen !== 'teacher-materials' && experience.screen !== 'teacher-recording'}
