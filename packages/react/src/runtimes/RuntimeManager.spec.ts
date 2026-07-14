@@ -23,5 +23,10 @@ describe('RuntimeManager', () => {
     expect(await manager.select({ provider: 'webcontainer' })).toBeUndefined();
     expect(await manager.select({ provider: 'pyodide', entrypoint: 'main.py' })).toBe(python);
     expect(python.initialize).toHaveBeenCalledWith({ provider: 'pyodide', entrypoint: 'main.py' });
+
+    expect(await manager.select({ provider: 'pyodide', entrypoint: 'main.py' })).toBe(python);
+    expect(await manager.select({ provider: 'pyodide', entrypoint: 'other.py' })).toBe(python);
+    expect(python.initialize).toHaveBeenNthCalledWith(2, { provider: 'pyodide', entrypoint: 'main.py' });
+    expect(python.initialize).toHaveBeenNthCalledWith(3, { provider: 'pyodide', entrypoint: 'other.py' });
   });
 });

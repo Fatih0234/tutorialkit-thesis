@@ -19,9 +19,14 @@ interface PendingRequest {
 type RequestWithoutEnvelope<T> = T extends unknown ? Omit<T, 'id' | 'generation'> : never;
 type PythonWorkerRequestInput = RequestWithoutEnvelope<PythonWorkerRequest>;
 
+function samePythonConfig(left: PythonRuntimeConfig, right: PythonRuntimeConfig): boolean {
+  return left.entrypoint === right.entrypoint && left.timeoutMs === right.timeoutMs;
+}
+
 export class PyodideEnvironment implements ExecutionEnvironment {
   readonly provider = 'pyodide' as const;
   readonly capabilities: RuntimeCapabilities = {
+    execution: true,
     terminal: false,
     stdin: false,
     packages: false,
@@ -53,9 +58,19 @@ export class PyodideEnvironment implements ExecutionEnvironment {
       throw new Error('PyodideEnvironment requires pyodide config.');
     }
 
+    if (this.worker && this.config && samePythonConfig(this.config, resolved) && !this.disposed) {
+      return;
+    }
+
+    const replacing = Boolean(this.worker);
     this.config = resolved;
     this.disposed = false;
-    await this.startWorker();
+
+    if (replacing) {
+      await this.replaceWorker(true);
+    } else {
+      await this.startWorker();
+    }
   }
 
   async synchronizeFiles(diff: RuntimeFileDiff): Promise<void> {
@@ -118,10 +133,16 @@ export class PyodideEnvironment implements ExecutionEnvironment {
   }
 
   async dispose(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+
     this.disposed = true;
+    this.generation += 1;
     clearTimeout(this.timeout);
     this.worker?.terminate();
     this.worker = undefined;
+    this.activeExecutionId = undefined;
     this.rejectPending(new Error('Python runtime was disposed.'));
     this.listeners.clear();
   }

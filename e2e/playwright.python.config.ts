@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './test',
-  testMatch: 'python.test.ts',
+  testMatch: 'python*.test.ts',
   use: {
     baseURL: 'http://localhost:4329',
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH

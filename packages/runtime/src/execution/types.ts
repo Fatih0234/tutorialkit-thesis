@@ -3,6 +3,7 @@ import type { RuntimeConfig } from '@tutorialkit/types';
 export type RuntimeProvider = RuntimeConfig['provider'];
 
 export interface RuntimeCapabilities {
+  execution: boolean;
   terminal: boolean;
   stdin: boolean;
   packages: boolean;

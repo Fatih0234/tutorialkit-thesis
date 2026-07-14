@@ -14,6 +14,7 @@ export interface WebContainerExecutionDelegate {
 export class WebContainerEnvironment implements ExecutionEnvironment {
   readonly provider = 'webcontainer' as const;
   readonly capabilities: RuntimeCapabilities = {
+    execution: true,
     terminal: true,
     stdin: true,
     packages: true,

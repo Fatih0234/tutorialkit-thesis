@@ -37,7 +37,7 @@ export const runtimeConfigSchema = z.discriminatedUnion('provider', [
   z.strictObject({
     provider: z.literal('pyodide'),
     entrypoint: z.string().min(1),
-    packages: z.array(z.string().min(1)).optional(),
+    packages: z.array(z.string()).length(0, 'Python packages are not supported by the current Pyodide MVP.').optional(),
     timeoutMs: z.number().int().positive().optional(),
   }),
 ]);

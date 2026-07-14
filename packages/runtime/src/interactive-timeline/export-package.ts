@@ -1,11 +1,12 @@
 import { normalizeEditorSelectionPayload } from './editor-selection.js';
+import { isTimelineEventType, normalizeExecutionEventPayload } from './event-validation.js';
 import { getRecordingMediaAssetMetadata, type RecordingMediaAsset, type RecordingMediaAssetMetadata } from './media.js';
 import { normalizeFiles, normalizePath } from './path.js';
 import { normalizeTeacherPointerClickPayload, normalizeTeacherPointerPayload } from './pointer.js';
+import type { PresentationResource } from './presentation.js';
 import type { InteractiveTimelineStorage, LearnerDeltaQuery } from './storage-adapter.js';
 import type { LearnerDelta, TeacherRecording, TimelineEvent } from './types.js';
 import { MAX_WHITEBOARD_TITLE_LENGTH, sanitizeWhiteboardScene } from './whiteboard.js';
-import type { PresentationResource } from './presentation.js';
 
 export interface InteractiveRecordingPackageMediaAsset {
   metadata: RecordingMediaAssetMetadata;
@@ -131,15 +132,16 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     throw new Error('Timeline event tMs must be a number.');
   }
 
-  if (!candidate.type || typeof candidate.type !== 'string') {
-    throw new Error('Timeline event type is required.');
+  if (!isTimelineEventType(candidate.type)) {
+    throw new Error('Timeline event type is invalid.');
   }
 
   if (candidate.origin !== 'teacher' && candidate.origin !== 'playback' && candidate.origin !== 'system') {
     throw new Error('Timeline event origin is invalid.');
   }
 
-  let payload = normalizeTimelinePayload(candidate.payload);
+  let payload = normalizeExecutionEventPayload(candidate.type, normalizeTimelinePayload(candidate.payload));
+
   if (candidate.type === 'editor.selection.changed') {
     payload = normalizeEditorSelectionPayload(candidate.payload);
   } else if (candidate.type === 'whiteboard.scene.changed') {

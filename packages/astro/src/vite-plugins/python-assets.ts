@@ -27,7 +27,15 @@ export const pythonRuntimeAssets: VitePlugin = {
         return next();
       }
 
-      response.setHeader('Content-Type', name.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
+      const contentType = name.endsWith('.wasm')
+        ? 'application/wasm'
+        : name.endsWith('.js')
+          ? 'text/javascript; charset=utf-8'
+          : name.endsWith('.json')
+            ? 'application/json; charset=utf-8'
+            : 'application/zip';
+
+      response.setHeader('Content-Type', contentType);
       response.end(readFileSync(assetPath(name as (typeof ASSETS)[number])));
     });
   },

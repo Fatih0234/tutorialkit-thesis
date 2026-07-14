@@ -95,4 +95,39 @@ describe('execution timeline materialization', () => {
     expect(materializeExecutionState(recording(events), 1).output[0]?.value).toBe('old');
     expect(materializeExecutionState(recording(events), 6).output[0]?.value).toBe('new');
   });
+
+  it('defensively skips malformed and unrelated execution events', () => {
+    const events: TimelineEvent[] = [
+      {
+        id: 'start',
+        seq: 0,
+        tMs: 0,
+        type: 'execution.started',
+        origin: 'teacher',
+        payload: { executionId: 'current', provider: 'pyodide' },
+      },
+      {
+        id: 'malformed',
+        seq: 1,
+        tMs: 1,
+        type: 'execution.stdout',
+        origin: 'teacher',
+        payload: { value: 4 },
+      },
+      {
+        id: 'stale',
+        seq: 2,
+        tMs: 2,
+        type: 'execution.stderr',
+        origin: 'teacher',
+        payload: { executionId: 'old', value: 'ignore' },
+      },
+    ];
+
+    expect(materializeExecutionState(recording(events), 2)).toMatchObject({
+      activeExecutionId: 'current',
+      output: [],
+      status: 'running',
+    });
+  });
 });

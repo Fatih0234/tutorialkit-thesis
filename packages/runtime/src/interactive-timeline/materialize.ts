@@ -1,3 +1,4 @@
+import { normalizeExecutionEventPayload } from './event-validation.js';
 import { normalizeFiles, normalizePath } from './path.js';
 import type {
   ExecutionFailedPayload,
@@ -48,32 +49,58 @@ export function materializeExecutionState(recording: TeacherRecording, untilMs: 
       break;
     }
 
+    let payload: unknown;
+
+    try {
+      payload = normalizeExecutionEventPayload(event.type, event.payload);
+    } catch {
+      continue;
+    }
+
     if (event.type === 'execution.started') {
-      const payload = event.payload as ExecutionStartedPayload;
-      state.activeExecutionId = payload.executionId;
+      const started = payload as ExecutionStartedPayload;
+      state.activeExecutionId = started.executionId;
       state.output = [];
       state.status = 'running';
       delete state.exitCode;
       delete state.traceback;
     } else if (event.type === 'execution.stdout' || event.type === 'execution.stderr') {
-      const payload = event.payload as ExecutionOutputPayload;
+      const output = payload as ExecutionOutputPayload;
+
+      if (output.executionId !== state.activeExecutionId) {
+        continue;
+      }
+
       state.output.push({
-        executionId: payload.executionId,
+        executionId: output.executionId,
         stream: event.type === 'execution.stdout' ? 'stdout' : 'stderr',
-        value: payload.value,
+        value: output.value,
       });
     } else if (event.type === 'execution.finished') {
-      const payload = event.payload as ExecutionFinishedPayload;
-      state.activeExecutionId = payload.executionId;
+      const finished = payload as ExecutionFinishedPayload;
+
+      if (finished.executionId !== state.activeExecutionId) {
+        continue;
+      }
+
       state.status = 'finished';
-      state.exitCode = payload.exitCode;
+      state.exitCode = finished.exitCode;
     } else if (event.type === 'execution.failed') {
-      const payload = event.payload as ExecutionFailedPayload;
-      state.activeExecutionId = payload.executionId;
+      const failed = payload as ExecutionFailedPayload;
+
+      if (failed.executionId !== state.activeExecutionId) {
+        continue;
+      }
+
       state.status = 'failed';
-      state.traceback = payload.traceback;
+      state.traceback = failed.traceback;
     } else if (event.type === 'execution.interrupted') {
-      state.activeExecutionId = (event.payload as ExecutionInterruptedPayload).executionId;
+      const interrupted = payload as ExecutionInterruptedPayload;
+
+      if (interrupted.executionId !== state.activeExecutionId) {
+        continue;
+      }
+
       state.status = 'interrupted';
     }
   }

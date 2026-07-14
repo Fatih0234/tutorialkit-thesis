@@ -1,9 +1,32 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import type { ExecutionEnvironment, RuntimeProvider } from '@tutorialkit/runtime';
+import type { ExecutionEnvironment, RuntimeCapabilities, RuntimeProvider } from '@tutorialkit/runtime';
 import type { RuntimeConfig } from '@tutorialkit/types';
 import { PyodideEnvironment } from './python/PyodideEnvironment.js';
 
 export type RuntimeEnvironmentFactory = () => ExecutionEnvironment;
+
+const PYODIDE_CAPABILITIES: RuntimeCapabilities = {
+  execution: true,
+  terminal: false,
+  stdin: false,
+  packages: false,
+  webPreview: false,
+  testing: false,
+  interrupt: true,
+};
+const LEGACY_WEBCONTAINER_CAPABILITIES: RuntimeCapabilities = {
+  execution: false,
+  terminal: true,
+  stdin: true,
+  packages: true,
+  webPreview: true,
+  testing: true,
+  interrupt: false,
+};
+
+export function getRuntimeCapabilities(config: RuntimeConfig): RuntimeCapabilities {
+  return config.provider === 'pyodide' ? PYODIDE_CAPABILITIES : LEGACY_WEBCONTAINER_CAPABILITIES;
+}
 
 export class RuntimeManager {
   private active: ExecutionEnvironment | undefined;

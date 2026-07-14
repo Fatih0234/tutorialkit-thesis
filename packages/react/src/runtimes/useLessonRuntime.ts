@@ -1,21 +1,27 @@
 import type { RuntimeEvent, TutorialStore } from '@tutorialkit/runtime';
 import { resolveRuntimeConfig } from '@tutorialkit/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RuntimeManager } from './RuntimeManager.js';
+import { RuntimeManager, getRuntimeCapabilities } from './RuntimeManager.js';
+import { LiveRuntimeSession } from './live-runtime-session.js';
 
 export type RuntimeStatus = 'unavailable' | 'initializing' | 'ready' | 'running' | 'stopping' | 'resetting' | 'failed';
 
 export function useLessonRuntime(
   tutorialStore: TutorialStore,
   onEvent: (event: RuntimeEvent, provider: 'webcontainer' | 'pyodide') => void,
+  playbackMode: 'teacher-playback' | 'learner-editing' | 'idle',
 ) {
   const config = resolveRuntimeConfig(tutorialStore.lesson?.data.runtime);
   const managerRef = useRef<RuntimeManager>();
   const environmentRef = useRef<Awaited<ReturnType<RuntimeManager['select']>>>();
   const onEventRef = useRef(onEvent);
+  const sessionRef = useRef(new LiveRuntimeSession());
+  const playbackModeRef = useRef(playbackMode);
+  const invalidatedRef = useRef(false);
   const [status, setStatus] = useState<RuntimeStatus>(config.provider === 'pyodide' ? 'initializing' : 'unavailable');
   const [error, setError] = useState('');
   onEventRef.current = onEvent;
+  playbackModeRef.current = playbackMode;
 
   useEffect(() => {
     const manager = new RuntimeManager();
@@ -41,7 +47,14 @@ export function useLessonRuntime(
 
             if (event.type === 'ready') {
               setStatus('ready');
-            } else if (event.type === 'execution.started') {
+              return;
+            }
+
+            if (!sessionRef.current.accepts(event)) {
+              return;
+            }
+
+            if (event.type === 'execution.started') {
               tutorialStore.clearOutput();
               setStatus('running');
             } else if (event.type === 'execution.stdout') {
@@ -89,11 +102,18 @@ export function useLessonRuntime(
       return;
     }
 
+    if (playbackModeRef.current === 'teacher-playback') {
+      return;
+    }
+
+    invalidatedRef.current = false;
+    sessionRef.current.begin();
     setError('');
 
     try {
       // editor batches updates; running is an explicit synchronization boundary
       await new Promise<void>((resolve) => setTimeout(resolve, 175));
+      window.dispatchEvent(new CustomEvent('tutorialkit:python-execution'));
       await environment.run({ entrypoint: config.entrypoint, files: tutorialStore.takeSnapshot().files });
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
@@ -116,6 +136,30 @@ export function useLessonRuntime(
       setStatus('failed');
     }
   }, []);
+
+  const invalidate = useCallback(async () => {
+    if (invalidatedRef.current) {
+      return;
+    }
+
+    invalidatedRef.current = true;
+    sessionRef.current.invalidate();
+
+    const environment = environmentRef.current;
+
+    if (!environment) {
+      return;
+    }
+
+    try {
+      await environment.reset();
+      setStatus('ready');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+      setStatus('failed');
+    }
+  }, []);
+
   const reset = useCallback(async () => {
     const environment = environmentRef.current;
 
@@ -134,14 +178,25 @@ export function useLessonRuntime(
     }
   }, []);
 
+  useEffect(() => {
+    if (playbackMode === 'teacher-playback') {
+      void invalidate();
+    }
+  }, [invalidate, playbackMode]);
+
   return {
     provider: config.provider,
-    capabilities: environmentRef.current?.capabilities,
+    capabilities: environmentRef.current?.capabilities ?? getRuntimeCapabilities(config),
     status,
     error,
     run,
     stop,
     reset,
-    clear: () => tutorialStore.clearOutput(),
+    invalidate,
+    clear: () => {
+      if (playbackModeRef.current !== 'teacher-playback') {
+        tutorialStore.clearOutput();
+      }
+    },
   };
 }

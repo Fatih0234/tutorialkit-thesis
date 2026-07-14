@@ -14,6 +14,7 @@ import { EditorStore, type EditorDocument, type EditorDocuments, type ScrollPosi
 import { PreviewsStore } from './previews.js';
 import { TerminalStore } from './terminal.js';
 import { TutorialRunner } from './tutorial-runner.js';
+import { createWorkspaceSnapshot } from './workspace-snapshot.js';
 
 interface StoreOptions {
   webcontainer: Promise<WebContainer>;
@@ -47,6 +48,7 @@ export class TutorialStore {
   private _lessonFiles: Files | undefined;
   private _lessonSolution: Files | undefined;
   private _lessonTemplate: Files | undefined;
+  private _workspaceRemovedPaths = new Set<string>();
 
   /**
    * Whether or not the current lesson is fully loaded in WebContainer
@@ -145,10 +147,13 @@ export class TutorialStore {
 
     this._ref.set(1 + (this._ref.value || 0));
     this._lesson = lesson;
+    this._workspaceRemovedPaths.clear();
     this.lessonFullyLoaded.set(false);
 
     this._previewsStore.setPreviews(lesson.data.previews ?? true);
-    this._terminalStore.setTerminalConfiguration(lesson.data.terminal);
+    this._terminalStore.setTerminalConfiguration(
+      lesson.data.runtime?.provider === 'pyodide' ? { open: true, panels: 'output' } : lesson.data.terminal,
+    );
     this._editorStore.setEditorConfig(lesson.data.editor);
 
     if (this._usesWebContainer()) {
@@ -328,6 +333,7 @@ export class TutorialStore {
       return;
     }
 
+    this._workspaceRemovedPaths.clear();
     this._editorStore.setDocuments(this._lessonFiles);
 
     if (this._usesWebContainer()) {
@@ -345,6 +351,7 @@ export class TutorialStore {
 
     const files = { ...this._lessonFiles, ...this._lessonSolution };
 
+    this._workspaceRemovedPaths.clear();
     this._editorStore.setDocuments(files);
 
     if (this._usesWebContainer()) {
@@ -371,6 +378,7 @@ export class TutorialStore {
       throw new Error('FILE_EXISTS' satisfies FilesystemError);
     }
 
+    this._workspaceRemovedPaths.delete(normalizePath(filePath));
     this._editorStore.addFileOrFolder({ path: filePath, type: 'file' });
 
     if (this._usesWebContainer()) {
@@ -398,6 +406,8 @@ export class TutorialStore {
 
   /** Restore or create a file from a trusted programmatic snapshot such as timeline playback. */
   restoreFile(filePath: string, content: string) {
+    this._workspaceRemovedPaths.delete(normalizePath(filePath));
+
     if (!this._editorStore.files.get().some((file) => file.path === filePath)) {
       this._editorStore.addFileOrFolder({ path: filePath, type: 'file' });
     }
@@ -417,6 +427,7 @@ export class TutorialStore {
       this.setSelectedFile(undefined);
     }
 
+    this._workspaceRemovedPaths.add(normalizedFilePath);
     this._editorStore.deleteFile(normalizedFilePath);
 
     if (this._usesWebContainer()) {
@@ -488,9 +499,20 @@ export class TutorialStore {
     }
   }
 
-  /** Take snapshot of the current state of the lesson. Editor files are canonical. */
+  /** Take an isolated snapshot. Python uses template < lesson < editor precedence. */
   takeSnapshot() {
-    const files = this._usesWebContainer() ? this._runner.takeSnapshot().files : {};
+    if (!this._usesWebContainer()) {
+      return {
+        files: createWorkspaceSnapshot(
+          this._lessonTemplate,
+          this._lessonFiles,
+          this._editorStore.documents.get(),
+          this._workspaceRemovedPaths,
+        ),
+      };
+    }
+
+    const files = this._runner.takeSnapshot().files;
 
     for (const [filePath, document] of Object.entries(this._editorStore.documents.get())) {
       if (document?.type === 'file' && !document.loading && typeof document.value === 'string') {

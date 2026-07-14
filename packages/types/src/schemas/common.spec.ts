@@ -116,9 +116,14 @@ describe('runtimeConfigSchema', () => {
   });
 
   it('validates Pyodide entrypoints and optional settings', () => {
-    expect(
-      runtimeConfigSchema.parse({ provider: 'pyodide', entrypoint: 'main.py', packages: [], timeoutMs: 3000 }),
-    ).toEqual({ provider: 'pyodide', entrypoint: 'main.py', packages: [], timeoutMs: 3000 });
+    expect(runtimeConfigSchema.parse({ provider: 'pyodide', entrypoint: 'main.py', timeoutMs: 3000 })).toEqual({
+      provider: 'pyodide',
+      entrypoint: 'main.py',
+      timeoutMs: 3000,
+    });
+    expect(() =>
+      runtimeConfigSchema.parse({ provider: 'pyodide', entrypoint: 'main.py', packages: ['numpy'] }),
+    ).toThrow('Python packages are not supported by the current Pyodide MVP.');
     expect(() => runtimeConfigSchema.parse({ provider: 'pyodide' })).toThrow();
     expect(() => runtimeConfigSchema.parse({ provider: 'unknown' })).toThrow();
   });

@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './path.js';
 export * from './recorder.js';
 export * from './materialize.js';
+export * from './event-validation.js';
 export * from './editor-selection.js';
 export * from './learner-delta.js';
 export * from './playback-clock.js';

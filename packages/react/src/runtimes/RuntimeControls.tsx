@@ -45,7 +45,12 @@ export function RuntimeControls({ capabilities, status, error, disabled, onRun, 
       >
         Reset runtime
       </button>
-      <button type="button" className="rounded border px-3 py-1 text-sm" onClick={onClear}>
+      <button
+        type="button"
+        className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+        disabled={disabled}
+        onClick={onClear}
+      >
         Clear console
       </button>
       <span className="text-xs" role="status">

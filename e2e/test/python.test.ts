@@ -20,7 +20,7 @@ test('runs and recovers an introductory multi-file Python lesson', async ({ page
   await expect(page.getByLabel('Python execution controls')).toBeVisible();
   await expect(page.getByRole('status')).toContainText('ready', { timeout: 30_000 });
   await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect(page.locator('.xterm-rows')).toContainText('Hello, Ada!', { timeout: 20_000 });
+  await expect(page.locator('.xterm-rows')).toContainText('Hello, Ada! from template', { timeout: 20_000 });
 
   const editor = page.getByRole('textbox', { name: 'Editor' });
   await editor.click();

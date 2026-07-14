@@ -1,341 +1,280 @@
 # Python/Pyodide runtime implementation handoff
 
-This document is intended to be copied into another ChatGPT session or used as the starting point for a pull-request review.
+This is the review handoff for PR #18 after the integration-boundary follow-up.
 
-## Git and review coordinates
+## Git coordinates
 
 - Repository: `https://github.com/Fatih0234/tutorialkit-thesis`
 - Branch: `feature/python-pyodide-runtime`
-- Base branch: `feature/learner-ai-helper`
-- Pull request: `https://github.com/Fatih0234/tutorialkit-thesis/pull/18`
-- Main implementation commit: `8e6ad5c feat(runtime): add Pyodide Python execution`
+- Base: `feature/learner-ai-helper`
+- PR: `https://github.com/Fatih0234/tutorialkit-thesis/pull/18`
+- Original implementation: `8e6ad5c`
+- Original handoff: `9edd3be`
 
-The branch intentionally starts from `feature/learner-ai-helper`, not `main`, because the Python integration builds on the interactive recording, playback, learner experiment, and workspace code already present there. Reviewing the PR against `feature/learner-ai-helper` isolates the Python work from those earlier interactive changes.
+The PR is based on `feature/learner-ai-helper` because it depends on that branch's recording, playback, learner checkpoint, identity, and workspace work. Review against that branch to isolate the Python changes.
 
-## Objective delivered
+## Accurate architecture
 
-TutorialKit now has two lesson execution providers:
+The integration is intentionally incremental, not a fully symmetric runtime framework.
 
-1. `webcontainer`: the existing JavaScript/TypeScript path.
-2. `pyodide`: an introductory Python path running in a dedicated browser module Worker.
-
-Both providers use the same TutorialKit lesson model, editor, file tree, workspace, recording timeline, deterministic playback, learner experiment model, publication model, and output panel. Existing WebContainer APIs remain available and `TutorialRunner` was not rewritten into a mixed-language object.
-
-## Architectural shape
+- `TutorialRunner` remains the legacy JavaScript/WebContainer execution owner.
+- `RuntimeManager` currently owns the new Pyodide environment path.
+- `WebContainerEnvironment` is a compatibility seam, not the owner of all existing JavaScript execution.
+- `TutorialStore` and its editor remain the canonical workspace source.
+- `useInteractivePoc.ts` receives language-neutral runtime events; it does not own workers or Pyodide proxies.
+- The application still creates the global WebContainer promise through the existing application architecture. Python lessons do not call `prepareFiles`, run commands, mount Python files into WebContainer, expose an interactive terminal, or show a web preview.
 
 ```text
-TutorialKit workspace
-├── editor and file tree
-├── canonical TutorialStore files
-├── lesson metadata
-├── teacher recording
-├── deterministic playback
-├── learner experiments
-└── execution provider
-    ├── existing TutorialRunner/WebContainer path
-    └── RuntimeManager → PyodideEnvironment → module Worker
+lesson/editor
+  → TutorialStore canonical snapshot
+  → useLessonRuntime
+  → RuntimeManager
+  → PyodideEnvironment
+  → module Worker
+  → structured RuntimeEvent
+  → live output and teacher recorder
 ```
 
-### Shared execution contract
-
-`packages/runtime/src/execution/types.ts` defines:
-
-- `RuntimeCapabilities`
-- `RuntimeFileDiff`
-- `RunRequest`
-- `RuntimeEvent`
-- `ExecutionEnvironment`
-
-The public contract exposes no Pyodide proxies or WebContainer process objects. `packages/runtime/src/execution/webcontainer-environment.ts` is a compatibility adapter seam around existing WebContainer-style delegates. Existing consumers continue using `TutorialRunner`; migration can remain incremental.
-
-### Provider selection
-
-`packages/react/src/runtimes/RuntimeManager.ts` owns provider selection and disposal. The current React integration asks it for a Pyodide environment only for Python lessons. WebContainer lessons remain on the established TutorialStore/TutorialRunner path, avoiding a broad migration.
-
-`TutorialStore` checks the lesson runtime before performing WebContainer-specific file/process operations. Python lessons still load files into the editor but do not mount or run them in WebContainer. The editor store is canonical, and `takeSnapshot()` overlays loaded editor documents onto the snapshot used for execution and learner work.
-
-### React responsibilities
-
-- `useLessonRuntime.ts`: lifecycle, explicit Run synchronization boundary, environment subscription, status, output routing, interrupt/reset/disposal.
-- `RuntimeControls.tsx`: Run, Stop, Reset runtime, Clear console, and status UI.
-- `WorkspacePanel.tsx`: mounts controls for the selected runtime.
-- `useInteractivePoc.ts`: receives language-neutral runtime events only. It contains no Pyodide object or worker logic.
-
-## Runtime metadata
-
-Schema source: `packages/types/src/schemas/common.ts`.
-
-```ts
-type RuntimeConfig =
-  | {
-      provider: 'webcontainer';
-      entrypoint?: string;
-    }
-  | {
-      provider: 'pyodide';
-      entrypoint: string;
-      packages?: string[];
-      timeoutMs?: number;
-    };
-```
-
-Example lesson frontmatter:
+## Runtime metadata and package decision
 
 ```yaml
 runtime:
   provider: pyodide
   entrypoint: main.py
-  packages: []
   timeoutMs: 3000
 ```
 
-Behavior:
+Omitted runtime metadata defaults to WebContainer. Runtime metadata inherits through tutorial, part, chapter, and lesson content.
 
-- omitted runtime resolves to `{ provider: 'webcontainer' }`;
-- runtime metadata inherits from tutorial → part → chapter → lesson;
-- Pyodide requires a non-empty entrypoint;
-- package names are optional and use Pyodide's pinned package lock; no `pip install` or learner package command is exposed;
-- `timeoutMs` can trigger interruption for long-running code.
-
-The content inheritance implementation is in `packages/astro/src/default/utils/content.ts`, with schema and inheritance tests plus updated snapshots.
-
-## Python editor support
-
-`@codemirror/lang-python` was added to `@tutorialkit/react`.
-
-The existing lazy language registry recognizes:
-
-- `.py`
-- `.pyw`
-
-All previous lazy languages remain unchanged. Coverage is in `packages/react/src/core/CodeMirrorEditor/languages.spec.ts`.
-
-## Pyodide Worker implementation
-
-Files:
+Python packages are **disabled for this MVP**. The schema permits an omitted `packages` property or an empty array only for compatibility. A non-empty array fails with:
 
 ```text
-packages/react/src/runtimes/python/
-├── PyodideEnvironment.ts
-├── pyodide.worker.ts
-├── protocol.ts
-├── filesystem.ts
-└── focused tests
+Python packages are not supported by the current Pyodide MVP.
 ```
 
-### Worker behavior
+The worker does not call `loadPackage`, the fixture does not advertise packages, and `capabilities.packages` is `false`. There is no arbitrary pip, URL, path, PyPI, or unverified package support.
 
-The worker:
+## Canonical Python workspace
 
-- lazy-loads Pyodide only for Python lessons;
-- initializes once per active worker;
-- creates `/workspace` and sets it as cwd;
-- inserts `/workspace` into `sys.path`;
-- synchronizes added/modified/removed UTF-8 text files;
-- creates nested directories as needed;
-- runs the configured entrypoint with `runpy.run_path(..., run_name='__main__')`;
-- removes cached modules loaded from `/workspace` before subsequent runs;
-- captures stdout and stderr;
-- returns structured failures and tracebacks;
-- reports execution IDs and durations;
-- configures a SharedArrayBuffer interrupt buffer when available;
-- is terminated and recreated if cooperative interruption does not finish promptly;
-- rehydrates the last synchronized workspace after reset/replacement;
-- ignores messages from stale runtime generations;
-- never sends Python proxy objects to React;
-- destroys the `runPythonAsync` result proxy when one is returned.
-
-### Worker request protocol
-
-Every request has `id` and `generation`:
-
-```ts
-type PythonWorkerRequest =
-  | { type: 'initialize'; config; interruptBuffer? }
-  | { type: 'sync-files'; addedOrModified; removed }
-  | { type: 'run'; entrypoint }
-  | { type: 'interrupt' }
-  | { type: 'reset' };
-```
-
-Responses correlate by request ID. Events include:
+`TutorialStore.takeSnapshot()` now builds non-WebContainer workspaces with this precedence:
 
 ```text
-ready
-started
-stdout
-stderr
-finished
-failed
-interrupted
+template files
+  overridden by lesson _files
+  overridden by current editor documents
+  minus explicitly deleted paths
 ```
 
-`PyodideEnvironment` converts those worker events into the shared language-neutral `RuntimeEvent` union.
+Details:
 
-## File synchronization
+- template files come from the existing `LessonFilesFetcher` and `src/templates/<template>` pipeline;
+- only string/UTF-8 text values enter the Python snapshot;
+- binary editor documents are excluded;
+- empty text files are preserved;
+- nested paths are preserved;
+- internal paths are normalized before merge;
+- the returned snapshot is a fresh object and exposes no mutable store references;
+- deleted paths are tracked explicitly so a template or lesson file cannot reappear from a lower-precedence layer or stale worker state;
+- adding/restoring a file clears its deletion marker;
+- lesson changes, reset, and solve clear deletion markers;
+- snapshot construction happens at explicit snapshot/Run boundaries, not every render or playback tick.
 
-`packages/react/src/runtimes/python/filesystem.ts` normalizes paths to leading-slash form, computes added/modified/removed file-level diffs, confines paths to `/workspace`, preserves empty files, and rejects traversal/null-byte paths.
+The Python E2E fixture selects `template: python-intro`; `main.py` imports `template_helper.py`, which exists only in that template. Unit coverage verifies template-only, lesson override, editor override, nested, empty, binary exclusion, and deletion behavior.
 
-Synchronization is not performed on every keystroke. Run waits for the existing CodeMirror batching interval, takes a current TutorialStore snapshot, diffs it against the last worker snapshot, sends only the diff, then executes the entrypoint.
+## Shared execution contract
 
-The public run request accepts text records only, so binary files cannot be silently corrupted through this MVP contract.
+`packages/runtime/src/execution/` defines:
 
-## Interruption and reset
+- `ExecutionEnvironment`;
+- `RuntimeCapabilities`;
+- `RuntimeFileDiff`;
+- `RunRequest`;
+- `RuntimeEvent`;
+- the incremental WebContainer compatibility adapter.
 
-`PyodideEnvironment` uses `SharedArrayBuffer` plus `Atomics.store(..., 2)` for Pyodide's KeyboardInterrupt mechanism. If the execution is still active after a short grace period, it:
+Capabilities now include an explicit `execution` flag in addition to terminal, stdin, package, preview, testing, and interrupt support.
 
-1. emits `execution.interrupted`;
-2. terminates the blocked worker;
-3. creates and initializes a new worker;
-4. rehydrates synchronized files;
-5. allows the next run to proceed.
+## Worker and filesystem behavior
 
-The editor workspace is never owned by the worker, so worker termination cannot destroy learner edits.
+Pyodide `0.27.7` runs in a module Worker. The Worker:
 
-The Astro integration retains COOP/COEP headers and configures Vite workers as ES modules.
+- lazily initializes Pyodide;
+- creates and enters `/workspace`;
+- adds `/workspace` to `sys.path`;
+- receives added/modified/removed text-file diffs;
+- creates nested directories;
+- executes the configured file with `runpy.run_path(..., run_name='__main__')`;
+- removes modules loaded from `/workspace` from `sys.modules` before each run;
+- emits correlated started/stdout/stderr/finished/failed/interrupted events;
+- destroys a returned Pyodide proxy;
+- captures Python tracebacks;
+- supports SharedArrayBuffer interruption with worker replacement fallback;
+- never sends Pyodide proxy objects into React.
 
-## Local Pyodide assets
+Paths are confined to `/workspace`; traversal and null-byte paths are rejected. Empty files are synchronized. The run request is text-only.
 
-Pyodide is pinned to `0.27.7` in `packages/react/package.json` and `pnpm-lock.yaml`.
+## Idempotent runtime lifecycle
 
-React's build copies these assets:
+`PyodideEnvironment.initialize()` is now idempotent:
 
-- `pyodide-lock.json`
-- `pyodide.asm.js`
-- `pyodide.asm.wasm`
-- `python_stdlib.zip`
+- same entrypoint/timeout plus an active worker: return without creating a worker or emitting another ready event;
+- changed entrypoint/timeout: terminate the old worker, increment generation, reject its pending requests, create exactly one replacement, and rehydrate synchronized files;
+- reset: perform the same generation-safe replacement and rehydration;
+- disposal: increment generation, terminate the worker, reject pending requests, clear listeners, and remain safe when called repeatedly;
+- stale events from old generations are ignored;
+- replacement applies the new configuration.
 
-`packages/astro/src/vite-plugins/python-assets.ts` serves them in development and emits them in static builds under:
+Tests cover identical selection, changed configuration, reset, double disposal, pending-request rejection, stale events, and one live worker after replacement.
+
+## Learner output isolation
+
+Live runtime output and materialized teacher playback are separate truths.
+
+`LiveRuntimeSession` gates live events by an explicit session and active execution ID. Returning from learner experiment mode performs this sequence:
+
+1. invalidate the live session synchronously;
+2. reset/replace the environment, which invalidates its worker generation;
+3. reject/ignore late output, error, failure, and interruption events;
+4. only then invoke the existing teacher-resume flow;
+5. restore teacher files and materialized teacher console state.
+
+The same invalidation is also triggered defensively whenever mode changes to teacher playback. Learner runtime events are accepted only for the current execution ID and are never appended while the teacher recorder is inactive or learner mode is active.
+
+Clear Console is disabled in teacher playback and the callback also ignores attempts in that mode. Run, reset, and stop controls are disabled during playback. Teacher playback never invokes `environment.run()`.
+
+Tests cover delayed stdout, stderr, failure, and interruption after invalidation; unrelated execution IDs; active infinite-loop invalidation during learner resume; teacher console restoration; learner checkpoint save/reopen; and persisted teacher event immutability.
+
+## Execution timeline validation
+
+`packages/runtime/src/interactive-timeline/event-validation.ts` is the shared pure-TypeScript validation source. It is browser-safe and imported by both runtime package import/export code and Astro persistence.
+
+Known timeline event types are allow-listed. Unknown event types are rejected by current format-version-1 publication/import boundaries.
+
+Execution payload contract:
+
+### `execution.started`
+
+- safe non-empty `executionId`, max 121 characters by the shared safe-ID pattern;
+- provider exactly `webcontainer` or `pyodide`;
+- optional string `entrypoint`;
+- optional string `command`.
+
+### `execution.stdout` / `execution.stderr`
+
+- safe execution ID;
+- string value;
+- maximum chunk length: 1 MiB.
+
+### `execution.finished`
+
+- safe execution ID;
+- finite integer exit code;
+- finite non-negative duration.
+
+### `execution.failed`
+
+- safe execution ID;
+- string traceback, maximum 2 MiB;
+- finite non-negative duration.
+
+### `execution.interrupted`
+
+- safe execution ID.
+
+Policy:
+
+- recording package import/export and Astro publication/persistence reject malformed events;
+- the materializer defensively catches and skips malformed execution events;
+- output and terminal events for an execution ID other than the active materialized execution are skipped;
+- playback therefore does not crash because of one malformed in-memory event.
+
+Tests cover missing IDs, invalid providers, non-string output, oversized output, negative/non-finite durations, fractional exit codes, malformed tracebacks, unknown event types, valid package round trips, persistence rejection, and defensive materialization.
+
+## Capability-driven workspace UI
+
+Workspace presentation uses resolved capabilities rather than Python metadata conventions:
+
+- runtime Run controls require `capabilities.execution`;
+- Stop requires `capabilities.interrupt`;
+- preview requires lesson preview configuration **and** `capabilities.webPreview`;
+- Python reserves no preview surface;
+- Python configures a read-only output panel automatically, even when lesson authors omit terminal metadata;
+- Python does not expose an interactive terminal because `terminal` and `stdin` are false;
+- Clear Console, Run, Stop, and Reset are disabled during teacher playback;
+- existing JavaScript preview/terminal ownership remains unchanged.
+
+This does not claim complete provider interchangeability. Legacy WebContainer execution remains internally different.
+
+## Local assets
+
+The React build copies pinned Pyodide boot assets and the Astro plugin serves/emits them under:
 
 ```text
 /_tutorialkit/pyodide/
 ```
 
-This avoids an external API key or runtime CDN dependency and makes CI/runtime versions deterministic. The integration also sets the base-aware `__PYODIDE_BASE_URL__` build constant. A relative packaged fallback remains for non-Astro consumers.
+Emitted assets:
 
-## Timeline and deterministic playback
+- `pyodide-lock.json`;
+- `pyodide.asm.js`;
+- `pyodide.asm.wasm`;
+- `python_stdlib.zip`.
 
-Added event types:
+Development responses use explicit JavaScript, JSON, WASM, and ZIP MIME types. Static output uses Vite's emitted assets. The base-aware `__PYODIDE_BASE_URL__` remains the Astro path mechanism; the relative packaged fallback remains for non-Astro consumers. No runtime CDN is used.
 
-```text
-execution.started
-execution.stdout
-execution.stderr
-execution.finished
-execution.failed
-execution.interrupted
-```
+## Browser E2E coverage
 
-Payloads are language-neutral and carry execution IDs. Started events additionally identify `webcontainer` or `pyodide` and may carry an entrypoint/command.
+`e2e/test/python.test.ts` verifies real Pyodide initialization, template-only imports, multi-file imports, editing/rerunning, stdout, traceback, infinite-loop interruption, reset, and recovery.
 
-`materializeExecutionState()`:
+`e2e/test/python-recording.test.ts` adds the full boundary flow:
 
-- sorts by `tMs`, then `seq`;
-- rebuilds stdout/stderr deterministically;
-- tracks running/finished/failed/interrupted state;
-- tracks exit code and traceback;
-- clears prior console output when a later execution starts;
-- supports arbitrary seek timestamps.
+### Teacher authoring and playback
 
-Teacher recording behavior:
+- signs in as teacher;
+- starts a real timeline recording;
+- runs Python twice with an editor change;
+- verifies captured stdout and structured execution events;
+- saves a draft;
+- plays and seeks the recording;
+- verifies materialized output before/after execution;
+- uses `tutorialkit:python-execution` instrumentation to prove playback/seek does not call live execution.
 
-- live Python runtime events are appended only while a teacher recorder is active in idle/authoring mode;
-- playback-generated changes remain guarded;
-- teacher playback writes materialized captured output and never executes Python;
-- seeking restores the materialized console state;
-- stdout/stderr chunk order is preserved.
+### Learner experiment
 
-Learner behavior:
+- publishes a deterministic Python recording through the local API;
+- signs in as learner and opens it;
+- materializes teacher output;
+- pauses and edits Python;
+- starts an infinite learner run;
+- returns to lecture through save-and-resume;
+- verifies worker invalidation, teacher files, and teacher console restoration;
+- verifies no late learner traceback/output appears;
+- reopens the saved learner checkpoint;
+- compares persisted teacher events with the original immutable event list.
 
-- learner runs work while in learner editing/experiment mode;
-- `onRuntimeEvent` does not append learner runs to the teacher recording;
-- returning to teacher playback reconstructs teacher files and teacher console state;
-- learner file deltas remain separate and keep the existing recording/version/timestamp/base-hash anchoring.
+The scenario also proves malformed execution output is rejected by the Astro persistence endpoint.
 
-## Python fixture
+## Validation results
 
-Location:
-
-```text
-e2e/src/content/tutorial/tests/python/python-intro/
-├── content.md
-├── _files/
-│   ├── main.py
-│   └── helpers.py
-└── _solution/
-    ├── main.py
-    └── helpers.py
-```
-
-The fixture:
-
-- focuses `main.py`;
-- uses Pyodide;
-- imports `greet` from `helpers.py`;
-- prints `Hello, Ada!`;
-- contains a commented intentional `ValueError` for manual traceback testing;
-- has no third-party package dependency.
-
-Route in the E2E application:
+Focused tests after this follow-up:
 
 ```text
-/tests/python/python-intro
+@tutorialkit/types:   95 passed
+@tutorialkit/runtime: 108 passed
+@tutorialkit/react:   21 passed
+@tutorialkit/astro:   55 passed
 ```
 
-## Tests added or updated
-
-### Types/Astro
-
-- runtime discriminated-union validation;
-- omitted-runtime WebContainer default;
-- Python required entrypoint;
-- inherited runtime metadata;
-- updated content snapshots.
-
-### Runtime
-
-- deterministic execution event ordering by timestamp and sequence;
-- stdout/stderr materialization;
-- seeking before and after multiple executions;
-- previous output clearing on a new execution.
-
-### React/runtime
-
-- RuntimeManager provider selection;
-- Python added/modified/removed/empty/nested file diffing;
-- workspace path confinement;
-- worker request correlation;
-- reset and file rehydration;
-- stale-generation event rejection;
-- `.py` and `.pyw` CodeMirror language loading.
-
-### Browser E2E
-
-`e2e/test/python.test.ts` runs real packaged Pyodide and verifies:
-
-1. Python environment initialization;
-2. Python file recognition and controls;
-3. `main.py` importing `helpers.py`;
-4. expected stdout;
-5. editing and rerunning with changed stdout;
-6. exception traceback display;
-7. infinite-loop Stop behavior;
-8. reset recovery.
-
-Timeline materializer tests cover deterministic recorded output and seeking. Existing interactive tests continue to cover the shared teacher/learner recording machinery. A future improvement should combine all teacher recording, publication, playback, and learner experiment assertions into one dedicated Python browser E2E scenario.
-
-## Validation performed
-
-Passed:
+Python browser suite:
 
 ```text
-@tutorialkit/types   95 tests
-@tutorialkit/runtime 93 tests
-@tutorialkit/react   17 tests
-@tutorialkit/astro   55 tests
+3 tests total
+- focused execution/template/interrupt/reset
+- teacher recording/playback/seek/no-rerun
+- learner invalidation/checkpoint/immutability
 ```
 
-Commands used:
+Commands:
 
 ```bash
 corepack pnpm --filter @tutorialkit/types run test --run
@@ -347,73 +286,62 @@ corepack pnpm --filter @tutorialkit/types build
 corepack pnpm --filter @tutorialkit/runtime build
 corepack pnpm --filter @tutorialkit/react build
 corepack pnpm --filter @tutorialkit/astro build
-
 corepack pnpm --filter tutorialkit-e2e exec astro build
+
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome \
   corepack pnpm --filter tutorialkit-e2e exec playwright test \
   --config playwright.python.config.ts
 ```
 
-Python Playwright result:
+Focused lint passes for standalone files introduced by this follow-up. `git diff --check` passes.
 
-```text
-1 passed
-```
+## CI and inherited blockers
 
-Additional checks:
+At head `9edd3be`, GitHub Actions was not green:
 
-- focused lint passes for all newly introduced execution/runtime/worker/asset/test files;
-- `packages/runtime/src/store/index.ts` passes focused lint;
-- `git diff --check` passes;
-- static E2E build emits the module worker and all local Pyodide assets.
+- Node/macOS/Windows test jobs failed in repository-wide lint;
+- the logged Linux job reported 1,258 lint errors across interactive files already present on the base branch;
+- PR title validation failed because the title did not match repository policy;
+- the broad E2E job timed out;
+- CLI integration, Docs, VSCode Extension, and GitGuardian checks passed.
 
-### Repository-wide validation blockers
+The current branch does not disable lint. The follow-up ran `corepack pnpm lint`: it still fails with 1,250 errors (1,159 auto-fixable), compared with 1,258 in the prior PR CI log. The remaining output is concentrated in inherited interactive files; standalone files introduced here pass focused lint. This comparison establishes no net new lint count, but it is not a substitute for eventually cleaning the base branch.
 
-These were not hidden or disabled:
+The follow-up also ran the root test command through a temporary `pnpm`/Corepack shim. It stops in `@tutorialkit/cli`: 13 CLI tests fail because `packages/cli/dist/index.js` is absent and generated-project installation fails in this environment. Theme (1) and Types (95) passed before recursive execution stopped. No test or lint rule was disabled.
 
-1. The root `pnpm test` reaches unrelated CLI tests that fail because `packages/cli/dist/index.js` is absent. The four affected feature packages pass independently.
-2. Repository-wide lint reports extensive pre-existing style/format failures in existing interactive files such as `useInteractivePoc.ts`, presentation/whiteboard code, and existing runtime timeline files. Newly introduced standalone files pass focused lint; no lint rule was weakened.
-3. The environment had no direct `pnpm` binary on PATH, so validation used the repository-pinned version through `corepack pnpm`.
+A local attempt to run selected tests through the repository's four-server Playwright config timed out while waiting for its auxiliary web servers. The dedicated single-server Python suite succeeds and covers the corresponding Python boundaries. This remains a harness blocker, not a hidden passing claim.
 
-## Important invariants preserved
+## Preserved invariants
 
-- Teacher recordings are not mutated by learner execution.
-- Learner file deltas remain separate and user-scoped.
-- Timeline order remains `tMs`, then `seq`.
-- Playback changes are guarded from recording.
-- Structured events remain authoritative.
-- Media remains an attachment.
-- Python is not rerun during teacher playback.
-- Existing WebContainer lessons remain on their prior path.
-- Pyodide logic is not spread throughout `useInteractivePoc.ts`.
-- `TutorialRunner` was not converted into a WebContainer/Pyodide god object.
+- Published teacher recordings remain immutable.
+- Learner files/checkpoints remain separate and user-owned.
+- Learner runtime output cannot mutate materialized teacher playback.
+- Teacher playback never reruns Python.
+- Timeline ordering remains `tMs`, then `seq`.
+- Playback-applied state remains guarded from recording.
+- The editor workspace remains canonical.
+- Existing WebContainer execution ownership remains intact.
+- `TutorialRunner` is not a mixed-runtime object.
+- Worker logic remains outside `useInteractivePoc.ts`.
 
-## Known limitations and review notes
+## Intentional Python MVP limitations
 
-Intentional MVP limitations:
-
-- no Python REPL;
-- no `input()`;
-- no arbitrary pip/PyPI installation;
-- no Python language server, type checker, debugger, or variable inspector;
-- no pytest integration;
+- no Python packages beyond the built-in standard library bundled by pinned Pyodide;
+- no `pip`, URLs, wheel installation, or curated package allow-list;
+- no REPL or `input()`;
+- no Python LSP, type checker, debugger, variable inspector, or pytest integration;
 - no plotting/rendering integration;
 - no sockets or multiprocessing;
-- no browser preview for Python;
-- no fake Unix shell prompt.
+- no Python web preview;
+- no fake shell terminal;
+- text workspace files only;
+- Run currently waits 175 ms for the existing editor batching interval instead of calling an explicit editor flush API;
+- WebContainer can still boot globally through legacy application initialization even though Python lessons do not use it.
 
-Reviewers should pay particular attention to:
+## Recommended next work
 
-1. whether the 175 ms Run synchronization delay should later be replaced by an explicit editor flush API;
-2. whether curated `packages` should receive a project-level allow-list before broader author use;
-3. whether non-Astro consumers need a formal asset-host configuration API instead of the current packaged fallback;
-4. whether execution output should eventually move from xterm to a structured accessible console component;
-5. adding one full Python teacher-recording → publication → learner-playback → experiment browser test.
-
-## Recommended follow-up sequence
-
-1. Add Python `input()` through an explicit asynchronous stdin capability.
-2. Add structured lesson test operations independent of pytest.
-3. Add a curated package registry and author validation.
-4. Add richer traceback links, pedagogical state views, and beginner-oriented Python tools.
-5. Add the combined Python recording/playback/learner experiment E2E scenario described above.
+1. Replace the Run delay with an explicit editor flush/snapshot boundary.
+2. Decide whether to add a fully local curated package allow-list and emit every required wheel/asset.
+3. Add async `input()` only behind an explicit stdin capability.
+4. Add structured lesson assertions independent of pytest.
+5. Continue reducing inherited repository lint debt so standard CI can become authoritative.

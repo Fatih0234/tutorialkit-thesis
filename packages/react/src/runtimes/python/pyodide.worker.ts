@@ -94,10 +94,6 @@ async function initialize(request: Extract<PythonWorkerRequest, { type: 'initial
   });
   await pyodide.runPythonAsync("import sys\nif '/workspace' not in sys.path: sys.path.insert(0, '/workspace')");
 
-  if (request.config.packages?.length) {
-    await pyodide.loadPackage(request.config.packages);
-  }
-
   emit({ type: 'ready' });
 }
 
