@@ -8,6 +8,7 @@ const isWatch = process.argv.includes('--watch');
 
 await buildJS();
 await copyCSS();
+await copyPyodideAssets();
 
 async function buildJS() {
   const args = ['-b', 'tsconfig.build.json', isWatch && '--watch', '--preserveWatchOutput'].filter((s) => !!s);
@@ -16,6 +17,18 @@ async function buildJS() {
   if (!isWatch) {
     await promise;
   }
+}
+
+async function copyPyodideAssets() {
+  rmSync('./dist/runtimes/python/pyodide', { recursive: true, force: true });
+  await cp('./node_modules/pyodide', './dist/runtimes/python/pyodide', {
+    recursive: true,
+    dereference: true,
+    filter: (filename) =>
+      ['pyodide', 'pyodide-lock.json', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip'].some((name) =>
+        filename.endsWith(name),
+      ),
+  });
 }
 
 async function copyCSS() {

@@ -35,6 +35,8 @@ import { TerminalPanel } from './TerminalPanel.js';
 import { useInteractivePoc } from './useInteractivePoc.js';
 import { AiHelperWindow } from './interactive/ai/AiHelperWindow.js';
 import { makeAiContext, useAiTutor } from './interactive/ai/useAiTutor.js';
+import { RuntimeControls } from '../runtimes/RuntimeControls.js';
+import { useLessonRuntime } from '../runtimes/useLessonRuntime.js';
 
 const DEFAULT_TERMINAL_SIZE = 25;
 const INTERACTIVE_WORKSPACE_LAYOUT_KEY = 'interactive-poc.workspaceLayout';
@@ -175,6 +177,7 @@ function EditorSection({
     lessonFullyLoaded,
     storeRef,
   });
+  const lessonRuntime = useLessonRuntime(tutorialStore, interactivePoc.onRuntimeEvent);
   const aiRecordingId = interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId;
   const aiContext = useMemo(() => {
     if (!aiRecordingId || !interactivePoc.controls.currentUser || interactivePoc.controls.currentUser.role === 'teacher') return null;
@@ -455,7 +458,20 @@ function EditorSection({
   );
 
   const editor = (
-    <div className="h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      {lessonRuntime.provider === 'pyodide' ? (
+        <RuntimeControls
+          capabilities={lessonRuntime.capabilities}
+          status={lessonRuntime.status}
+          error={lessonRuntime.error}
+          disabled={!lessonFullyLoaded || interactivePoc.controls.mode === 'teacher-playback'}
+          onRun={() => void lessonRuntime.run()}
+          onStop={() => void lessonRuntime.stop()}
+          onReset={() => void lessonRuntime.reset()}
+          onClear={lessonRuntime.clear}
+        />
+      ) : null}
+      <div className="min-h-0 flex-1">
       <EditorPanel
         id={storeRef}
         theme={theme}
@@ -479,6 +495,7 @@ function EditorSection({
           : null}
         onPointerCoordinateApiChange={(api) => { editorPointerApiRef.current = api; }}
       />
+      </div>
     </div>
   );
 

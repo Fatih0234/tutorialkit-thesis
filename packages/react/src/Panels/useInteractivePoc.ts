@@ -23,6 +23,7 @@ import {
   logout as logoutCurrentUser,
   HIDDEN_TEACHER_POINTER,
   materializeTeacherState,
+  materializeExecutionState,
   materializeWhiteboardScene,
   normalizeEditorSelectionPayload,
   normalizeTeacherPointerClickPayload,
@@ -52,6 +53,8 @@ import {
   type PresentationResource,
   type RecordingMediaAsset,
   type RecordingMediaKind,
+  type RuntimeEvent,
+  type RuntimeProvider,
   type TeacherPointerButton,
   type TeacherPointerChangedPayload,
   type TeacherPointerClickedPayload,
@@ -248,6 +251,7 @@ export interface UseInteractivePocResult {
   onEditorScroll: (position: EditorScrollPosition) => void;
   onEditorSelectionChange: (selection: EditorSelectionChangedPayload) => void;
   onEditorChange: (update: EditorChangeUpdate) => void;
+  onRuntimeEvent: (event: RuntimeEvent, provider: RuntimeProvider) => void;
 }
 
 const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
@@ -1038,6 +1042,33 @@ export function useInteractivePoc({
   }
 
   function applyPlaybackEvent(event: TimelineEvent, animatePointerClick = true) {
+    if (event.type === 'execution.started') {
+      tutorialStore.clearOutput();
+
+      return;
+    }
+
+    if (event.type === 'execution.stdout' || event.type === 'execution.stderr') {
+      const payload = event.payload as { value?: string } | undefined;
+
+      if (payload?.value) {
+        tutorialStore.writeOutput(
+          event.type === 'execution.stderr' ? `\x1b[31m${payload.value}\x1b[0m` : payload.value,
+        );
+      }
+
+      return;
+    }
+
+    if (event.type === 'execution.failed') {
+      const payload = event.payload as { traceback?: string } | undefined;
+
+      if (payload?.traceback) {
+        tutorialStore.writeOutput(`\x1b[31m${payload.traceback}\n\x1b[0m`);
+      }
+
+      return;
+    }
     if (event.type === 'editor.selection.changed') {
       if (!event.filePath) return;
       try {
@@ -1182,6 +1213,18 @@ export function useInteractivePoc({
     while (nextEventIndex < events.length && events[nextEventIndex]!.tMs <= targetMs) {
       applyPlaybackEvent(events[nextEventIndex]!, false);
       nextEventIndex += 1;
+    }
+
+    const executionState = materializeExecutionState(recording, targetMs);
+
+    tutorialStore.clearOutput();
+
+    for (const chunk of executionState.output) {
+      tutorialStore.writeOutput(chunk.stream === 'stderr' ? `\x1b[31m${chunk.value}\x1b[0m` : chunk.value);
+    }
+
+    if (executionState.traceback) {
+      tutorialStore.writeOutput(`\x1b[31m${executionState.traceback}\n\x1b[0m`);
     }
 
     playbackEventsRef.current = events;
@@ -2529,6 +2572,39 @@ export function useInteractivePoc({
   );
   const hasSelectedImportPackage = importPackageFileName !== 'none';
 
+  function onRuntimeEvent(event: RuntimeEvent, provider: RuntimeProvider) {
+    const recorder = recorderRef.current;
+
+    if (
+      !recorder?.isRecording() ||
+      modeRef.current !== 'idle' ||
+      isApplyingPlaybackRef.current ||
+      event.type === 'ready'
+    ) {
+      return;
+    }
+
+    if (event.type === 'execution.started') {
+      recorder.append('execution.started', {
+        payload: { executionId: event.executionId, provider, entrypoint: event.entrypoint },
+      });
+    } else if (event.type === 'execution.stdout' || event.type === 'execution.stderr') {
+      recorder.append(event.type, { payload: { executionId: event.executionId, value: event.value } });
+    } else if (event.type === 'execution.finished') {
+      recorder.append('execution.finished', {
+        payload: { executionId: event.executionId, exitCode: event.exitCode, durationMs: event.durationMs },
+      });
+    } else if (event.type === 'execution.failed') {
+      recorder.append('execution.failed', {
+        payload: { executionId: event.executionId, traceback: event.traceback, durationMs: event.durationMs },
+      });
+    } else {
+      recorder.append('execution.interrupted', { payload: { executionId: event.executionId } });
+    }
+
+    syncEventCount();
+  }
+
   return {
     playbackEditorSelection,
     controls: {
@@ -2673,5 +2749,6 @@ export function useInteractivePoc({
     onEditorScroll,
     onEditorSelectionChange,
     onEditorChange,
+    onRuntimeEvent,
   };
 }

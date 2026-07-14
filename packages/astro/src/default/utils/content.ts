@@ -87,6 +87,7 @@ export async function getTutorial(): Promise<Tutorial> {
       ...squash(sources, [
         'mainCommand',
         'prepareCommands',
+        'runtime',
         'previews',
         'autoReload',
         'template',
@@ -159,6 +160,7 @@ async function parseCollection(collection: CollectionEntryTutorial[]) {
 
       // default template if not specified
       tutorialMetaData.template ??= 'default';
+      tutorialMetaData.runtime ??= { provider: 'webcontainer' };
       tutorialMetaData.i18n = Object.assign({ ...DEFAULT_LOCALIZATION }, tutorialMetaData.i18n);
       tutorialMetaData.openInStackBlitz ??= true;
       tutorialMetaData.downloadAsZip ??= false;

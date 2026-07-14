@@ -6,6 +6,8 @@ import {
   terminalSchema,
   webcontainerSchema,
   baseSchema,
+  resolveRuntimeConfig,
+  runtimeConfigSchema,
 } from './common.js';
 
 describe('commandSchema', () => {
@@ -105,6 +107,20 @@ describe('commandsSchema', () => {
         prepareCommands: ['npm install', 123],
       });
     }).toThrow();
+  });
+});
+
+describe('runtimeConfigSchema', () => {
+  it('defaults omitted runtime configuration to WebContainer', () => {
+    expect(resolveRuntimeConfig()).toEqual({ provider: 'webcontainer' });
+  });
+
+  it('validates Pyodide entrypoints and optional settings', () => {
+    expect(
+      runtimeConfigSchema.parse({ provider: 'pyodide', entrypoint: 'main.py', packages: [], timeoutMs: 3000 }),
+    ).toEqual({ provider: 'pyodide', entrypoint: 'main.py', packages: [], timeoutMs: 3000 });
+    expect(() => runtimeConfigSchema.parse({ provider: 'pyodide' })).toThrow();
+    expect(() => runtimeConfigSchema.parse({ provider: 'unknown' })).toThrow();
   });
 });
 

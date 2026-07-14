@@ -842,7 +842,39 @@ Renders the shared select/list-card recording library for local drafts and publi
 
 Legacy small authoring panel retained for compatibility with earlier POC extraction, but the product shell now uses `InteractiveTeacherDashboard.tsx`.
 
-## 6. Current limitations
+## 6. Execution providers
+
+Lessons inherit `runtime` metadata through tutorial, part, chapter, and lesson scopes. Omitted configuration resolves to `{ provider: 'webcontainer' }`. Python lessons use:
+
+```yaml
+runtime:
+  provider: pyodide
+  entrypoint: main.py
+  packages: []
+  timeoutMs: 3000
+```
+
+The shared execution contract exposes capabilities, file-diff synchronization, run, interrupt, reset, disposal, and language-neutral events. Existing JavaScript lessons remain owned by `TutorialRunner` and WebContainer; the compatibility adapter does not replace terminal, filesystem, package, or preview behavior. `PyodideEnvironment` owns a dedicated module worker, synchronizes text files into `/workspace` only before runs/reset, and runs the entrypoint with `runpy.run_path` in a fresh namespace. The editor remains canonical.
+
+Pyodide is loaded lazily from version-pinned npm assets copied into the React package build. Deployment must preserve the existing COOP/COEP headers so `SharedArrayBuffer` interruption is available. If cooperative interruption is delayed, the worker is terminated and recreated while editor files are preserved. Python supports syntax highlighting, multi-file imports, stdout/stderr, tracebacks, stop, and reset. It does not provide a shell, `input()`, arbitrary pip installation, LSP, debugger, sockets, multiprocessing, or browser preview.
+
+Recorded execution events are structured teacher truth. Playback materializes captured output and never runs Python. Learner runs remain local and are not appended to immutable teacher recordings; returning to the lecture restores materialized teacher console output.
+
+| Capability | JavaScript/WebContainer | Python/Pyodide |
+| --- | ---: | ---: |
+| Syntax highlighting | Yes | Yes |
+| Multi-file projects | Yes | Yes |
+| stdout/stderr | Yes | Yes |
+| Interactive shell | Yes | No in MVP |
+| Browser preview | Yes | No |
+| Stop execution | Yes | Yes |
+| npm/pnpm packages | Yes | No |
+| Curated Python packages | N/A | Metadata allow-list only |
+| Deterministic recorded output | Yes/extend if needed | Yes |
+
+Authoring fixture: `e2e/src/content/tutorial/tests/python/python-intro/`. Run focused checks with `pnpm --filter @tutorialkit/types test`, `pnpm --filter @tutorialkit/runtime test`, `pnpm --filter @tutorialkit/react test`, and the Python Playwright test. Additional languages should implement `ExecutionEnvironment` and register one factory in `RuntimeManager`, without changing recording or learner-delta models.
+
+## 7. Current limitations
 
 Known limitations are intentional for the POC:
 
@@ -870,7 +902,7 @@ Known limitations are intentional for the POC:
 - localStorage parsing assumes valid POC JSON;
 - recording libraries are simple selectors/list cards, not a final history drawer or table component.
 
-## 7. Next phases
+## 8. Next phases
 
 Candidate future phases:
 

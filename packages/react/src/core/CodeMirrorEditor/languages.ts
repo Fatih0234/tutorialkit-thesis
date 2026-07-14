@@ -30,6 +30,13 @@ export const supportedLanguages = [
     },
   }),
   LanguageDescription.of({
+    name: 'Python',
+    extensions: ['py', 'pyw'],
+    async load() {
+      return import('@codemirror/lang-python').then((module) => module.python());
+    },
+  }),
+  LanguageDescription.of({
     name: 'HTML',
     extensions: ['html'],
     async load() {
