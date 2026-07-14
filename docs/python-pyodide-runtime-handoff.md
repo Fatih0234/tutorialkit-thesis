@@ -305,6 +305,8 @@ At head `9edd3be`, GitHub Actions was not green:
 - the broad E2E job timed out;
 - CLI integration, Docs, VSCode Extension, and GitGuardian checks passed.
 
+After pushing follow-up commit `f901eb8`, PR title validation, CLI Integration, VSCode Extension, and GitGuardian passed. The macOS and Ubuntu test-matrix jobs failed during the same short lint phase; Windows, Docs, and broad E2E were still pending when this handoff was finalized. The workflow had not completed, so GitHub had not exposed the failed-job logs yet. The conventional PR title was corrected to `feat(runtime): add Pyodide Python execution`.
+
 The current branch does not disable lint. The follow-up ran `corepack pnpm lint`: it still fails with 1,250 errors (1,159 auto-fixable), compared with 1,258 in the prior PR CI log. The remaining output is concentrated in inherited interactive files; standalone files introduced here pass focused lint. This comparison establishes no net new lint count, but it is not a substitute for eventually cleaning the base branch.
 
 The follow-up also ran the root test command through a temporary `pnpm`/Corepack shim. It stops in `@tutorialkit/cli`: 13 CLI tests fail because `packages/cli/dist/index.js` is absent and generated-project installation fails in this environment. Theme (1) and Types (95) passed before recursive execution stopped. No test or lint rule was disabled.
