@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react';
 import { normalizeFiles, normalizePath, type TutorialStore } from '@tutorialkit/runtime';
-import type { I18n } from '@tutorialkit/types';
+import { resolveRuntimeConfig, type I18n } from '@tutorialkit/types';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
@@ -35,6 +35,9 @@ import { TerminalPanel } from './TerminalPanel.js';
 import { useInteractivePoc } from './useInteractivePoc.js';
 import { AiHelperWindow } from './interactive/ai/AiHelperWindow.js';
 import { makeAiContext, useAiTutor } from './interactive/ai/useAiTutor.js';
+import { RuntimeControls } from '../runtimes/RuntimeControls.js';
+import { getRuntimeCapabilities } from '../runtimes/RuntimeManager.js';
+import { useLessonRuntime } from '../runtimes/useLessonRuntime.js';
 
 const DEFAULT_TERMINAL_SIZE = 25;
 const INTERACTIVE_WORKSPACE_LAYOUT_KEY = 'interactive-poc.workspaceLayout';
@@ -76,7 +79,8 @@ export function WorkspacePanel({ tutorialStore, theme, dialog }: Props) {
   useStore(tutorialStore.ref);
 
   const hasEditor = tutorialStore.hasEditor();
-  const hasPreviews = tutorialStore.hasPreviews();
+  const runtimeCapabilities = getRuntimeCapabilities(resolveRuntimeConfig(tutorialStore.lesson?.data.runtime));
+  const hasPreviews = tutorialStore.hasPreviews() && runtimeCapabilities.webPreview;
   const hideTerminalPanel = !tutorialStore.hasTerminalPanel();
 
   const terminalPanelRef = useRef<ImperativePanelHandle>(null);
@@ -175,6 +179,7 @@ function EditorSection({
     lessonFullyLoaded,
     storeRef,
   });
+  const lessonRuntime = useLessonRuntime(tutorialStore, interactivePoc.onRuntimeEvent, interactivePoc.controls.mode);
   const aiRecordingId = interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId;
   const aiContext = useMemo(() => {
     if (!aiRecordingId || !interactivePoc.controls.currentUser || interactivePoc.controls.currentUser.role === 'teacher') return null;
@@ -183,6 +188,11 @@ function EditorSection({
     return makeAiContext({ lessonId: lesson.id, title: lesson.id, recordingId: aiRecordingId, version: interactivePoc.controls.recordingVersion, timestampMs: interactivePoc.controls.playheadMs, mode: interactivePoc.controls.mode === 'learner-editing' ? 'experimenting' : 'following-teacher', selectedFilePath: selectedFile ? normalizePath(selectedFile) : null, workspaceFiles });
   }, [aiRecordingId, interactivePoc.controls.currentUser, interactivePoc.controls.recordingVersion, interactivePoc.controls.playheadMs, interactivePoc.controls.mode, lesson.id, selectedFile, currentDocument, tutorialStore]);
   const aiTutor = useAiTutor(aiContext, aiRecordingId || null);
+
+  async function resumeTeacherPlayback() {
+    await lessonRuntime.invalidate();
+    interactivePoc.controls.onResumeTeacher();
+  }
 
   const filePaths = files
     .filter((file) => file.type === 'file')
@@ -296,9 +306,9 @@ function EditorSection({
     dispatchExperience({ type: 'OPEN_LEARNER_RECORDING', recordingId });
   }
 
-  function exitLearnerPlayer() {
+  async function exitLearnerPlayer() {
     if (interactivePoc.controls.mode === 'learner-editing') {
-      interactivePoc.controls.onResumeTeacher();
+      await resumeTeacherPlayback();
 
       if (interactivePoc.controls.isLearnerWorkspaceDirty) {
         return;
@@ -451,11 +461,25 @@ function EditorSection({
       onPreviewSelectedDraft={previewSelectedDraft}
       onPreviewSelectedPublished={previewSelectedPublished}
       onOpenLearnerLesson={openLearnerLesson}
+      onResumeTeacher={() => void resumeTeacherPlayback()}
     />
   );
 
   const editor = (
-    <div className="h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      {lessonRuntime.capabilities.execution ? (
+        <RuntimeControls
+          capabilities={lessonRuntime.capabilities}
+          status={lessonRuntime.status}
+          error={lessonRuntime.error}
+          disabled={!lessonFullyLoaded || interactivePoc.controls.mode === 'teacher-playback'}
+          onRun={() => void lessonRuntime.run()}
+          onStop={() => void lessonRuntime.stop()}
+          onReset={() => void lessonRuntime.reset()}
+          onClear={lessonRuntime.clear}
+        />
+      ) : null}
+      <div className="min-h-0 flex-1">
       <EditorPanel
         id={storeRef}
         theme={theme}
@@ -479,6 +503,7 @@ function EditorSection({
           : null}
         onPointerCoordinateApiChange={(api) => { editorPointerApiRef.current = api; }}
       />
+      </div>
     </div>
   );
 
@@ -595,7 +620,7 @@ function EditorSection({
           status={interactivePoc.controls.mode === 'learner-editing' ? 'My Experiment' : 'Teacher Lecture'}
           statusTone={interactivePoc.controls.mode === 'learner-editing' ? 'warning' : 'positive'}
           currentTimeMs={interactivePoc.controls.playheadMs}
-          onExit={exitLearnerPlayer}
+          onExit={() => void exitLearnerPlayer()}
           exitLabel="Lessons"
         />
       ) : null}
@@ -611,7 +636,7 @@ function EditorSection({
       {experience.screen === 'learner-player' ? (
         <InteractiveVideoControls
           audience="learner"
-          model={interactivePoc.controls}
+          model={{ ...interactivePoc.controls, onResumeTeacher: () => void resumeTeacherPlayback() }}
           onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : interactivePoc.controls.onPlayRecording}
           onPause={interactivePoc.controls.onPausePreviewPlayback}
         />

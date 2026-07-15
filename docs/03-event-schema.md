@@ -41,6 +41,12 @@ export type TimelineEventType =
   | 'pointer.changed'
   | 'pointer.clicked'
   | 'presentation.changed'
+  | 'execution.started'
+  | 'execution.stdout'
+  | 'execution.stderr'
+  | 'execution.finished'
+  | 'execution.failed'
+  | 'execution.interrupted'
   | 'playback.marker';
 ```
 
@@ -125,6 +131,12 @@ interface TeacherPointerClickedPayload {
 Version 3 pointer events prefer semantic anchors: CodeMirror document offsets plus local character offsets for editor positions, and stable application-owned element ids plus within-element ratios for controls. Workspace coordinates remain a fallback when an anchor is temporarily unavailable.
 
 Version 2 pointer events use `workspace` for the actual editor/presentation surface, `experience` for outer headers and transport, and `preview` for the iframe. Legacy events without a coordinate-space version retain the original full-experience interpretation of `workspace`.
+
+## Execution payloads
+
+Execution events are language-neutral and ordered by `tMs`, then `seq`. `execution.started` carries `executionId`, `provider`, and optional `entrypoint`/`command`. stdout/stderr carry `{ executionId, value }`; finished carries `{ executionId, exitCode, durationMs }`; failed carries `{ executionId, traceback, durationMs }`; interrupted carries `{ executionId }`.
+
+During playback these captured events are materialized into the console. Python is never rerun. Seeking rebuilds the console from ordered structured events, and a later `execution.started` clears output from the previous run.
 
 ## LearnerDelta
 

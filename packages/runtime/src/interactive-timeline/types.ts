@@ -14,6 +14,12 @@ export type TimelineEventType =
   | 'pointer.clicked'
   | 'presentation.changed'
   | 'whiteboard.scene.changed'
+  | 'execution.started'
+  | 'execution.stdout'
+  | 'execution.stderr'
+  | 'execution.finished'
+  | 'execution.failed'
+  | 'execution.interrupted'
   | 'playback.marker';
 
 export type TimelineEventOrigin = 'teacher' | 'playback' | 'system';
@@ -26,6 +32,42 @@ export interface TimelineEvent<TPayload = unknown> {
   filePath?: string;
   payload?: TPayload;
   origin: TimelineEventOrigin;
+}
+
+export interface ExecutionStartedPayload {
+  executionId: string;
+  provider: 'webcontainer' | 'pyodide';
+  entrypoint?: string;
+  command?: string;
+}
+
+export interface ExecutionOutputPayload {
+  executionId: string;
+  value: string;
+}
+
+export interface ExecutionFinishedPayload {
+  executionId: string;
+  exitCode: number;
+  durationMs: number;
+}
+
+export interface ExecutionFailedPayload {
+  executionId: string;
+  traceback: string;
+  durationMs: number;
+}
+
+export interface ExecutionInterruptedPayload {
+  executionId: string;
+}
+
+export interface MaterializedExecutionState {
+  activeExecutionId?: string;
+  output: Array<{ executionId: string; stream: 'stdout' | 'stderr'; value: string }>;
+  status: 'idle' | 'running' | 'finished' | 'failed' | 'interrupted';
+  exitCode?: number;
+  traceback?: string;
 }
 
 export interface FileCreatedPayload {

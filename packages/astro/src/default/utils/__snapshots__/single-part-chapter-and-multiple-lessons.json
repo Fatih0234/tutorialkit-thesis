@@ -26,6 +26,9 @@
       "data": {
         "type": "lesson",
         "title": "Welcome to TutorialKit",
+        "runtime": {
+          "provider": "webcontainer"
+        },
         "template": "default",
         "i18n": {
           "mocked": "default localization"
@@ -63,6 +66,9 @@
       "data": {
         "type": "lesson",
         "title": "Welcome to TutorialKit",
+        "runtime": {
+          "provider": "webcontainer"
+        },
         "template": "default",
         "i18n": {
           "mocked": "default localization"
@@ -104,6 +110,9 @@
       "data": {
         "type": "lesson",
         "title": "Welcome to TutorialKit",
+        "runtime": {
+          "provider": "webcontainer"
+        },
         "template": "default",
         "i18n": {
           "mocked": "default localization"
