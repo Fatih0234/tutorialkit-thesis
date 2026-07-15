@@ -350,13 +350,16 @@ The large Python integration session is complete. The implementation remains rec
 ```text
 archive/learner-ai-helper-pre-python
 archive/python-pyodide-runtime-final
+archive/interactive-python-integration-main
 ```
 
 The stacked history is integrated without squashing:
 
 ```text
 PR #18: feature/python-pyodide-runtime → feature/learner-ai-helper
+  merge commit: db738baf8194785e2244456d60ab1fc76477ce93
 PR #17: feature/learner-ai-helper → main
+  merge commit: 2d77226bccf603bbe68fc55ad42982a46e6c0853
 ```
 
 Both merges use merge commits so the original learner-AI and Python commit identities remain in `main`. Future Python work should use new focused branches from `main`; this completed branch is historical rather than a continuing development trunk.
