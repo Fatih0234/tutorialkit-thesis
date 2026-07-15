@@ -10,6 +10,8 @@ This is the review handoff for PR #18 after the integration-boundary follow-up.
 - PR: `https://github.com/Fatih0234/tutorialkit-thesis/pull/18`
 - Original implementation: `8e6ad5c`
 - Original handoff: `9edd3be`
+- Integration-boundary follow-up: `f901eb897c2b6923c151ce14e69be88ced25311f`
+- Reviewed documentation/head: `965f154fb2f19ba941d6bfb021effadd9235025f`
 
 The PR is based on `feature/learner-ai-helper` because it depends on that branch's recording, playback, learner checkpoint, identity, and workspace work. Review against that branch to isolate the Python changes.
 
@@ -305,7 +307,7 @@ At head `9edd3be`, GitHub Actions was not green:
 - the broad E2E job timed out;
 - CLI integration, Docs, VSCode Extension, and GitGuardian checks passed.
 
-After pushing follow-up commit `f901eb8`, PR title validation, CLI Integration, VSCode Extension, and GitGuardian passed. The macOS and Ubuntu test-matrix jobs failed during the same short lint phase; Windows, Docs, and broad E2E were still pending when this handoff was finalized. The workflow had not completed, so GitHub had not exposed the failed-job logs yet. The conventional PR title was corrected to `feat(runtime): add Pyodide Python execution`.
+At reviewed head `965f154`, Docs, PR title validation, CLI Integration, VSCode Extension, and GitGuardian passed. All Node matrix jobs failed in inherited repository-wide lint, and the broad E2E job failed after approximately 15 minutes. The conventional PR title was corrected to `feat(runtime): add Pyodide Python execution`.
 
 The current branch does not disable lint. The follow-up ran `corepack pnpm lint`: it still fails with 1,250 errors (1,159 auto-fixable), compared with 1,258 in the prior PR CI log. The remaining output is concentrated in inherited interactive files; standalone files introduced here pass focused lint. This comparison establishes no net new lint count, but it is not a substitute for eventually cleaning the base branch.
 
@@ -337,7 +339,7 @@ A local attempt to run selected tests through the repository's four-server Playw
 - no Python web preview;
 - no fake shell terminal;
 - text workspace files only;
-- Run currently waits 175 ms for the existing editor batching interval instead of calling an explicit editor flush API;
+- Run currently waits 175 ms for the existing editor batching interval instead of calling an explicit editor flush API; the session generation and playback mode are revalidated after this delay so invalidated work cannot execute;
 - WebContainer can still boot globally through legacy application initialization even though Python lessons do not use it.
 
 ## Recommended next work

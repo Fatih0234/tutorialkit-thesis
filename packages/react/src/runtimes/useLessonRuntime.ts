@@ -2,6 +2,7 @@ import type { RuntimeEvent, TutorialStore } from '@tutorialkit/runtime';
 import { resolveRuntimeConfig } from '@tutorialkit/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RuntimeManager, getRuntimeCapabilities } from './RuntimeManager.js';
+import { runAfterEditorBatch } from './delayed-runtime-run.js';
 import { LiveRuntimeSession } from './live-runtime-session.js';
 
 export type RuntimeStatus = 'unavailable' | 'initializing' | 'ready' | 'running' | 'stopping' | 'resetting' | 'failed';
@@ -12,6 +13,7 @@ export function useLessonRuntime(
   playbackMode: 'teacher-playback' | 'learner-editing' | 'idle',
 ) {
   const config = resolveRuntimeConfig(tutorialStore.lesson?.data.runtime);
+  const lessonLoadKey = tutorialStore.ref.get();
   const managerRef = useRef<RuntimeManager>();
   const environmentRef = useRef<Awaited<ReturnType<RuntimeManager['select']>>>();
   const onEventRef = useRef(onEvent);
@@ -91,8 +93,10 @@ export function useLessonRuntime(
   }, [
     tutorialStore,
     tutorialStore.lesson?.id,
+    lessonLoadKey,
     config.provider,
     config.provider === 'pyodide' ? config.entrypoint : '',
+    config.provider === 'pyodide' ? config.timeoutMs : undefined,
   ]);
 
   const run = useCallback(async () => {
@@ -107,14 +111,19 @@ export function useLessonRuntime(
     }
 
     invalidatedRef.current = false;
-    sessionRef.current.begin();
+
+    const generation = sessionRef.current.begin();
+
     setError('');
 
     try {
-      // editor batches updates; running is an explicit synchronization boundary
-      await new Promise<void>((resolve) => setTimeout(resolve, 175));
-      window.dispatchEvent(new CustomEvent('tutorialkit:python-execution'));
-      await environment.run({ entrypoint: config.entrypoint, files: tutorialStore.takeSnapshot().files });
+      await runAfterEditorBatch({
+        session: sessionRef.current,
+        generation,
+        isTeacherPlayback: () => playbackModeRef.current === 'teacher-playback',
+        onExecution: () => window.dispatchEvent(new CustomEvent('tutorialkit:python-execution')),
+        run: () => environment.run({ entrypoint: config.entrypoint, files: tutorialStore.takeSnapshot().files }),
+      });
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
       setStatus('failed');

@@ -22,6 +22,10 @@ export class LiveRuntimeSession {
     return this._generation;
   }
 
+  isCurrent(generation: number): boolean {
+    return this._accepting && this._generation === generation;
+  }
+
   accepts(event: RuntimeEvent): boolean {
     if (!this._accepting || event.type === 'ready') {
       return false;
