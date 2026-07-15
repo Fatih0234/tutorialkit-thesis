@@ -215,6 +215,7 @@ describe('metadata inheriting', () => {
       prepareCommands: ['npm i'],
       openInStackBlitz: { projectTitle: 'example' },
       previews: ['8080', '3000'],
+      runtime: { provider: 'pyodide', entrypoint: 'main.py' },
       template: 'vite',
       terminal: { panels: ['output', 'terminal'] },
     };
@@ -261,6 +262,7 @@ describe('metadata inheriting', () => {
         data: {
           ...chapter.data,
           mainCommand: 'main command from chapter',
+          runtime: { provider: 'pyodide', entrypoint: 'chapter.py', timeoutMs: 1000 },
           template: 'this should be overwritten',
         },
       },
@@ -277,6 +279,7 @@ describe('metadata inheriting', () => {
     expect(lessonData.editPageLink).toBe('edit link from tutorial');
     expect(lessonData.focus).toBe('focus from part');
     expect(lessonData.mainCommand).toBe('main command from chapter');
+    expect(lessonData.runtime).toEqual({ provider: 'pyodide', entrypoint: 'chapter.py', timeoutMs: 1000 });
     expect(lessonData.template).toBe('template from lesson');
   });
 });

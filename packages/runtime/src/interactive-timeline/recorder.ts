@@ -1,10 +1,12 @@
 import type {
   FileChangedPayload,
+  FileCreatedPayload,
   TeacherRecording,
   TimelineEvent,
   TimelineEventType,
   FilesSnapshot,
 } from './types.js';
+import type { PresentationLayout, PresentationResource } from './presentation.js';
 import { normalizeFiles, normalizePath } from './path.js';
 
 function createId(prefix: string): string {
@@ -15,6 +17,9 @@ interface StartRecordingOptions {
   lessonId: string;
   version?: number;
   baseFiles: FilesSnapshot;
+  startedAtMs?: number;
+  presentationResources?: PresentationResource[];
+  initialPresentationLayout?: PresentationLayout;
 }
 
 export class TimelineRecorder {
@@ -22,18 +27,27 @@ export class TimelineRecorder {
   private startTime = 0;
   private seq = 0;
 
-  start({ lessonId, version = 1, baseFiles }: StartRecordingOptions): TeacherRecording {
-    this.startTime = Date.now();
+  start({
+    lessonId,
+    version = 1,
+    baseFiles,
+    startedAtMs = Date.now(),
+    presentationResources,
+    initialPresentationLayout,
+  }: StartRecordingOptions): TeacherRecording {
+    this.startTime = startedAtMs;
     this.seq = 0;
 
     this.recording = {
       id: createId('teacher-recording'),
       lessonId,
       version,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(startedAtMs).toISOString(),
       durationMs: 0,
       baseFiles: normalizeFiles(baseFiles),
       events: [],
+      ...(presentationResources ? { presentationResources: structuredClone(presentationResources) } : {}),
+      ...(initialPresentationLayout ? { initialPresentationLayout: structuredClone(initialPresentationLayout) } : {}),
     };
 
     this.append('recording.started', {
@@ -83,6 +97,13 @@ export class TimelineRecorder {
     this.append('file.opened', {
       filePath,
       payload: { filePath: normalizePath(filePath) },
+    });
+  }
+
+  recordFileCreated(filePath: string, payload: FileCreatedPayload = { content: '' }): void {
+    this.append('file.created', {
+      filePath,
+      payload,
     });
   }
 

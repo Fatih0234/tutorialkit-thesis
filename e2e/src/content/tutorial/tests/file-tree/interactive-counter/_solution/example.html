@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>State Lab Counter</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="counter-card">
+      <p class="eyebrow">Interactive JavaScript lab</p>
+      <h1>State → render → interface</h1>
+      <p class="intro">Every button click changes one value and then renders it into the page.</p>
+
+      <output id="count-output" class="count" aria-label="Current count">0</output>
+
+      <div class="controls" aria-label="Counter controls">
+        <button id="decrement-button" class="secondary" type="button">− Decrement</button>
+        <button id="increment-button" type="button">+ Increment</button>
+        <button id="reset-button" class="ghost" type="button">Reset</button>
+      </div>
+
+      <aside>
+        <strong>Your challenge</strong>
+        <span>Make decrement stop at zero, then make reset restore zero.</span>
+      </aside>
+    </main>
+    <script type="module" src="/tutorialkit-pointer-bridge.js"></script>
+    <script type="module" src="/example.js"></script>
+  </body>
+</html>

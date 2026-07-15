@@ -5,6 +5,9 @@ import { extraIntegrations } from './integrations.js';
 import { updateMarkdownConfig } from './remark/index.js';
 import { tutorialkitCore } from './vite-plugins/core.js';
 import { userlandCSS, watchUserlandCSS } from './vite-plugins/css.js';
+import { interactivePersistence } from './vite-plugins/interactive-persistence.js';
+import { pythonRuntimeAssets } from './vite-plugins/python-assets.js';
+import { interactiveAi } from './vite-plugins/interactive-ai/index.js';
 import { overrideComponents, type OverrideComponentsOptions } from './vite-plugins/override-components.js';
 import { tutorialkitStore } from './vite-plugins/store.js';
 import { WebContainerFiles } from './webcontainer-files/index.js';
@@ -78,6 +81,9 @@ export interface Options {
   expressiveCodeThemes?: [ThemeObjectOrShikiThemeName, ThemeObjectOrShikiThemeName];
 }
 
+export { createInteractivePersistenceMiddleware } from './vite-plugins/interactive-persistence.js';
+export { handleInteractiveAiRequest } from './vite-plugins/interactive-ai/index.js';
+
 export default function createPlugin({
   defaultRoutes = true,
   components,
@@ -104,6 +110,7 @@ export default function createPlugin({
             },
           },
           vite: {
+            worker: { format: 'es' },
             optimizeDeps: {
               entries: ['!**/src/(content|templates)/**'],
               include: process.env.TUTORIALKIT_DEV
@@ -122,6 +129,7 @@ export default function createPlugin({
             define: {
               __ENTERPRISE__: `${!!enterprise}`,
               __WC_CONFIG__: enterprise ? JSON.stringify(enterprise) : 'undefined',
+              __PYODIDE_BASE_URL__: JSON.stringify(`${config.base.replace(/\/$/, '')}/_tutorialkit/pyodide/`),
             },
             ssr: {
               noExternal: ['@tutorialkit/astro', '@tutorialkit/react'],
@@ -130,6 +138,9 @@ export default function createPlugin({
               userlandCSS,
               tutorialkitStore,
               tutorialkitCore,
+              interactiveAi,
+              interactivePersistence,
+              pythonRuntimeAssets,
               overrideComponents({ components, defaultRoutes: !!defaultRoutes }),
               process.env.TUTORIALKIT_VITE_INSPECT ? (await import('vite-plugin-inspect')).default() : null,
             ],

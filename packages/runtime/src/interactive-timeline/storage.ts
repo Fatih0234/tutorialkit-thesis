@@ -15,6 +15,17 @@ export function saveTeacherRecording(recording: TeacherRecording): void {
   requireLocalStorage()?.setItem(TEACHER_RECORDING_KEY, JSON.stringify(recording));
 }
 
+export function clearTeacherRecording(recordingId?: string): void {
+  const storage = requireLocalStorage();
+
+  if (!storage) return;
+  const current = loadTeacherRecording();
+
+  if (!recordingId || current?.id === recordingId) {
+    storage.removeItem(TEACHER_RECORDING_KEY);
+  }
+}
+
 export function loadTeacherRecording(): TeacherRecording | undefined {
   const raw = requireLocalStorage()?.getItem(TEACHER_RECORDING_KEY);
 
@@ -29,7 +40,11 @@ export function saveLearnerDelta(delta: LearnerDelta): void {
   const existing = loadLearnerDeltas();
   existing.push(delta);
 
-  requireLocalStorage()?.setItem(LEARNER_DELTAS_KEY, JSON.stringify(existing));
+  saveLearnerDeltas(existing);
+}
+
+export function saveLearnerDeltas(deltas: LearnerDelta[]): void {
+  requireLocalStorage()?.setItem(LEARNER_DELTAS_KEY, JSON.stringify(deltas));
 }
 
 export function loadLearnerDeltas(): LearnerDelta[] {

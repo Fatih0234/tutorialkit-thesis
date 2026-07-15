@@ -164,6 +164,27 @@ export class TutorialRunner {
     );
   }
 
+  /** Remove a single file from WebContainer and its tracked workspace snapshot. */
+  removeFile(filePath: string): void {
+    const previousLoadPromise = this._currentLoadTask?.promise;
+
+    this._editorStore.deleteFile(filePath);
+    delete this._currentFiles?.[filePath];
+
+    this._currentLoadTask = newTask(
+      async (signal) => {
+        await previousLoadPromise;
+
+        const webcontainer = await this._webcontainer;
+
+        signal.throwIfAborted();
+        this._ignoreFileEvents.increment(filePath);
+        await webcontainer.fs.rm(filePath, { force: true });
+      },
+      { ignoreCancel: true },
+    );
+  }
+
   /**
    * Update the provided files in WebContainer.
    *

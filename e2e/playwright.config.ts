@@ -6,11 +6,16 @@ const serverOptions = {
   stderr: 'pipe',
 } as const;
 
+const launchOptions = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+  : undefined;
+
 export default defineConfig({
+  use: launchOptions ? { launchOptions } : {},
   projects: [
     {
       name: 'Default',
-      testMatch: 'test/*.test.ts',
+      testMatch: ['test/*.test.ts', 'interactive-poc.spec.ts'],
       testIgnore: [
         'test/*.override-components.test.ts',
         'test/*.lessons-in-part.test.ts',

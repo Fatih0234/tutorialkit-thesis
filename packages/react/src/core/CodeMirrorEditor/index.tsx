@@ -21,6 +21,7 @@ import { BinaryContent } from './BinaryContent.js';
 import { getTheme, reconfigureTheme } from './cm-theme.js';
 import { indentKeyBinding } from './indent.js';
 import { getLanguage } from './languages.js';
+import { getEditorTextSelection, type EditorTextSelection } from './selection.js';
 
 export interface EditorDocument {
   value: string | Uint8Array;
@@ -50,6 +51,14 @@ export interface EditorUpdate {
 
 export type OnChangeCallback = (update: EditorUpdate) => void;
 export type OnScrollCallback = (position: ScrollPosition) => void;
+export type EditorSelectionRange = { anchor: number; head: number };
+export type OnSelectionChangeCallback = (selection: EditorTextSelection | null) => void;
+export type OnSelectionRangeChangeCallback = (selection: EditorSelectionRange) => void;
+export interface EditorPointerCoordinateApi {
+  positionAtCoordinates(clientX: number, clientY: number): { filePath: string; documentOffset: number; offsetX: number; offsetY: number } | null;
+  coordinatesAtPosition(position: { filePath: string; documentOffset: number; offsetX: number; offsetY: number }): { clientX: number; clientY: number } | null;
+}
+export type { EditorTextSelection } from './selection.js';
 
 interface Props {
   theme: Theme;
@@ -60,6 +69,10 @@ interface Props {
   autoFocusOnDocumentChange?: boolean;
   onChange?: OnChangeCallback;
   onScroll?: OnScrollCallback;
+  onSelectionChange?: OnSelectionChangeCallback;
+  onSelectionRangeChange?: OnSelectionRangeChangeCallback;
+  playbackSelection?: EditorSelectionRange | null;
+  onPointerCoordinateApiChange?: (api: EditorPointerCoordinateApi | null) => void;
   className?: string;
   settings?: EditorSettings;
 }
@@ -74,6 +87,10 @@ export function CodeMirrorEditor({
   autoFocusOnDocumentChange = false,
   onScroll,
   onChange,
+  onSelectionChange,
+  onSelectionRangeChange,
+  playbackSelection,
+  onPointerCoordinateApiChange,
   theme,
   settings,
   className = '',
@@ -88,17 +105,24 @@ export function CodeMirrorEditor({
   const editorStatesRef = useRef<EditorStates>();
   const onScrollRef = useRef(onScroll);
   const onChangeRef = useRef(onChange);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const onSelectionRangeChangeRef = useRef(onSelectionRangeChange);
 
   const isBinaryFile = doc?.value instanceof Uint8Array;
 
   onScrollRef.current = onScroll;
   onChangeRef.current = onChange;
+  onSelectionChangeRef.current = onSelectionChange;
+  onSelectionRangeChangeRef.current = onSelectionRangeChange;
   docRef.current = doc;
   themeRef.current = theme;
 
   useEffect(() => {
     const onUpdate = debounce((update: EditorUpdate) => {
       onChangeRef.current?.(update);
+    }, debounceChange);
+    const onSelectionUpdate = debounce((selection: EditorSelectionRange) => {
+      onSelectionRangeChangeRef.current?.(selection);
     }, debounceChange);
 
     const view = new EditorView({
@@ -114,28 +138,64 @@ export function CodeMirrorEditor({
           newSelection !== previousSelection &&
           (newSelection === undefined || previousSelection === undefined || !newSelection.eq(previousSelection));
 
+        if (selectionChanged && docRef.current && typeof docRef.current.value === 'string') {
+          const { anchor, head } = view.state.selection.main;
+          onSelectionChangeRef.current?.(
+            getEditorTextSelection(docRef.current.filePath, view.state.doc.toString(), anchor, head),
+          );
+        }
+
         if (
           docRef.current &&
           !docRef.current.loading &&
-          (transactions.some((transaction) => transaction.docChanged) || selectionChanged)
+          transactions.some((transaction) => transaction.docChanged)
         ) {
           onUpdate({
             selection: view.state.selection,
             content: view.state.doc.toString(),
           });
+        }
 
+        if (selectionChanged) {
+          const { anchor, head } = view.state.selection.main;
+          onSelectionUpdate({ anchor, head });
+        }
+
+        if (docRef.current && !docRef.current.loading && (transactions.some((transaction) => transaction.docChanged) || selectionChanged)) {
           editorStatesRef.current!.set(docRef.current.filePath, view.state);
         }
       },
     });
 
     viewRef.current = view;
+    const pointerCoordinateApi: EditorPointerCoordinateApi = {
+      positionAtCoordinates(clientX, clientY) {
+        const document = docRef.current;
+        const editorBounds = view.dom.getBoundingClientRect();
+        if (clientX < editorBounds.left || clientX > editorBounds.right || clientY < editorBounds.top || clientY > editorBounds.bottom || !document || typeof document.value !== 'string') return null;
+        const documentOffset = view.posAtCoords({ x: clientX, y: clientY }, false) ?? view.state.selection.main.head;
+        const coordinates = view.coordsAtPos(documentOffset);
+        if (!coordinates) return null;
+        return { filePath: document.filePath, documentOffset, offsetX: clientX - coordinates.left, offsetY: clientY - coordinates.top };
+      },
+      coordinatesAtPosition(position) {
+        const document = docRef.current;
+        if (!document || document.filePath !== position.filePath || typeof document.value !== 'string') return null;
+        const coordinates = view.coordsAtPos(Math.min(view.state.doc.length, Math.max(0, position.documentOffset)));
+        if (!coordinates) return null;
+        return { clientX: coordinates.left + position.offsetX, clientY: coordinates.top + position.offsetY };
+      },
+    };
+    (view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }).__tutorialKitPointerCoordinateApi = pointerCoordinateApi;
+    onPointerCoordinateApiChange?.(pointerCoordinateApi);
 
     // we grab the style tag that codemirror mounts
     const codemirrorStyleTag = document.head.children[0];
     codemirrorStyleTag.setAttribute('data-astro-transition-persist', 'codemirror');
 
     return () => {
+      onPointerCoordinateApiChange?.(null);
+      delete (view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }).__tutorialKitPointerCoordinateApi;
       viewRef.current?.destroy();
       viewRef.current = undefined;
     };
@@ -184,6 +244,28 @@ export function CodeMirrorEditor({
 
     setEditorDocument(view, theme, language, readOnly, autoFocusOnDocumentChange, doc as TextEditorDocument);
   }, [doc?.value, doc?.filePath, doc?.loading, autoFocusOnDocumentChange]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !doc || doc.value instanceof Uint8Array) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const left = doc.scroll?.left ?? 0;
+      const top = doc.scroll?.top ?? 0;
+      if (view.scrollDOM.scrollLeft !== left || view.scrollDOM.scrollTop !== top) view.scrollDOM.scrollTo(left, top);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [doc?.filePath, doc?.scroll?.left, doc?.scroll?.top]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const requestedSelection = playbackSelection ?? { anchor: 0, head: 0 };
+    const length = view.state.doc.length;
+    const anchor = Math.min(length, Math.max(0, Math.floor(requestedSelection.anchor)));
+    const head = Math.min(length, Math.max(0, Math.floor(requestedSelection.head)));
+    const current = view.state.selection.main;
+    if (current.anchor !== anchor || current.head !== head) view.dispatch({ selection: { anchor, head } });
+  }, [doc?.filePath, playbackSelection?.anchor, playbackSelection?.head]);
 
   return (
     <div className={classNames('relative', className)}>

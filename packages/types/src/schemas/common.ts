@@ -29,6 +29,26 @@ export const commandsSchema = z.object({
 
 export type CommandsSchema = z.infer<typeof commandsSchema>;
 
+export const runtimeConfigSchema = z.discriminatedUnion('provider', [
+  z.strictObject({
+    provider: z.literal('webcontainer'),
+    entrypoint: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    provider: z.literal('pyodide'),
+    entrypoint: z.string().min(1),
+    packages: z.array(z.string()).length(0, 'Python packages are not supported by the current Pyodide MVP.').optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
+]);
+
+export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
+export type PythonRuntimeConfig = Extract<RuntimeConfig, { provider: 'pyodide' }>;
+export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = { provider: 'webcontainer' };
+export function resolveRuntimeConfig(runtime?: RuntimeConfig): RuntimeConfig {
+  return runtime ?? DEFAULT_RUNTIME_CONFIG;
+}
+
 export const previewSchema = z.union([
   // `false` if you want to disable the preview entirely
   z.boolean(),
@@ -213,6 +233,8 @@ export type EditorSchema = z.infer<typeof editorSchema>;
 export type CustomSchema = z.infer<typeof customSchema>;
 
 export const webcontainerSchema = commandsSchema.extend({
+  runtime: runtimeConfigSchema.optional().describe('Selects the lesson execution provider. Defaults to WebContainer.'),
+
   meta: metaTagsSchema.optional().describe('Configures `<meta>` tags for Open Graph protocole and Twitter.'),
 
   custom: customSchema.optional().describe('Assign custom fields to a chapter/part/lesson in the Astro collection'),

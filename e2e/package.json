@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "preview": "astro build && astro preview",
+    "preview": "astro build && node ./scripts/preview-with-interactive-api.mjs --dir dist --port 4329",
     "dev:override-components": "astro dev --config ./configs/override-components.ts",
     "preview:override-components": "astro build --config ./configs/override-components.ts && astro preview --config ./configs/override-components.ts",
     "dev:lessons-in-root": "astro dev --config ./configs/lessons-in-root.ts",
