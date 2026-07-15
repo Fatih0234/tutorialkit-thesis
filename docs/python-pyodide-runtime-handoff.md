@@ -12,6 +12,7 @@ This is the review handoff for PR #18 after the integration-boundary follow-up.
 - Original handoff: `9edd3be`
 - Integration-boundary follow-up: `f901eb897c2b6923c151ce14e69be88ced25311f`
 - Reviewed documentation/head: `965f154fb2f19ba941d6bfb021effadd9235025f`
+- Delayed-run cancellation fix: `70f4c29ffcf7a75e88fbbaf5087ecfee0386e5e5`
 
 The PR is based on `feature/learner-ai-helper` because it depends on that branch's recording, playback, learner checkpoint, identity, and workspace work. Review against that branch to isolate the Python changes.
 
@@ -341,6 +342,24 @@ A local attempt to run selected tests through the repository's four-server Playw
 - text workspace files only;
 - Run currently waits 175 ms for the existing editor batching interval instead of calling an explicit editor flush API; the session generation and playback mode are revalidated after this delay so invalidated work cannot execute;
 - WebContainer can still boot globally through legacy application initialization even though Python lessons do not use it.
+
+## Session closure and integration
+
+The large Python integration session is complete. The implementation remains recoverable through its individual commits and the permanent archive tags created before integration:
+
+```text
+archive/learner-ai-helper-pre-python
+archive/python-pyodide-runtime-final
+```
+
+The stacked history is integrated without squashing:
+
+```text
+PR #18: feature/python-pyodide-runtime → feature/learner-ai-helper
+PR #17: feature/learner-ai-helper → main
+```
+
+Both merges use merge commits so the original learner-AI and Python commit identities remain in `main`. Future Python work should use new focused branches from `main`; this completed branch is historical rather than a continuing development trunk.
 
 ## Recommended next work
 
