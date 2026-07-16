@@ -7,6 +7,15 @@ const require = createRequire(import.meta.url);
 const ASSETS = ['pyodide-lock.json', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip'] as const;
 const URL_PREFIX = '/_tutorialkit/pyodide/';
 
+function pythonWorkerPath(): string {
+  const reactPackage = require.resolve('@tutorialkit/react/package.json');
+  return join(dirname(reactPackage), 'dist', 'runtimes', 'python', 'pyodide.worker.js');
+}
+
+export function getPythonWorkerDevUrl(): string {
+  return `/@fs/${pythonWorkerPath()}`;
+}
+
 function assetPath(name: (typeof ASSETS)[number]): string {
   const reactPackage = require.resolve('@tutorialkit/react/package.json');
   return join(dirname(reactPackage), 'dist', 'runtimes', 'python', 'pyodide', name);
@@ -43,6 +52,8 @@ export const pythonRuntimeAssets: VitePlugin = {
     if (!isBuild) {
       return;
     }
+
+    this.emitFile({ type: 'chunk', id: pythonWorkerPath(), fileName: '_tutorialkit/python-worker.js' });
 
     for (const name of ASSETS) {
       this.emitFile({ type: 'asset', fileName: `_tutorialkit/pyodide/${name}`, source: readFileSync(assetPath(name)) });
