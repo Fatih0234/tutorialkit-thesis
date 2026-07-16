@@ -1,122 +1,74 @@
 # AGENTS.md
 
-## Project goal
+## Project purpose
 
-Build only the interactivity layer for an interactive programming tutorial platform.
+TutorialKit Thesis extends TutorialKit with teacher recording and learner-owned interactive lesson history.
 
-The first POC should prove this flow:
+The primary learner flow is:
 
-1. Teacher records editor/file actions on a timeline.
-2. Learner replays the teacher timeline.
-3. Learner pauses playback.
-4. Learner edits their own workspace.
-5. Learner saves only their changes as a delta/snapshot.
-6. Teacher timeline remains unchanged.
-7. Learner changes remain recoverable after teacher playback resumes.
+1. Replay an immutable teacher timeline.
+2. Pause automatically on the first learner project mutation.
+3. Branch from the exact displayed teacher state.
+4. Autosave learner work without modifying teacher data.
+5. Create immutable checkpoints with Ctrl/Cmd+S.
+6. Review, fork, restore, and synchronize learner work.
+7. Resume teacher playback without losing learner history.
 
-## Source constraints
+Keep changes focused. Avoid unrelated TutorialKit refactors.
 
-You are working with minimal local tools only:
+## Architectural invariants
 
-- read
-- write
-- edit
-- bash
-- todo
-- Playwright CLI/tests where available
+### Teacher truth is immutable
 
-Do not depend on web search, external fetch, planning-mode web tools, or online documentation.
+Learner actions must never modify teacher recordings or teacher timeline events.
 
-## Scope for this session
+Teacher positions are identified by both:
 
-Build the interactivity layer only.
+- `teacherTimestampMs`
+- `lastAppliedTeacherEventSeq`
 
-Allowed:
+### Learner history is separate
 
-- local event recorder
-- local timeline playback
-- local learner pause/edit mode
-- local learner delta/snapshot save/restore
-- localStorage persistence for POC
-- Playwright tests
-- small debug UI
+Learner work uses:
 
-Not allowed in this POC:
+- append-only branch events;
+- durable working trees;
+- immutable checkpoints;
+- explicit parent/fork references;
+- teacher-origin file hashes.
 
-- AI tutor layer
-- Flue integration
-- AI SDK integration
-- production backend APIs
-- account/auth work
-- cloud storage
-- analytics
-- terminal recording
-- iframe internals recording
-- patch-based merge engine
-- broad TutorialKit refactors
+Legacy `LearnerDelta` records remain readable but must not be created for new work.
 
-## Architectural rules
+### Takeover is atomic
 
-### Teacher timeline is immutable
+The first learner project mutation must pause playback and branch from the exact currently displayed teacher state before applying the edit.
 
-Teacher recording data must never be modified by learner actions.
+Focus, cursor movement, selection, and scrolling must not pause playback or create learner history.
 
-### Learner work is separate
+### Drafts and checkpoints differ
 
-Learner changes must be saved as learner-owned deltas/snapshots keyed by:
+- Edits autosave a durable draft.
+- Only Ctrl/Cmd+S creates a checkpoint.
+- Repeated saves without changes create no duplicate checkpoint.
+- Run and Save remain independent.
 
-- lesson id
-- teacher recording id/version
-- teacher timestamp
-- base teacher files hash
+### Playback cannot destroy learner work
 
-### No silent overwrite
+Play restores teacher files at the current Lesson position and resumes playback. Learner branches remain recoverable through My Work.
 
-Teacher playback must not silently destroy saved learner changes.
+History navigation changes editor files only. It must not seek Lesson time or media.
 
-For the first POC, use separate conceptual modes:
+### Programmatic changes need explicit origins
 
-- Teacher Playback
-- My Workspace
+Teacher playback, history restoration, resets, and runtime synchronization must use explicit CodeMirror transaction origins.
 
-### File-level deltas first
+Programmatic document changes must never be recorded as user edits.
 
-Use file-level `addedOrModified` and `removed` deltas for the first POC.
+Presentation-only decorations, including learner diffs and cursor presence, must never change `state.doc`, undo history, execution, or persistence.
 
-Do not implement fine-grained text patches yet.
+### Persistence is local-first
 
-### Use localStorage first
-
-Use localStorage keys:
-
-- `interactive-poc.teacherRecording`
-- `interactive-poc.learnerDeltas`
-
-Backend storage comes only after the full POC is validated.
-
-### Prefer wrapping existing callbacks
-
-Start from TutorialKit workspace/editor callbacks.
-
-Prefer editing:
-
-- `packages/react/src/Panels/WorkspacePanel.tsx`
-- small files under `packages/runtime/src/interactive-timeline/`
-
-Avoid editing CodeMirror internals unless the existing editor callbacks are insufficient.
-
-## Testing rules
-
-Every phase must add or update a Playwright test.
-
-Do not claim a phase is complete unless:
-
-1. The app builds or runs.
-2. Relevant Playwright test passes or has a clearly documented blocker.
-3. `localStorage` data shape can be inspected.
-4. `git diff --stat` is small and explainable.
-
-## Path convention
+IndexedDB is authoritative for learner history. Remote synchronization may fail without making local work unavailable.
 
 Normalize internal file paths to leading-slash form:
 
@@ -125,40 +77,99 @@ Normalize internal file paths to leading-slash form:
 /package.json
 ```
 
-If a snapshot API returns paths without leading slashes, normalize before diffing or saving deltas.
-
-## Programmatic-change guard
-
-Playback-applied file changes must not be recorded as teacher events or learner edits.
-
-Use an explicit guard such as:
+## Important locations
 
 ```text
-origin: "playback"
-suppressRecording = true
+packages/runtime/src/interactive-timeline/
+packages/runtime/src/interactive-timeline/learner-history/
+packages/react/src/Panels/useInteractivePoc.ts
+packages/react/src/Panels/interactive/history/
+packages/react/src/core/CodeMirrorEditor/
+packages/astro/src/vite-plugins/interactive-persistence.ts
+e2e/interactive-poc.spec.ts
+docs/interactive-poc-architecture.md
 ```
 
-## Debug UI is acceptable
+Prefer pure runtime functions for materialization, branching, diffing, and persistence behavior. Keep React responsible for orchestration and presentation.
 
-For the POC, add crude visible controls:
+## Development commands
 
-- Start Recording
-- Stop Recording
-- Play Recording
-- Pause
-- Save Learner Delta
-- Restore Learner Delta
+Run from the repository root:
 
-Production UI can come later.
+```bash
+pnpm build
+pnpm --filter @tutorialkit/react exec vitest --run
+pnpm --filter @tutorialkit/runtime exec vitest --run
+```
 
-## Stop conditions
+Start the local application:
 
-Pause and ask for product/architecture input only if the answer materially changes the architecture.
+```bash
+pnpm build
+pnpm --filter ./e2e dev
+```
 
-Examples:
+Open:
 
-- whether learner workspace should be separate or overlaid
-- whether backend persistence must be included immediately
-- whether exact terminal replay is in-scope
+```text
+http://localhost:4329
+```
 
-Do not ask generic questions before doing local inspection.
+Run targeted interactive Playwright coverage:
+
+```bash
+cd e2e
+TUTORIALKIT_E2E_DEFAULT_ONLY=true \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome \
+pnpm exec playwright test interactive-poc.spec.ts --project Default
+```
+
+Run `pnpm lint` when working on CI cleanup. Until the existing lint baseline is repaired, clearly distinguish pre-existing errors from errors introduced by the current change.
+
+## Definition of done
+
+Do not claim completion unless:
+
+1. Relevant unit tests pass.
+2. The workspace builds.
+3. Relevant Playwright coverage passes or has a documented blocker.
+4. `git diff --check` passes.
+5. Persistence and teacher-immutability guarantees remain intact.
+6. The diff is focused and explainable.
+7. Documentation is updated when behavior or architecture changes.
+
+## Git workflow
+
+Use this workflow for all non-trivial changes:
+
+```text
+main
+  ↓
+feature branch
+  ↓
+local lint/tests/build
+  ↓
+push
+  ↓
+pull request
+  ↓
+required CI checks
+  ↓
+merge
+  ↓
+automatic remote branch deletion
+```
+
+Do not develop directly on `main`.
+
+Do not force-push, rewrite shared history, bypass failing required checks, or merge an unstable PR without explicit approval and a documented reason.
+
+Keep tests with the feature they validate. Use separate documentation or behavior-neutral cleanup commits when appropriate.
+
+## Working style
+
+Inspect local code and documentation before asking generic questions.
+
+Ask for product or architecture input only when the answer materially changes data ownership, history semantics, persistence, playback behavior, or learner workspace behavior.
+
+Never commit secrets, generated build output, Playwright reports, temporary files, or local environment configuration.
