@@ -55,9 +55,10 @@ git diff --check
 
 - [ ] **Learner Demo** can sign in and open the seeded published lesson.
 - [ ] **Play** replays structured teacher events in deterministic order through the shared seekable editor player.
-- [ ] **Pause and Experiment** pauses playback and permits learner editing.
-- [ ] **Save Experiment** stores a file-level learner delta without changing the teacher recording and renders a timestamped timeline marker.
-- [ ] **Return to Lecture** reconstructs teacher truth at the experiment anchor before continuing playback.
+- [ ] Focus and selection do not pause playback; the first project mutation pauses atomically and preserves its first character.
+- [ ] ORIGIN records the exact teacher timestamp, event sequence, and file hash; `Ctrl/Cmd+S` creates a named checkpoint only when dirty.
+- [ ] Rewind preserves HEAD; editing historical state creates a child branch; normal Play reconstructs teacher truth and collapses My work without deleting learner history.
+- [ ] Clearing local history and reloading restores the authenticated learner branch remotely; another learner cannot access it.
 - [ ] Passing a saved marker during normal playback has no effect on the teacher timeline.
 - [ ] Selecting a marker reconstructs teacher state at its timestamp and applies the learner-owned delta without a later-teacher-edit conflict prompt.
 - [ ] Unsaved work requires **Save and Resume**, **Resume Without Saving**, or **Cancel** before returning to playback.

@@ -31,6 +31,8 @@ interactive-poc.teacherRecording
 interactive-poc.learnerDeltas
 ```
 
+Learner history branches use a separate local-first boundary. IndexedDB is authoritative while editing; branch aggregates are synchronized to `/api/interactive/learner-branches` after branch creation, commits, a bounded edit debounce, and page visibility loss. Aggregates include append-only events, immutable commit snapshots, and the recoverable working tree. The server derives ownership from the session, validates the linked recording/version/ORIGIN hash, and treats repeated writes idempotently. Divergent writes are preserved under a new branch ID rather than overwriting either history.
+
 The mirror is intentionally retained so existing localStorage inspection and Playwright compatibility checks continue to work, but it is not an authoritative draft collection. IndexedDB performs a one-time migration of an unpublished legacy recording only; loading a published recording into the mirror never creates a draft. Deleting a matching draft clears both IndexedDB and the compatibility mirror, and successful publication removes the corresponding local draft. Media blobs are stored only in IndexedDB for local drafts or in `.interactive-data/media-assets/` for published/dev data; they are not mirrored to localStorage. Dev sessions are stored server-side under `.interactive-data/sessions/` and are never mirrored to localStorage. `LocalStorageInteractiveTimelineStorage` remains the timeline-only fallback when IndexedDB is unavailable.
 
 Remote published data is stored by local dev endpoints under `/api/interactive/*` in a gitignored repository directory:
@@ -39,11 +41,12 @@ Remote published data is stored by local dev endpoints under `/api/interactive/*
 .interactive-data/
   teacher-recordings/
   learner-deltas/
+  learner-branches/
   media-assets/
   sessions/
 ```
 
-`RemoteInteractiveTimelineStorage` is the only interactivity module that uses `fetch`. It sends `credentials: "same-origin"` for the demo session cookie. Media upload uses `FormData`/`multipart/form-data`. Package downloads are browser Blob downloads and package media is serialized as base64 JSON. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone H. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
+`RemoteInteractiveTimelineStorage` and the dedicated `RemoteLearnerHistoryStorage` are the interactivity modules that use `fetch`. It sends `credentials: "same-origin"` for the demo session cookie. Media upload uses `FormData`/`multipart/form-data`. Package downloads are browser Blob downloads and package media is serialized as base64 JSON. No external auth provider, OAuth/OIDC, real password system, production database, or cloud object-storage upload is introduced by Milestone H. Future production backend work should implement the same async adapter contract rather than changing React/workspace behavior directly.
 
 
 ## Current product UX, ownership, experiment, and demo behavior
@@ -52,11 +55,11 @@ The current product UI uses the existing adapters and ownership boundary as foll
 
 - the **Teacher Studio** lists local drafts from IndexedDB and Published Lessons from `/api/interactive/teacher-recordings`;
 - the **Learner Lesson** navigation tab opens the **Interactive Lessons** library, which lists Published Lessons only;
-- **Save Experiment** persists a user-scoped `LearnerDelta` and presents it as a timestamped marker;
-- **Return to Lecture** reconstructs teacher truth at the anchor timestamp before playback continues;
-- selecting a marker reconstructs the historical teacher base and applies the latest learner checkpoint at that timestamp;
+- the first learner project mutation creates a user-scoped branch at an exact teacher ORIGIN;
+- `Ctrl/Cmd+S` stores a named immutable snapshot, while normal Play from My work reconstructs teacher truth before continuing;
+- selecting learner history reconstructs an event or checkpoint without moving HEAD; editing historical state creates a child branch;
 - later teacher edits do not create a normal conflict because no merge with a later state is attempted;
-- unsaved work uses save/discard/cancel loss protection without adding persistence writes;
+- uncommitted work uses checkpoint/discard/cancel loss protection; local autosave remains separate from checkpoints;
 - **Save Draft** and **Publish** exist only in immersive Recording Review; reviewing an existing publication is read-only and never creates a draft;
 - successful publication consumes the matching local draft and local media while preserving the published compatibility mirror;
 - **Delete Draft** is a confirmed local card action and clears a matching compatibility mirror so deletion survives refresh;

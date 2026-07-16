@@ -12,7 +12,7 @@ Read these documents as the current source of truth, in this order:
 4. [`interactive-persistence-contract.md`](./interactive-persistence-contract.md) — authoritative local/remote persistence, ownership, migration, and deletion contract.
 5. [`immersive-interactive-experience.md`](./immersive-interactive-experience.md) — management/workspace screen ownership.
 6. [`interactive-recording-studio.md`](./interactive-recording-studio.md) — teacher preparation, recording, and review.
-7. [`learner-timeline-experiments.md`](./learner-timeline-experiments.md) — learner checkpoint behavior.
+7. [`learner-timeline-experiments.md`](./learner-timeline-experiments.md) — automatic takeover, branches, checkpoints, rewind, forks, and legacy migration.
 8. [`presentation-resource-layer.md`](./presentation-resource-layer.md) — preview, explanation, progressive deck, and Instructor Camera resources.
 9. [`ai-learning-assistant.md`](./ai-learning-assistant.md) — learner-only contextual AI assistant boundaries and operation.
 

@@ -67,11 +67,12 @@ Only `RemoteInteractiveTimelineStorage` performs interactivity-layer `fetch` cal
 ## Learner Lesson flow
 
 1. The learner signs in and opens a published lesson.
-2. The shared editor player resets the workspace to `baseFiles`, applies ordered events by `tMs` then `seq`, and supports deterministic pause/restart/seek.
-3. **Pause and Experiment** pauses the playback source and captures the teacher timestamp.
-4. **Save Experiment** compares the learner workspace with teacher state materialized at that timestamp, stores the file-level delta, and creates a timeline marker.
-5. **Return to Lecture** reconstructs teacher truth at the anchor timestamp before continuing teacher events; the saved experiment remains separate.
-6. Selecting a marker validates recording id/version and base-state hash, reconstructs the historical teacher state, and applies the latest learner-owned checkpoint at that timestamp.
+2. The shared editor player applies teacher events deterministically by `tMs` then `seq`; focus and selection remain available during playback.
+3. The first user project mutation synchronously pauses playback and creates an ORIGIN from the exact displayed timestamp, event sequence, files, and hash.
+4. Learner edits append to a local-first branch; `Ctrl/Cmd+S` creates a named checkpoint only when dirty.
+5. The Lesson timeline groups checkpoint and dirty-draft markers by takeover time. Opening one pauses without seeking; the complete My work fork graph supports editor-only ORIGIN, checkpoint, and HEAD navigation.
+6. Editing historical state creates a child branch without deleting the parent's later history.
+7. Pressing Play from My work reconstructs teacher editor truth at the unchanged paused lesson/media position before continuing. Learner branches remain independently recoverable locally and remotely.
 
 ## Structured timeline and media attachment model
 
@@ -94,15 +95,13 @@ Media is never mirrored into localStorage. Legacy recording migration is one-tim
 
 `RemoteInteractiveTimelineStorage` maps the same async storage seam to `/api/interactive/*`. The Astro development/preview middleware persists recording JSON, learner delta JSON, media metadata/binaries, and sessions under `.interactive-data/`. This file-backed path demonstrates backend boundaries and browser reload recovery; it is not a production database or object store.
 
-## Learner delta model
+## Learner history model
 
-A `LearnerDelta` stores full contents for `addedOrModified` files and normalized paths for `removed` files. It is keyed by learner, lesson, teacher recording id/version, paused teacher timestamp, and the hash of teacher files at that timestamp. The remote server derives learner ownership from the current session rather than trusting a client-supplied user id. Saving or restoring a delta never mutates the teacher recording.
+IndexedDB stores learner branches, append-only events, immutable commit snapshots, and recoverable working trees. Every root branch is tied to an exact teacher ORIGIN; historical edits create child branches with a parent branch/event/commit reference. HEAD and selected history position are separate concepts.
 
-## Learner experiment model
+Branch aggregates synchronize through authenticated remote endpoints. The server derives ownership from the session and validates recording/version, ORIGIN hash, event ordering, commit hashes, and materialized working trees. Writes are idempotent, and unresolved divergence is preserved as a separate branch. No automatic text merge is performed.
 
-Learner deltas are historical branches, not merge candidates. Later teacher changes to the same path do not conflict with a checkpoint anchored earlier. The player groups saves by timestamp, renders one violet marker per anchor, and opens the latest version from that marker. Passing a marker during ordinary playback has no effect. Unsaved edits receive a separate save/discard/cancel warning before returning to teacher playback.
-
-An exceptional recording-version or historical-base-hash mismatch reports that the experiment belongs to another lecture version. The prototype does not automatically merge or compute text hunks.
+Legacy `LearnerDelta` records remain read-compatible and are lazily exposed as imported single-checkpoint branches, but new learner work is not written in that format.
 
 ## Import/export package model
 
@@ -110,14 +109,14 @@ An exceptional recording-version or historical-base-hash mismatch reports that t
 
 ## Identity and ownership model
 
-The demo supplies fixed, non-sequential teacher and learner user ids. Login creates a random server-side session under `.interactive-data/sessions/`; the `interactive_session` cookie contains only that random id and is `HttpOnly`, `SameSite=Lax`, and scoped to `/`. Teacher roles gate publishing, media upload, owner-authorized publication deletion, published import, seed, and reset. Learner roles gate remote delta save/restore, and delta queries are user-scoped.
+The demo supplies fixed, non-sequential teacher and learner user ids. Login creates a random server-side session under `.interactive-data/sessions/`; the `interactive_session` cookie contains only that random id and is `HttpOnly`, `SameSite=Lax`, and scoped to `/`. Teacher roles gate publishing, media upload, owner-authorized publication deletion, published import, seed, and reset. Learner roles gate remote branch and legacy-delta access, and every query is user-scoped.
 
 This proves ownership boundaries but is intentionally not production authentication: there are no passwords, OAuth/OIDC, account recovery, production authorization administration, or durable user database.
 
 ## Architectural invariants
 
 - Teacher-recording content remains immutable after save/publish; deletion is an explicit owner-authorized whole-resource operation.
-- Learner deltas remain separate and user-scoped.
+- Learner branches remain separate, append-only, and user-scoped.
 - Paths are normalized to leading-slash form.
 - Programmatic playback/restore is guarded from recording.
 - Timeline ordering is deterministic by timestamp and sequence.
