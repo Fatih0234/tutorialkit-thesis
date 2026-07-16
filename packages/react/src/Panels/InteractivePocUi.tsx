@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
+import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
 import { classNames } from '../utils/classnames.js';
 
 export type InteractiveButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -17,16 +17,17 @@ interface InteractiveButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   variant?: InteractiveButtonVariant;
 }
 
-export function InteractiveButton({
+export const InteractiveButton = forwardRef<HTMLButtonElement, InteractiveButtonProps>(function InteractiveButton({
   children,
   className,
   icon,
   type = 'button',
   variant = 'secondary',
   ...props
-}: InteractiveButtonProps) {
+}, ref) {
   return (
     <button
+      ref={ref}
       type={type}
       className={classNames(
         'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-500 transition-colors',
@@ -41,7 +42,7 @@ export function InteractiveButton({
       <span>{children}</span>
     </button>
   );
-}
+});
 
 interface InteractiveCardProps extends HTMLAttributes<HTMLElement> {
   children: ReactNode;

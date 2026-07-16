@@ -18,6 +18,10 @@ import {
   normalizeTeacherPointerClickPayload,
   normalizeTeacherPointerPayload,
   sanitizeWhiteboardScene,
+  materializeTeacherStateAtPosition,
+  materializeLearnerBranch,
+  simpleHashFiles,
+  type LearnerBranchAggregate,
   type InteractiveSession,
   type InteractiveUser,
 } from '@tutorialkit/runtime';
@@ -130,6 +134,7 @@ interface LearnerDelta {
   teacherRecordingId: string;
   teacherRecordingVersion: number;
   teacherTimestampMs: number;
+  lastAppliedTeacherEventSeq?: number;
   baseTeacherFilesHash: string;
   addedOrModified: FilesSnapshot;
   removed: string[];
@@ -188,6 +193,7 @@ export function getDataPaths() {
     root,
     teacherRecordings: path.join(root, 'teacher-recordings'),
     learnerDeltas: path.join(root, 'learner-deltas'),
+    learnerBranches: path.join(root, 'learner-branches'),
     mediaAssets: path.join(root, 'media-assets'),
     sessions: path.join(root, 'sessions'),
   };
@@ -580,6 +586,13 @@ function normalizeLearnerDelta(value: unknown, fallbackUserId?: string): Learner
     throw new Error('Learner delta teacherTimestampMs must be non-negative.');
   }
 
+  if (
+    candidate.lastAppliedTeacherEventSeq !== undefined &&
+    (!Number.isInteger(candidate.lastAppliedTeacherEventSeq) || candidate.lastAppliedTeacherEventSeq < -1)
+  ) {
+    throw new Error('Learner delta lastAppliedTeacherEventSeq must be an integer greater than or equal to -1.');
+  }
+
   if (!candidate.baseTeacherFilesHash || typeof candidate.baseTeacherFilesHash !== 'string') {
     throw new Error('Learner delta baseTeacherFilesHash is required.');
   }
@@ -595,12 +608,106 @@ function normalizeLearnerDelta(value: unknown, fallbackUserId?: string): Learner
     teacherRecordingId: assertSafeId(candidate.teacherRecordingId, 'teacher recording id'),
     teacherRecordingVersion: candidate.teacherRecordingVersion,
     teacherTimestampMs: candidate.teacherTimestampMs,
+    lastAppliedTeacherEventSeq: candidate.lastAppliedTeacherEventSeq,
     baseTeacherFilesHash: candidate.baseTeacherFilesHash,
     addedOrModified: normalizeFiles(candidate.addedOrModified ?? {}),
     removed: candidate.removed.map((filePath) => normalizePath(String(filePath))),
     selectedFile: candidate.selectedFile ? normalizePath(candidate.selectedFile) : undefined,
     createdAt: candidate.createdAt && typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
   };
+}
+
+function normalizeLearnerBranchAggregate(value: unknown, ownerUserId: string): LearnerBranchAggregate {
+  const input = value && typeof value === 'object' && 'learnerBranch' in value
+    ? (value as { learnerBranch?: unknown }).learnerBranch
+    : value;
+
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Expected learner branch aggregate.');
+  }
+
+  const aggregate = input as Partial<LearnerBranchAggregate>;
+  const branch = aggregate.branch;
+  if (aggregate.schemaVersion !== 1 || !branch || branch.schemaVersion !== 1) {
+    throw new Error('Unsupported learner branch schema version.');
+  }
+
+  const id = assertSafeId(String(branch.id), 'learner branch id');
+  const origin = branch.origin;
+  if (!origin || !Number.isInteger(origin.teacherRecordingVersion) || !Number.isFinite(origin.teacherTimestampMs)
+    || !Number.isInteger(origin.lastAppliedTeacherEventSeq) || typeof origin.baseTeacherFilesHash !== 'string') {
+    throw new Error('Learner branch origin is malformed.');
+  }
+
+  const events = Array.isArray(aggregate.events) ? aggregate.events : [];
+  if (events.length > 5000) throw new Error('Learner branch has too many events.');
+  let expectedSeq = 1;
+  const eventIds = new Set<string>();
+  const normalizedEvents = events.map((event) => {
+    if (!event || event.schemaVersion !== 1 || event.branchId !== id || event.seq !== expectedSeq++) {
+      throw new Error('Learner branch events must use contiguous ascending sequences.');
+    }
+    const eventId = assertSafeId(String(event.id), 'learner event id');
+    if (eventIds.has(eventId)) throw new Error('Learner event ids must be unique.');
+    eventIds.add(eventId);
+    if (!['file.changed', 'file.created', 'file.deleted', 'file.renamed', 'folder.created', 'folder.deleted', 'folder.renamed'].includes(event.type)) {
+      throw new Error('Unsupported learner event type.');
+    }
+    return { ...event, id: eventId, filePath: event.filePath ? normalizePath(event.filePath) : undefined };
+  });
+
+  if (branch.headEventSeq !== normalizedEvents.length) {
+    throw new Error('Learner branch head does not match its event stream.');
+  }
+
+  const commits = Array.isArray(aggregate.commits) ? aggregate.commits : [];
+  if (commits.length > 500) throw new Error('Learner branch has too many commits.');
+  const normalizedCommits = commits.map((commit) => {
+    if (!commit || commit.schemaVersion !== 1 || commit.branchId !== id || !Number.isInteger(commit.eventSeq)
+      || commit.eventSeq < 0 || commit.eventSeq > branch.headEventSeq) {
+      throw new Error('Learner commit is malformed.');
+    }
+    const filesSnapshot = normalizeFiles(commit.filesSnapshot);
+    if (simpleHashFiles(filesSnapshot) !== commit.filesHash) throw new Error('Learner commit snapshot hash does not match.');
+    return {
+      ...commit,
+      id: assertSafeId(String(commit.id), 'learner commit id'),
+      parentCommitId: commit.parentCommitId ? assertSafeId(commit.parentCommitId, 'parent commit id') : undefined,
+      filesSnapshot,
+      selectedFile: commit.selectedFile ? normalizePath(commit.selectedFile) : undefined,
+    };
+  });
+
+  const tree = aggregate.workingTree;
+  if (!tree || tree.schemaVersion !== 1 || tree.branchId !== id || tree.latestEventSeq !== branch.headEventSeq) {
+    throw new Error('Learner working tree is malformed.');
+  }
+
+  return {
+    schemaVersion: 1,
+    branch: {
+      ...branch,
+      id,
+      userId: ownerUserId,
+      lessonId: String(branch.lessonId),
+      origin: {
+        ...origin,
+        teacherRecordingId: assertSafeId(origin.teacherRecordingId, 'teacher recording id'),
+      },
+      parent: branch.parent ? {
+        branchId: assertSafeId(branch.parent.branchId, 'parent learner branch id'),
+        eventSeq: branch.parent.eventSeq,
+        commitId: branch.parent.commitId ? assertSafeId(branch.parent.commitId, 'parent commit id') : undefined,
+      } : undefined,
+    },
+    events: normalizedEvents,
+    commits: normalizedCommits,
+    workingTree: {
+      ...tree,
+      filesSnapshot: normalizeFiles(tree.filesSnapshot),
+      selectedFile: tree.selectedFile ? normalizePath(tree.selectedFile) : undefined,
+    },
+  } as LearnerBranchAggregate;
 }
 
 function assertSafeId(id: string, label: string): string {
@@ -676,6 +783,7 @@ async function ensureDataDirectories() {
   await Promise.all([
     mkdir(dataPaths.teacherRecordings, { recursive: true }),
     mkdir(dataPaths.learnerDeltas, { recursive: true }),
+    mkdir(dataPaths.learnerBranches, { recursive: true }),
     mkdir(dataPaths.mediaAssets, { recursive: true }),
     mkdir(dataPaths.sessions, { recursive: true }),
   ]);
@@ -1017,9 +1125,10 @@ createServer(async (request, response) => {
 
 async function deleteDemoData(dataPathsInput?: ReturnType<typeof getDataPaths>) {
   const dataPaths = dataPathsInput ?? (await ensureDataDirectories());
-  const [recordings, deltas, mediaAssets] = await Promise.all([
+  const [recordings, deltas, branches, mediaAssets] = await Promise.all([
     readAllJsonFiles<TeacherRecording>(dataPaths.teacherRecordings),
     readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas),
+    readAllJsonFiles<LearnerBranchAggregate>(dataPaths.learnerBranches),
     readAllJsonFiles<StoredMediaAssetMetadata>(dataPaths.mediaAssets),
   ]);
 
@@ -1030,6 +1139,9 @@ async function deleteDemoData(dataPathsInput?: ReturnType<typeof getDataPaths>) 
     ...deltas
       .filter((delta) => isDemoId(delta.id) || isDemoId(delta.teacherRecordingId))
       .map((delta) => rm(getJsonFilePath(dataPaths.learnerDeltas, delta.id), { force: true })),
+    ...branches
+      .filter((aggregate) => isDemoId(aggregate.branch.id) || isDemoId(aggregate.branch.origin.teacherRecordingId))
+      .map((aggregate) => rm(getJsonFilePath(dataPaths.learnerBranches, aggregate.branch.id), { force: true })),
     ...mediaAssets
       .filter((asset) => isDemoId(asset.id) || isDemoId(asset.recordingId))
       .flatMap((asset) => [
@@ -1193,12 +1305,18 @@ async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse
       await rm(getJsonFilePath(dataPaths.mediaAssets, asset.id), { force: true });
     }
 
-    const learnerDeltas = await readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas);
-    await Promise.all(
-      learnerDeltas
+    const [learnerDeltas, learnerBranches] = await Promise.all([
+      readAllJsonFiles<LearnerDelta>(dataPaths.learnerDeltas),
+      readAllJsonFiles<LearnerBranchAggregate>(dataPaths.learnerBranches),
+    ]);
+    await Promise.all([
+      ...learnerDeltas
         .filter((delta) => delta.teacherRecordingId === id)
         .map((delta) => rm(getJsonFilePath(dataPaths.learnerDeltas, delta.id), { force: true })),
-    );
+      ...learnerBranches
+        .filter((aggregate) => aggregate.branch.origin.teacherRecordingId === id)
+        .map((aggregate) => rm(getJsonFilePath(dataPaths.learnerBranches, aggregate.branch.id), { force: true })),
+    ]);
     await rm(recordingPath, { force: true });
     sendJson(res, { ok: true });
     return;
@@ -1320,6 +1438,185 @@ function filterLearnerDeltas(deltas: LearnerDelta[], url: URL, user: Interactive
 
       return b.id.localeCompare(a.id);
     });
+}
+
+async function getLearnerTeacherOriginFiles(aggregate: LearnerBranchAggregate, dataPaths: ReturnType<typeof getDataPaths>) {
+  const recording = await readJsonFile<TeacherRecording>(
+    getJsonFilePath(dataPaths.teacherRecordings, aggregate.branch.origin.teacherRecordingId),
+  );
+  if (!recording || recording.lessonId !== aggregate.branch.lessonId) {
+    throw createHttpError('Linked teacher recording was not found for this lesson.', 400);
+  }
+  if (recording.version !== aggregate.branch.origin.teacherRecordingVersion) {
+    throw createHttpError('Learner branch teacher recording version does not match.', 400);
+  }
+  const files = materializeTeacherStateAtPosition(recording as any, {
+    timestampMs: aggregate.branch.origin.teacherTimestampMs,
+    lastAppliedEventSeq: aggregate.branch.origin.lastAppliedTeacherEventSeq,
+  });
+  if (simpleHashFiles(files) !== aggregate.branch.origin.baseTeacherFilesHash) {
+    throw createHttpError('Learner branch ORIGIN hash does not match teacher truth.', 409);
+  }
+  return files;
+}
+
+async function validateLearnerAggregateMaterialization(
+  aggregate: LearnerBranchAggregate,
+  dataPaths: ReturnType<typeof getDataPaths>,
+  userId: string,
+) {
+  let baseFiles = await getLearnerTeacherOriginFiles(aggregate, dataPaths);
+  if (aggregate.branch.parent) {
+    const parent = await readJsonFile<LearnerBranchAggregate>(
+      getJsonFilePath(dataPaths.learnerBranches, aggregate.branch.parent.branchId),
+    );
+    if (!parent || parent.branch.userId !== userId || aggregate.branch.parent.eventSeq > parent.branch.headEventSeq) {
+      throw createHttpError('Learner branch parent is unavailable.', 400);
+    }
+    const parentBase = parent.branch.parent
+      ? await resolveStoredLearnerBase(parent, dataPaths, userId)
+      : await getLearnerTeacherOriginFiles(parent, dataPaths);
+    baseFiles = materializeLearnerBranch(parentBase, parent.events, aggregate.branch.parent.eventSeq);
+  }
+  const expectedTree = materializeLearnerBranch(baseFiles, aggregate.events, aggregate.branch.headEventSeq);
+  if (simpleHashFiles(expectedTree) !== simpleHashFiles(aggregate.workingTree.filesSnapshot)) {
+    throw createHttpError('Learner working tree does not match its event stream.', 400);
+  }
+  for (const commit of aggregate.commits) {
+    const expectedCommit = materializeLearnerBranch(baseFiles, aggregate.events, commit.eventSeq);
+    if (simpleHashFiles(expectedCommit) !== commit.filesHash) {
+      throw createHttpError('Learner commit does not match its event position.', 400);
+    }
+  }
+}
+
+async function resolveStoredLearnerBase(
+  aggregate: LearnerBranchAggregate,
+  dataPaths: ReturnType<typeof getDataPaths>,
+  userId: string,
+): Promise<FilesSnapshot> {
+  if (!aggregate.branch.parent) return getLearnerTeacherOriginFiles(aggregate, dataPaths);
+  const parent = await readJsonFile<LearnerBranchAggregate>(
+    getJsonFilePath(dataPaths.learnerBranches, aggregate.branch.parent.branchId),
+  );
+  if (!parent || parent.branch.userId !== userId) throw createHttpError('Learner branch parent is unavailable.', 400);
+  return materializeLearnerBranch(
+    await resolveStoredLearnerBase(parent, dataPaths, userId),
+    parent.events,
+    aggregate.branch.parent.eventSeq,
+  );
+}
+
+function renameLearnerAggregate(aggregate: LearnerBranchAggregate, id: string, userId: string): LearnerBranchAggregate {
+  return {
+    ...aggregate,
+    branch: { ...aggregate.branch, id, userId, parent: undefined },
+    events: aggregate.events.map((event) => ({ ...event, branchId: id })),
+    commits: aggregate.commits.map((commit) => ({ ...commit, branchId: id })),
+    workingTree: { ...aggregate.workingTree, branchId: id },
+  };
+}
+
+async function handleLearnerBranches(req: IncomingMessage, res: ServerResponse, url: URL, routeParts: string[]) {
+  const user = req.method === 'GET' ? await getAuthenticatedUser(req) : await requireLearnerUser(req);
+  if (!user || !canLearn(user)) {
+    sendJson(res, routeParts.length === 1 ? { learnerBranches: [] } : { learnerBranch: null }, routeParts.length === 1 ? 200 : 404);
+    return;
+  }
+  const dataPaths = await ensureDataDirectories();
+
+  if (req.method === 'GET' && routeParts.length === 1) {
+    const aggregates = await readAllJsonFiles<LearnerBranchAggregate>(dataPaths.learnerBranches);
+    const lessonId = url.searchParams.get('lessonId');
+    const recordingId = url.searchParams.get('teacherRecordingId');
+    const recordingVersion = url.searchParams.get('teacherRecordingVersion');
+    const filtered = aggregates
+      .filter((aggregate) => aggregate.branch.userId === user.id)
+      .filter((aggregate) => !lessonId || aggregate.branch.lessonId === lessonId)
+      .filter((aggregate) => !recordingId || aggregate.branch.origin.teacherRecordingId === recordingId)
+      .filter((aggregate) => !recordingVersion || aggregate.branch.origin.teacherRecordingVersion === Number(recordingVersion))
+      .sort((a, b) => b.branch.updatedAt.localeCompare(a.branch.updatedAt));
+    sendJson(res, { learnerBranches: filtered });
+    return;
+  }
+
+  if (req.method === 'GET' && routeParts.length === 2) {
+    const id = assertSafeId(routeParts[1] ?? '', 'learner branch id');
+    const aggregate = await readJsonFile<LearnerBranchAggregate>(getJsonFilePath(dataPaths.learnerBranches, id));
+    if (!aggregate || aggregate.branch.userId !== user.id) {
+      sendJson(res, { learnerBranch: null }, 404);
+      return;
+    }
+    sendJson(res, { learnerBranch: aggregate });
+    return;
+  }
+
+  if (req.method === 'PUT' && routeParts.length === 2) {
+    const requestedId = assertSafeId(routeParts[1] ?? '', 'learner branch id');
+    let incoming = normalizeLearnerBranchAggregate(await readJsonRequest(req), user.id);
+    if (incoming.branch.id !== requestedId) throw createHttpError('Learner branch route id does not match payload.', 400);
+    let filePath = getJsonFilePath(dataPaths.learnerBranches, requestedId);
+    const existing = await readJsonFile<LearnerBranchAggregate>(filePath);
+    if (existing && existing.branch.userId === user.id
+      && (existing.branch.lessonId !== incoming.branch.lessonId
+        || hashStableJson(existing.branch.origin) !== hashStableJson(incoming.branch.origin)
+        || hashStableJson(existing.branch.parent ?? null) !== hashStableJson(incoming.branch.parent ?? null))) {
+      throw createHttpError('Learner branch ancestry and ORIGIN are immutable.', 409);
+    }
+    await validateLearnerAggregateMaterialization(incoming, dataPaths, user.id);
+    if (!existing) {
+      await writeJsonFile(filePath, incoming);
+      sendJson(res, { learnerBranch: incoming, outcome: 'created' }, 201);
+      return;
+    }
+
+    const commonLength = Math.min(existing.events.length, incoming.events.length);
+    const compatiblePrefix = existing.branch.userId === user.id
+      && Array.from({ length: commonLength }, (_, index) => hashStableJson(existing.events[index]) === hashStableJson(incoming.events[index])).every(Boolean);
+
+    if (!compatiblePrefix) {
+      const forkId = createSafeId('learner-branch');
+      incoming = renameLearnerAggregate(incoming, forkId, user.id);
+      filePath = getJsonFilePath(dataPaths.learnerBranches, forkId);
+      await writeJsonFile(filePath, incoming);
+      sendJson(res, { learnerBranch: incoming, outcome: 'forked' }, 201);
+      return;
+    }
+
+    const commitsById = new Map(existing.commits.map((commit) => [commit.id, commit]));
+    const commitCollision = incoming.commits.some((commit) => {
+      const stored = commitsById.get(commit.id);
+      return stored !== undefined && hashStableJson(stored) !== hashStableJson(commit);
+    });
+    if (commitCollision) {
+      const forkId = createSafeId('learner-branch');
+      incoming = renameLearnerAggregate(incoming, forkId, user.id);
+      await writeJsonFile(getJsonFilePath(dataPaths.learnerBranches, forkId), incoming);
+      sendJson(res, { learnerBranch: incoming, outcome: 'forked' }, 201);
+      return;
+    }
+    for (const commit of incoming.commits) commitsById.set(commit.id, commit);
+
+    if (incoming.events.length < existing.events.length) {
+      const merged = { ...existing, commits: [...commitsById.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) };
+      const changed = hashStableJson(merged) !== hashStableJson(existing);
+      if (changed) await writeJsonFile(filePath, merged);
+      sendJson(res, { learnerBranch: merged, outcome: changed ? 'updated' : 'unchanged' });
+      return;
+    }
+
+    incoming = { ...incoming, commits: [...commitsById.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) };
+    if (incoming.events.length === existing.events.length && hashStableJson(existing) === hashStableJson(incoming)) {
+      sendJson(res, { learnerBranch: existing, outcome: 'unchanged' });
+      return;
+    }
+
+    await writeJsonFile(filePath, incoming);
+    sendJson(res, { learnerBranch: incoming, outcome: 'updated' });
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
 }
 
 async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url: URL, routeParts: string[]) {
@@ -1491,7 +1788,7 @@ async function handleMediaAssets(req: IncomingMessage, res: ServerResponse, url:
 }
 
 function hashStableJson(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  return createHash('sha256').update(JSON.stringify(value) ?? 'undefined').digest('hex');
 }
 
 function sendJson(res: ServerResponse, value: unknown, statusCode = 200) {
@@ -1547,6 +1844,11 @@ export async function handleInteractivePersistenceRequest(req: IncomingMessage, 
 
     if (routeParts[0] === 'learner-deltas') {
       await handleLearnerDeltas(req, res, url, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'learner-branches') {
+      await handleLearnerBranches(req, res, url, routeParts);
       return;
     }
 

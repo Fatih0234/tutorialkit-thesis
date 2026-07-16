@@ -8,9 +8,10 @@ import {
 } from './storage-adapter.js';
 import type { RecordingMediaAsset } from './media.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
+import { upgradeLearnerHistoryStores } from './learner-history/indexeddb-storage.js';
 
 const DB_NAME = 'interactive-timeline-poc';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const TEACHER_RECORDINGS_STORE = 'teacherRecordings';
 const LEARNER_DELTAS_STORE = 'learnerDeltas';
 const MEDIA_ASSETS_STORE = 'mediaAssets';
@@ -316,6 +317,8 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
           mediaAssets.createIndex('recordingId', 'recordingId', { unique: false });
           mediaAssets.createIndex('createdAt', 'createdAt', { unique: false });
         }
+
+        upgradeLearnerHistoryStores(db);
       };
       request.onsuccess = () => {
         const db = request.result;

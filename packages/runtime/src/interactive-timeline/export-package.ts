@@ -256,6 +256,13 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
     throw new Error('Learner delta teacherTimestampMs must be non-negative.');
   }
 
+  if (
+    candidate.lastAppliedTeacherEventSeq !== undefined &&
+    (!Number.isInteger(candidate.lastAppliedTeacherEventSeq) || candidate.lastAppliedTeacherEventSeq < -1)
+  ) {
+    throw new Error('Learner delta lastAppliedTeacherEventSeq must be an integer greater than or equal to -1.');
+  }
+
   if (!candidate.baseTeacherFilesHash || typeof candidate.baseTeacherFilesHash !== 'string') {
     throw new Error('Learner delta baseTeacherFilesHash is required.');
   }
@@ -271,6 +278,7 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
     teacherRecordingId: assertSafeId(candidate.teacherRecordingId, 'learner delta teacher recording id'),
     teacherRecordingVersion: candidate.teacherRecordingVersion,
     teacherTimestampMs: candidate.teacherTimestampMs,
+    lastAppliedTeacherEventSeq: candidate.lastAppliedTeacherEventSeq,
     baseTeacherFilesHash: candidate.baseTeacherFilesHash,
     addedOrModified: normalizeFiles(candidate.addedOrModified ?? {}),
     removed: candidate.removed.map((filePath) => normalizePath(String(filePath))),

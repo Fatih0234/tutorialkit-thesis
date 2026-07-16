@@ -9,12 +9,22 @@ import type {
   FileChangedPayload,
   FilesSnapshot,
   MaterializedExecutionState,
+  TeacherPlaybackPosition,
   TeacherRecording,
 } from './types.js';
 
 export function materializeTeacherState(recording: TeacherRecording, untilMs: number): FilesSnapshot {
-  const files: FilesSnapshot = { ...normalizeFiles(recording.baseFiles) };
+  return materializeTeacherStateAtPosition(recording, {
+    timestampMs: untilMs,
+    lastAppliedEventSeq: Number.POSITIVE_INFINITY,
+  });
+}
 
+export function materializeTeacherStateAtPosition(
+  recording: TeacherRecording,
+  position: TeacherPlaybackPosition,
+): FilesSnapshot {
+  const files: FilesSnapshot = { ...normalizeFiles(recording.baseFiles) };
   const events = [...recording.events].sort((a, b) => {
     if (a.tMs !== b.tMs) {
       return a.tMs - b.tMs;
@@ -24,7 +34,10 @@ export function materializeTeacherState(recording: TeacherRecording, untilMs: nu
   });
 
   for (const event of events) {
-    if (event.tMs > untilMs) {
+    if (
+      event.tMs > position.timestampMs ||
+      (event.tMs === position.timestampMs && event.seq > position.lastAppliedEventSeq)
+    ) {
       break;
     }
 

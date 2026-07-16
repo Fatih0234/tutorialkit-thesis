@@ -177,6 +177,7 @@ function EditorSection({
     lessonId: lesson.id,
     selectedFile,
     lessonFullyLoaded,
+    learnerTakeoverEnabled: experience.screen === 'learner-player',
     storeRef,
   });
   const lessonRuntime = useLessonRuntime(tutorialStore, interactivePoc.onRuntimeEvent, interactivePoc.controls.mode);
@@ -185,8 +186,8 @@ function EditorSection({
     if (!aiRecordingId || !interactivePoc.controls.currentUser || interactivePoc.controls.currentUser.role === 'teacher') return null;
     const workspaceFiles = normalizeFiles(tutorialStore.takeSnapshot().files);
     if (currentDocument && typeof currentDocument.value === 'string') workspaceFiles[normalizePath(currentDocument.filePath)] = currentDocument.value;
-    return makeAiContext({ lessonId: lesson.id, title: lesson.id, recordingId: aiRecordingId, version: interactivePoc.controls.recordingVersion, timestampMs: interactivePoc.controls.playheadMs, mode: interactivePoc.controls.mode === 'learner-editing' ? 'experimenting' : 'following-teacher', selectedFilePath: selectedFile ? normalizePath(selectedFile) : null, workspaceFiles });
-  }, [aiRecordingId, interactivePoc.controls.currentUser, interactivePoc.controls.recordingVersion, interactivePoc.controls.playheadMs, interactivePoc.controls.mode, lesson.id, selectedFile, currentDocument, tutorialStore]);
+    return makeAiContext({ lessonId: lesson.id, title: lesson.id, recordingId: aiRecordingId, version: interactivePoc.controls.recordingVersion, timestampMs: interactivePoc.controls.playheadMs, mode: interactivePoc.controls.workspaceOwner === 'learner' ? 'experimenting' : 'following-teacher', selectedFilePath: selectedFile ? normalizePath(selectedFile) : null, workspaceFiles });
+  }, [aiRecordingId, interactivePoc.controls.currentUser, interactivePoc.controls.recordingVersion, interactivePoc.controls.playheadMs, interactivePoc.controls.workspaceOwner, lesson.id, selectedFile, currentDocument, tutorialStore]);
   const aiTutor = useAiTutor(aiContext, aiRecordingId || null);
 
   async function resumeTeacherPlayback() {
@@ -307,7 +308,7 @@ function EditorSection({
   }
 
   async function exitLearnerPlayer() {
-    if (interactivePoc.controls.mode === 'learner-editing') {
+    if (interactivePoc.controls.workspaceOwner === 'learner') {
       await resumeTeacherPlayback();
 
       if (interactivePoc.controls.isLearnerWorkspaceDirty) {
@@ -332,12 +333,20 @@ function EditorSection({
 
   async function onFileTreeChange({ method, type, value }: FileTreeChangeEvent) {
     if (method === 'add' && type === 'file') {
+      if (!interactivePoc.onBeforeUserProjectMutation()) {
+        return;
+      }
+
       await tutorialStore.addFile(value);
       interactivePoc.onFileCreated(value);
       return;
     }
 
     if (method === 'add' && type === 'folder') {
+      if (!interactivePoc.onBeforeUserProjectMutation()) {
+        return;
+      }
+
       return tutorialStore.addFolder(value);
     }
   }
@@ -472,7 +481,7 @@ function EditorSection({
           capabilities={lessonRuntime.capabilities}
           status={lessonRuntime.status}
           error={lessonRuntime.error}
-          disabled={!lessonFullyLoaded || interactivePoc.controls.mode === 'teacher-playback'}
+          disabled={!lessonFullyLoaded || interactivePoc.controls.playbackStatus === 'playing'}
           onRun={() => void lessonRuntime.run()}
           onStop={() => void lessonRuntime.stop()}
           onReset={() => void lessonRuntime.reset()}
@@ -495,12 +504,31 @@ function EditorSection({
         allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
         selectedFile={selectedFile}
         onEditorScroll={interactivePoc.onEditorScroll}
-        onEditorChange={interactivePoc.onEditorChange}
+        onBeforeUserDocumentChange={interactivePoc.onBeforeUserProjectMutation}
+        onEditorSaveShortcut={interactivePoc.onEditorSaveShortcut}
+        onEditorDocumentChangeImmediate={interactivePoc.onEditorDocumentChangeImmediate}
+        onEditorDocumentChangeSettled={interactivePoc.onEditorDocumentChangeSettled}
         onEditorSelectionChange={setEditorSelection}
         onEditorSelectionRangeChange={interactivePoc.onEditorSelectionChange}
-        playbackSelection={(experience.screen === 'teacher-review' || experience.screen === 'learner-player') && interactivePoc.controls.mode !== 'learner-editing' && interactivePoc.playbackEditorSelection?.filePath === selectedFile
-          ? interactivePoc.playbackEditorSelection
+        instructorPresence={(experience.screen === 'teacher-review' || experience.screen === 'learner-player') && selectedFile
+          ? interactivePoc.instructorPresenceByFile[normalizePath(selectedFile)] ?? null
           : null}
+        learnerChangedFilePaths={experience.screen === 'learner-player'
+          && interactivePoc.controls.workspaceOwner === 'learner'
+          && interactivePoc.controls.learnerHistoryViewMode === 'head'
+          ? interactivePoc.controls.learnerChangedFilePaths
+          : undefined}
+        learnerChangeComparison={experience.screen === 'learner-player'
+          && interactivePoc.controls.workspaceOwner === 'learner'
+          && interactivePoc.controls.learnerChangeKind !== 'none'
+          && interactivePoc.controls.learnerComparisonBaseFiles !== null
+          && selectedFile
+          ? {
+              kind: interactivePoc.controls.learnerChangeKind,
+              baseContent: interactivePoc.controls.learnerComparisonBaseFiles[normalizePath(selectedFile)] ?? null,
+              selectionKey: interactivePoc.controls.learnerChangeSelectionKey,
+            }
+          : undefined}
         onPointerCoordinateApiChange={(api) => { editorPointerApiRef.current = api; }}
       />
       </div>
@@ -573,7 +601,7 @@ function EditorSection({
       teacherPointer={interactivePoc.controls.teacherPointer}
       teacherPointerClickButton={interactivePoc.controls.teacherPointerClickButton}
       teacherPointerClickSequence={interactivePoc.controls.teacherPointerClickSequence}
-      showTeacherPointer={experience.screen === 'teacher-review' || (experience.screen === 'learner-player' && interactivePoc.controls.mode !== 'learner-editing')}
+      showTeacherPointer={experience.screen === 'teacher-review' || (experience.screen === 'learner-player' && interactivePoc.controls.workspaceOwner === 'teacher')}
       onTeacherPointerChange={interactivePoc.controls.onTeacherPointerChange}
       onTeacherPointerClick={interactivePoc.controls.onTeacherPointerClick}
       getEditorPointerAnchor={getEditorPointerAnchor}
@@ -617,8 +645,8 @@ function EditorSection({
         <InteractiveImmersiveHeader
           eyebrow="Interactive lesson"
           title={lesson.id}
-          status={interactivePoc.controls.mode === 'learner-editing' ? 'My Experiment' : 'Teacher Lecture'}
-          statusTone={interactivePoc.controls.mode === 'learner-editing' ? 'warning' : 'positive'}
+          status={interactivePoc.controls.workspaceOwner === 'learner' ? 'My Workspace' : 'Following Teacher'}
+          statusTone={interactivePoc.controls.workspaceOwner === 'learner' ? 'warning' : 'positive'}
           currentTimeMs={interactivePoc.controls.playheadMs}
           onExit={() => void exitLearnerPlayer()}
           exitLabel="Lessons"
@@ -637,7 +665,11 @@ function EditorSection({
         <InteractiveVideoControls
           audience="learner"
           model={{ ...interactivePoc.controls, onResumeTeacher: () => void resumeTeacherPlayback() }}
-          onPlay={interactivePoc.controls.playbackStatus === 'paused' ? interactivePoc.controls.onContinuePlayback : interactivePoc.controls.onPlayRecording}
+          onPlay={interactivePoc.controls.workspaceOwner === 'learner'
+            ? () => void resumeTeacherPlayback()
+            : interactivePoc.controls.playbackStatus === 'paused'
+              ? interactivePoc.controls.onContinuePlayback
+              : interactivePoc.controls.onPlayRecording}
           onPause={interactivePoc.controls.onPausePreviewPlayback}
         />
       ) : null}

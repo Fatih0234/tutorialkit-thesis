@@ -149,6 +149,11 @@ export interface TeacherRecording {
   publishedAt?: string;
 }
 
+export interface TeacherPlaybackPosition {
+  timestampMs: number;
+  lastAppliedEventSeq: number;
+}
+
 export interface LearnerDelta {
   id: string;
   userId: string;
@@ -156,6 +161,7 @@ export interface LearnerDelta {
   teacherRecordingId: string;
   teacherRecordingVersion: number;
   teacherTimestampMs: number;
+  lastAppliedTeacherEventSeq?: number;
   baseTeacherFilesHash: string;
   addedOrModified: FilesSnapshot;
   removed: string[];

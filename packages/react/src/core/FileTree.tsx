@@ -16,6 +16,7 @@ interface Props {
   hideRoot: boolean;
   scope?: string;
   hiddenFiles?: Array<string | RegExp>;
+  learnerChangedFilePaths?: string[];
   className?: string;
 }
 
@@ -28,6 +29,7 @@ export function FileTree({
   hideRoot,
   scope,
   hiddenFiles,
+  learnerChangedFilePaths = [],
   i18n,
   className,
 }: Props) {
@@ -97,6 +99,7 @@ export function FileTree({
               <File
                 key={fileOrFolder.id}
                 selected={selectedFile === fileOrFolder.fullPath}
+                learnerChanged={learnerChangedFilePaths.includes(fileOrFolder.fullPath)}
                 file={fileOrFolder}
                 onClick={() => onFileSelect?.(fileOrFolder.fullPath)}
               />
@@ -179,10 +182,11 @@ function Folder({
 interface FileProps {
   file: FileNode;
   selected: boolean;
+  learnerChanged: boolean;
   onClick: () => void;
 }
 
-function File({ file: { depth, name }, onClick, selected }: FileProps) {
+function File({ file: { depth, name }, onClick, selected, learnerChanged }: FileProps) {
   const extension = getFileExtension(name);
   const fileIcon = extensionsToIcons.get(extension) || 'i-ph-file-duotone';
 
@@ -201,8 +205,15 @@ function File({ file: { depth, name }, onClick, selected }: FileProps) {
       })}
       onClick={onClick}
       aria-pressed={selected}
+      data-learner-changed={learnerChanged || undefined}
     >
-      {name}
+      <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+      {learnerChanged ? (
+        <span className="ml-auto flex shrink-0 items-center" title="Changed in learner workspace">
+          <span className="h-2 w-2 rounded-full bg-orange-400" aria-hidden="true" />
+          <span className="sr-only">Changed in learner workspace</span>
+        </span>
+      ) : null}
     </NodeButton>
   );
 }
@@ -214,15 +225,25 @@ interface ButtonProps {
   className?: string;
   onClick?: () => void;
   'aria-pressed'?: boolean;
+  'data-learner-changed'?: boolean;
 }
 
-function NodeButton({ depth, iconClasses, onClick, className, 'aria-pressed': ariaPressed, children }: ButtonProps) {
+function NodeButton({
+  depth,
+  iconClasses,
+  onClick,
+  className,
+  'aria-pressed': ariaPressed,
+  'data-learner-changed': learnerChanged,
+  children,
+}: ButtonProps) {
   return (
     <button
       className={`flex items-center gap-2 w-full pr-2 border-2 border-transparent text-faded ${className ?? ''}`}
       style={getDepthStyle(depth)}
       onClick={onClick}
       aria-pressed={ariaPressed === true ? 'true' : undefined}
+      data-learner-changed={learnerChanged === true ? 'true' : undefined}
     >
       <div className={classNames('scale-120 shrink-0', iconClasses)}></div>
       <span>{children}</span>
