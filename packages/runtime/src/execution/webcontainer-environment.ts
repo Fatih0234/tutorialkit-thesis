@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import type { RuntimeConfig } from '@tutorialkit/types';
 import type { ExecutionEnvironment, RunRequest, RuntimeCapabilities, RuntimeEvent, RuntimeFileDiff } from './types.js';
 

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import { upgradeLearnerHistoryStores } from './learner-history/indexeddb-storage.js';
 import type { RecordingMediaAsset } from './media.js';
 import {

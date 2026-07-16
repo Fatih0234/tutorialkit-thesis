@@ -18,7 +18,7 @@ export function saveTeacherRecording(recording: TeacherRecording): void {
 export function clearTeacherRecording(recordingId?: string): void {
   const storage = requireLocalStorage();
 
-  if (!storage) return;
+  if (!storage) {return;}
   const current = loadTeacherRecording();
 
   if (!recordingId || current?.id === recordingId) {

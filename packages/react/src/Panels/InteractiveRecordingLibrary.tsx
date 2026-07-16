@@ -3,7 +3,7 @@ import { InteractiveButton, InteractiveStatusBadge } from './InteractivePocUi.js
 import type { InteractiveRecordingLibraryItem } from './useInteractivePoc.js';
 
 function formatDuration(durationMs: number) {
-  if (!durationMs) return 'Under a minute';
+  if (!durationMs) {return 'Under a minute';}
   const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

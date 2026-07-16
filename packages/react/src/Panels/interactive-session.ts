@@ -31,33 +31,41 @@ export function interactiveExperienceReducer(
   action: InteractiveExperienceAction,
 ): InteractiveExperienceState {
   switch (action.type) {
-    case 'SHOW_TEACHER_DASHBOARD':
+    case 'SHOW_TEACHER_DASHBOARD': {
       return { screen: 'teacher-dashboard' };
-    case 'PREPARE_MATERIALS':
+    }
+    case 'PREPARE_MATERIALS': {
       return { ...state, screen: 'teacher-materials' };
-    case 'START_RECORDING':
+    }
+    case 'START_RECORDING': {
       return { ...state, screen: 'teacher-recording' };
-    case 'REVIEW_RECORDING':
+    }
+    case 'REVIEW_RECORDING': {
       return {
         ...state,
         screen: 'teacher-review',
         activeRecordingId: action.recordingId ?? state.activeRecordingId,
       };
-    case 'SHOW_LEARNER_LIBRARY':
+    }
+    case 'SHOW_LEARNER_LIBRARY': {
       return { screen: 'learner-library', selectedRecordingId: state.selectedRecordingId };
-    case 'SELECT_LEARNER_RECORDING':
+    }
+    case 'SELECT_LEARNER_RECORDING': {
       return { ...state, selectedRecordingId: action.recordingId };
-    case 'OPEN_LEARNER_RECORDING':
+    }
+    case 'OPEN_LEARNER_RECORDING': {
       return {
         screen: 'learner-player',
         selectedRecordingId: action.recordingId,
         activeRecordingId: action.recordingId,
       };
-    case 'EXIT_LEARNER_PLAYER':
+    }
+    case 'EXIT_LEARNER_PLAYER': {
       return {
         screen: 'learner-library',
         selectedRecordingId: state.selectedRecordingId,
       };
+    }
   }
 }
 

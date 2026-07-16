@@ -39,7 +39,7 @@ export function useInteractiveWhiteboard(initialScene: WhiteboardScene, onTeache
     try {
       const cloned = cloneWhiteboardScene(nextScene);
       const { fingerprint, changed } = evaluateWhiteboardCommit(fingerprintRef.current, cloned);
-      if (!changed) return;
+      if (!changed) {return;}
       sourceRef.current = 'teacher';
       fingerprintRef.current = fingerprint;
       setScene(cloned);

@@ -2,6 +2,28 @@ import blitzPlugin from '@blitz/eslint-plugin';
 import { getNamingConventionRule, tsFileExtensions } from '@blitz/eslint-plugin/dist/configs/typescript.js';
 import eslintPluginAstro from 'eslint-plugin-astro';
 
+const namingConventionOptions = {
+  variable: {
+    exceptions: ['Content', '__ENTERPRISE__', '__WC_CONFIG__', 'WebContainer'],
+  },
+};
+
+function getPracticalNamingConventionRule(tsx = false) {
+  const rule = getNamingConventionRule(namingConventionOptions, tsx)['@typescript-eslint/naming-convention'];
+  const [severity, ...selectors] = rule;
+
+  return {
+    '@typescript-eslint/naming-convention': [
+      severity,
+      ...selectors.map((selector) =>
+        typeof selector === 'object' && selector.selector === 'memberLike'
+          ? { ...selector, leadingUnderscore: 'allow' }
+          : selector,
+      ),
+    ],
+  };
+}
+
 export default [
   {
     ignores: [
@@ -16,11 +38,7 @@ export default [
   },
   ...blitzPlugin.configs.recommended({
     ts: {
-      namingConvention: {
-        variable: {
-          exceptions: ['Content', '__ENTERPRISE__', '__WC_CONFIG__', 'WebContainer'],
-        },
-      },
+      namingConvention: namingConventionOptions,
     },
   }),
   ...eslintPluginAstro.configs.recommended,
@@ -39,12 +57,26 @@ export default [
       'consistent-return': 'off',
 
       '@typescript-eslint/no-this-alias': 'off',
+
+      ...getPracticalNamingConventionRule(false),
     },
   },
   {
     files: ['**/*.tsx'],
     rules: {
-      ...getNamingConventionRule({}, true),
+      ...getPracticalNamingConventionRule(true),
+    },
+  },
+  {
+    rules: {
+      '@blitz/catch-error-name': 'off',
+      '@blitz/comment-syntax': 'off',
+      '@blitz/newline-before-return': 'off',
+      'import/order': 'off',
+      'multiline-comment-style': 'off',
+      'padding-line-between-statements': 'off',
+      'prefer-arrow-callback': 'off',
+      'prettier/prettier': 'off',
     },
   },
 ];

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import type { RecordingMediaAsset, RecordingMediaKind } from './media.js';
 
 export type InteractiveMediaRecorderStatus =

@@ -79,19 +79,19 @@ export function normalizePresentationLayout(resources: PresentationResource[], l
 
   const requestedFocus = layout?.focusedResourceId;
   if (requestedFocus && resourceIds.has(requestedFocus) && normalized.resources[requestedFocus] !== 'hidden') {
-    if (focusedResourceId && focusedResourceId !== requestedFocus) normalized.resources[focusedResourceId] = 'minimized';
+    if (focusedResourceId && focusedResourceId !== requestedFocus) {normalized.resources[focusedResourceId] = 'minimized';}
     focusedResourceId = requestedFocus;
     normalized.resources[requestedFocus] = 'focused';
   }
-  if (focusedResourceId) normalized.focusedResourceId = focusedResourceId;
+  if (focusedResourceId) {normalized.focusedResourceId = focusedResourceId;}
   const frontmostBySide: Partial<Record<PresentationWindowSide, string>> = {};
   for (const side of ['left', 'right'] as const) {
     const requestedId = layout?.frontmostBySide?.[side];
     const fallbackId = [...resources].reverse().find((resource) => presentationWindowSide(resource) === side && normalized.resources[resource.id] === 'minimized')?.id;
     const frontmostId = requestedId && resources.some((resource) => resource.id === requestedId && presentationWindowSide(resource) === side && normalized.resources[resource.id] === 'minimized') ? requestedId : fallbackId;
-    if (frontmostId) frontmostBySide[side] = frontmostId;
+    if (frontmostId) {frontmostBySide[side] = frontmostId;}
   }
-  if (Object.keys(frontmostBySide).length) normalized.frontmostBySide = frontmostBySide;
+  if (Object.keys(frontmostBySide).length) {normalized.frontmostBySide = frontmostBySide;}
   return normalized;
 }
 
@@ -107,17 +107,17 @@ export function getSlideMaxRevealStep(slide?: PresentationSlide): number {
 }
 
 export function setPresentationMode(resources: PresentationResource[], layout: PresentationLayout, resourceId: string, mode: PresentationMode): PresentationLayout {
-  if (!resources.some((resource) => resource.id === resourceId)) return normalizePresentationLayout(resources, layout);
+  if (!resources.some((resource) => resource.id === resourceId)) {return normalizePresentationLayout(resources, layout);}
   const nextResources = { ...layout.resources };
   if (mode === 'focused') {
-    for (const [id, currentMode] of Object.entries(nextResources)) if (currentMode === 'focused' && id !== resourceId) nextResources[id] = 'minimized';
+    for (const [id, currentMode] of Object.entries(nextResources)) {if (currentMode === 'focused' && id !== resourceId) {nextResources[id] = 'minimized';}}
   }
   nextResources[resourceId] = mode;
   const resource = resources.find((item) => item.id === resourceId)!;
   const side = presentationWindowSide(resource);
   const frontmostBySide = { ...layout.frontmostBySide };
-  if (side && mode !== 'hidden') frontmostBySide[side] = resourceId;
-  if (side && mode === 'hidden' && frontmostBySide[side] === resourceId) delete frontmostBySide[side];
+  if (side && mode !== 'hidden') {frontmostBySide[side] = resourceId;}
+  if (side && mode === 'hidden' && frontmostBySide[side] === resourceId) {delete frontmostBySide[side];}
   return normalizePresentationLayout(resources, {
     resources: nextResources,
     deckStates: layout.deckStates,
@@ -128,7 +128,7 @@ export function setPresentationMode(resources: PresentationResource[], layout: P
 
 export function setDeckProgress(resources: PresentationResource[], layout: PresentationLayout, deckId: string, progress: Partial<DeckPlaybackState>): PresentationLayout {
   const deck = resources.find((resource): resource is DeckPresentationResource => resource.id === deckId && resource.kind === 'deck');
-  if (!deck) return normalizePresentationLayout(resources, layout);
+  if (!deck) {return normalizePresentationLayout(resources, layout);}
   const current = normalizeDeckState(deck, layout.deckStates?.[deckId]);
   return normalizePresentationLayout(resources, {
     ...layout,
@@ -138,7 +138,7 @@ export function setDeckProgress(resources: PresentationResource[], layout: Prese
 
 export function stepDeckReveal(resources: PresentationResource[], layout: PresentationLayout, deckId: string, direction: 1 | -1): PresentationLayout {
   const deck = resources.find((resource): resource is DeckPresentationResource => resource.id === deckId && resource.kind === 'deck');
-  if (!deck) return normalizePresentationLayout(resources, layout);
+  if (!deck) {return normalizePresentationLayout(resources, layout);}
   const current = normalizeDeckState(deck, layout.deckStates?.[deckId]);
   const maxStep = getSlideMaxRevealStep(deck.slides[current.slideIndex]);
   if (direction === 1 && current.revealedStep >= maxStep && current.slideIndex < deck.slides.length - 1) {
@@ -157,7 +157,7 @@ export function stepDeckSlide(resources: PresentationResource[], layout: Present
 }
 
 export function presentationWindowSide(resource: PresentationResource): PresentationWindowSide | undefined {
-  if (resource.kind === 'camera') return undefined;
+  if (resource.kind === 'camera') {return undefined;}
   return resource.kind === 'preview' ? 'right' : 'left';
 }
 
