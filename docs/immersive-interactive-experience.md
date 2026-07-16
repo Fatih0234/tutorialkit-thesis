@@ -33,7 +33,7 @@ teacher-dashboard → teacher-materials → teacher-recording → teacher-review
 learner-library → learner-player
 ```
 
-Selected and active recording identifiers are separate. A library selection does not become the active player recording until the learner opens it. Exiting an active player pauses playback. Exiting learner edit mode still uses the existing dirty-work confirmation and deterministic teacher restoration.
+Selected and active recording identifiers are separate. A library selection does not become the active player recording until the learner opens it. Exiting an active player pauses playback. Exiting a learner-owned workspace uses checkpoint/discard/cancel protection and deterministic teacher restoration.
 
 ## Learner player
 
@@ -44,11 +44,11 @@ The learner player uses the real TutorialKit explanation, file tree, editor, and
 - elapsed and total time;
 - deterministic seek;
 - optional audio controls or floating webcam playback;
-- timestamped violet experiment markers;
-- Pause and Experiment, Save Experiment, and Return to Lecture actions;
-- a My Experiments drawer.
+- a default Lesson timeline with grouped purple checkpoint markers;
+- an expandable My work lane with ORIGIN, event, checkpoint, selected-position, and HEAD controls;
+- a focus-managed My Work session library with checkpoint, draft, alternative-path, and changed-file summaries.
 
-The accessible range input is layered over a custom video-style progress track. Experiment markers remain independently clickable above that range.
+The accessible Lesson range is layered over a custom progress track. Internal teacher events are not drawn. My work appears during takeover or when a marker is opened and collapses when normal Play resumes the lesson. `Ctrl/Cmd+S` is the sole checkpoint action.
 
 Keyboard commands outside editable controls are:
 

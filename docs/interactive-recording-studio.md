@@ -77,9 +77,9 @@ File remove/rename capture remains unavailable because the current rendered file
 
 ## Learner player
 
-Learner Lesson uses the shared `InteractiveVideoControls` inside a full-viewport editor shell. A custom video-style track spans the bottom of the viewport while an accessible range control supplies keyboard and assistive-technology seek behavior. A learner may play, pause, restart, or seek before selecting **Pause and Experiment**. Entering learner mode captures the current teacher timestamp and keeps learner deltas keyed to that materialized teacher state.
+Learner Lesson uses the shared `InteractiveVideoControls` inside a full-viewport editor shell. The default Lesson track supplies seeking plus grouped checkpoint and dirty-draft markers. Opening a marker pauses without seeking, expands the complete fork graph, and restores its latest dirty HEAD or checkpoint. Keyboard-operable ORIGIN, checkpoint, and HEAD nodes then change only editor files. Focus and selection do not pause playback. The first project mutation automatically captures the exact displayed teacher position and creates a learner branch.
 
-Teacher-recording content remains immutable while published; explicit owner deletion removes the whole lesson rather than mutating it. Saved learner experiments appear as timestamped markers. Selecting a marker reconstructs teacher state at that exact timestamp and applies the learner delta; **Return to Lecture** reconstructs teacher truth and continues playback. Later teacher edits do not produce a normal conflict because experiments are historical branches, not merges. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
+Teacher-recording content remains immutable while published; explicit owner deletion removes the whole lesson rather than mutating it. Pressing Play from My work reconstructs teacher truth, collapses detail, and leaves learner branches recoverable. Selecting history reconstructs an exact branch position; editing it creates a fork instead of merging or deleting later work. See [`learner-timeline-experiments.md`](./learner-timeline-experiments.md).
 
 ## Main implementation files
 

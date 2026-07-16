@@ -1,6 +1,6 @@
 # Interactive POC architecture
 
-This document is the detailed architecture checkpoint for the interactive tutorial thesis demo. It includes separated lecture setup/material preparation, a full-screen structured recording studio, recording review, a shared seekable editor player, and timestamped learner experiments. It also covers identity/session boundaries, ownership, optional mic/webcam media, local drafts, development publishing, export/import, and deterministic seed/reset. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`; focused flows are documented in `docs/interactive-recording-studio.md` and `docs/learner-timeline-experiments.md`.
+This document is the detailed architecture checkpoint for the interactive tutorial thesis demo. It includes separated lecture setup/material preparation, a full-screen structured recording studio, recording review, a shared seekable editor player, and local-first learner branches with rewind and forks. It also covers identity/session boundaries, ownership, optional mic/webcam media, local drafts, development publishing, export/import, and deterministic seed/reset. A shorter review-oriented view is available in `docs/thesis-architecture-summary.md`; focused flows are documented in `docs/interactive-recording-studio.md` and `docs/learner-timeline-experiments.md`.
 
 ## Scope and invariants
 
@@ -13,30 +13,30 @@ The POC implements only the interactivity layer:
 - teacher recordings and media carry teacher owner fields;
 - teachers and learners can list and load published recordings after a browser reload;
 - learners can replay that timeline;
-- signed-in learner/both users can use product-facing controls to try the lesson, edit their own workspace, and save a file-level delta;
-- learner work is scoped to the signed-in learner;
-- saved learner work appears as user-scoped markers at its exact teacher timestamp;
-- normal playback always reconstructs teacher truth and ignores markers unless the learner explicitly opens one;
-- opening a marker reconstructs its historical teacher state and applies the learner delta without treating later teacher edits as conflicts;
+- learners can focus and select during playback; their first project mutation atomically pauses and creates an exact teacher ORIGIN;
+- learner work is scoped to the signed-in learner and stored as append-only branch events, working trees, and commits;
+- the expandable My work lane exposes ORIGIN, checkpoints, selected history, and HEAD;
+- editing historical state creates a child branch while preserving the parent;
+- normal playback always reconstructs teacher truth and leaves learner branches recoverable;
 - teachers/demo operators can export/import portable recording packages with structured timeline JSON and media blobs encoded as base64 JSON;
 - teachers/demo operators can seed and reset deterministic demo data without deleting non-demo records.
 
 Important invariants:
 
 - **Teacher timeline is immutable.** Learner save/restore must not modify saved teacher recording drafts or the `interactive-poc.teacherRecording` compatibility mirror.
-- **Learner work is separate and user-scoped.** Learner changes are stored as learner-owned deltas in the active adapter: IndexedDB for local drafts and remote backend/dev storage for published recordings. Remote learner delta writes derive `userId` from the session, and both paths mirror scoped deltas to `interactive-poc.learnerDeltas` for debugging.
+- **Learner work is separate and user-scoped.** IndexedDB is authoritative during editing; authenticated branch aggregates synchronize remotely. The server derives `userId` from the session. Legacy deltas remain read-compatible only.
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
 - **Media is an attachment, not a replacement.** Milestone H still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
-- **File-level deltas only.** The POC does not compute text patches, merge hunks, or run automatic merges.
+- **Full-file learner events first.** The POC does not compute text patches, merge hunks, or run automatic merges.
 - **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
 - **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing/import/fixtures require a demo teacher/both session; whole-publication deletion additionally requires matching teacher ownership.
 - **Export packages are thesis-demo artifacts.** The package format is JSON-first for thesis portability. It is not a stable public API and does not replace the structured replay or storage adapter contracts.
 
 ## 1. Current user flow
 
-The UI now uses a full-viewport product root mounted in `#interactive-experience-root`, a dedicated Astro application region outside the normal TutorialKit resizable layout. The standard layout remains mounted but becomes `inert` and `aria-hidden` while the product is active. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `InteractiveExperienceProvider` owns explicit reducer state and separates a library selection from the active player recording. `InteractiveExperienceRoot`, `InteractiveManagementShell`, and `InteractiveWorkspaceShell` enforce management/workspace ownership. `InteractiveWorkspaceSurface.tsx` composes the persistent editor with opt-in, resizable lesson explanation and live terminal panels. `InteractiveVideoControls.tsx` supplies the shared full-width bottom transport, accessible seek range, media surface, learner markers, keyboard controls, and experiment drawer. See `docs/immersive-interactive-experience.md`.
+The UI now uses a full-viewport product root mounted in `#interactive-experience-root`, a dedicated Astro application region outside the normal TutorialKit resizable layout. The standard layout remains mounted but becomes `inert` and `aria-hidden` while the product is active. Teacher Studio and Interactive Lessons are management screens; material preparation, active recording, recording review, and learner playback are immersive workspace screens. `InteractiveExperienceProvider` owns explicit reducer state and separates a library selection from the active player recording. `InteractiveExperienceRoot`, `InteractiveManagementShell`, and `InteractiveWorkspaceShell` enforce management/workspace ownership. `InteractiveWorkspaceSurface.tsx` composes the persistent editor with opt-in, resizable lesson explanation and live terminal panels. `InteractiveVideoControls.tsx` supplies the Lesson transport, grouped checkpoint markers, expandable My work graph, media surface, keyboard controls, and a My Work session library with file-level summaries. See `docs/immersive-interactive-experience.md`.
 
 `packages/react/src/Panels/InteractivePocControls.tsx` presents two minimal role views while the workspace orchestrator keeps management physically separated from the editor:
 
@@ -103,16 +103,13 @@ Actions remain intentionally simple: select a recording, then use the nearby loa
 
 Visible controls:
 
-- Published lessons selector;
-- Start Lesson;
-- Play;
-- Pause and Experiment;
-- Return to Lecture;
-- Save Experiment (requires learner/both demo identity);
-- timestamped experiment markers and **My Experiments** entries;
-- Save and Resume, Resume Without Saving, and Cancel when work is dirty.
+- Published lessons selector and Start Lesson;
+- Play, pause, restart, and teacher seek;
+- a default Lesson timeline with grouped checkpoint and dirty-draft markers;
+- an expandable complete My work branch graph with ORIGIN, checkpoints, selected position, and HEAD;
+- `Ctrl/Cmd+S` checkpoint creation and a **My Work** library grouped by lesson position.
 
-The file-level data model is unchanged, but presentation and restoration follow a historical-branch model. Each learner-owned `LearnerDelta` is keyed by lesson, teacher recording id/version, teacher timestamp, base teacher file hash, and server-derived learner identity. One visible marker groups saves at each timestamp.
+No explicit takeover button is required. The first user mutation creates a learner branch from the exact displayed teacher position. Full-file learner events are append-only, checkpoints are immutable snapshots, and historical editing creates a child branch.
 
 ### Start Recording
 
@@ -256,31 +253,23 @@ Currently applied event types:
 
 The shared editor player exposes pause, restart, and deterministic seek. Seeking pauses the driver, restores base files, reapplies ordered events through the selected timestamp, and aligns loaded media. Continuing after a seek starts from that materialized state.
 
-### Pause and Experiment
+### Automatic learner takeover
 
-The `Pause and Experiment` button stops the active playback driver and switches to learner edit mode. If media is driving playback, the media element is paused before learner editing starts.
+Focus, cursor movement, selection, and scroll do not change ownership. Before the first user-originated project mutation, playback drivers pause without resetting their event cursor. The visible timestamp, last applied teacher sequence, normalized files, and hash become ORIGIN; then the initiating mutation is allowed to apply.
 
-Behavior:
+### Resume lesson playback
 
-- computes the current teacher timestamp;
-- stores it as the paused teacher timestamp;
-- sets mode to `learner-editing`;
-- sets playback status to `paused`;
-- does not mutate the saved teacher recording.
+Opening learner history pauses without seeking and automatically restores the group's most recently modified dirty HEAD or checkpoint. Subsequent graph-node selection changes only editor files and leaves lesson/media time fixed. Pressing Play from My work flushes the autosaved draft, reconstructs immutable teacher truth at the current paused lesson position, collapses My work, and continues ordered events from that unchanged position. Learner branches remain recoverable without a save/discard prompt.
 
-### Return to Lecture
+### Checkpoints, rewind, and forks
 
-Returning from `learner-editing` never continues over the learner workspace. The player reconstructs the immutable teacher state at `pausedTeacherTimestampMs`, aligns media to that timestamp, and then continues ordered teacher events. Saved learner experiments remain separate and recoverable. If the learner workspace is dirty, the UI requires **Save and Resume**, **Resume Without Saving**, or **Cancel**.
+Learner edits append branch-local full-file events and autosave the working tree. `Ctrl/Cmd+S` creates a named immutable snapshot only when dirty. Granular autosave events stay internal; the complete My work graph displays ORIGIN, checkpoint, fork, and HEAD nodes. Selecting history never moves HEAD; editing a historical position creates a child branch with a parent reference.
 
-### Save Experiment
+When a checkpoint or dirty HEAD is visible, a presentation-only learner-change lens compares the active file with the hash-verified teacher snapshot at the branch origin. A pure line diff feeds an opt-in CodeMirror unified-diff presentation. Red block widgets show original teacher lines and line numbers without entering `state.doc`; green decorations and `+` gutter markers identify the learner's real editable lines. Review mode is off whenever a work state first opens. These effects never change `state.doc`, enter undo history, append learner events, or alter playback. The lens is removed whenever teacher files are visible.
 
-`Save Experiment` materializes teacher files at the experiment anchor, diffs them against the learner workspace, and stores a user-scoped `LearnerDelta` through the active adapter. The delta remains keyed by lesson, teacher recording id/version, teacher timestamp, historical base hash, and learner identity. Saving creates a violet timeline marker and **My Experiments** entry. Multiple saves at one timestamp are retained but grouped behind one marker whose latest version opens by default.
+### Legacy checkpoint import
 
-### Open experiment marker
-
-Selecting a marker validates recording id/version and the historical base hash, reconstructs teacher state at `teacherTimestampMs`, applies the full learner file delta, restores selected file, aligns media, and enters `learner-editing`. Trusted programmatic file operations restore learner-added files and remove files absent from the checkpoint result while playback guards suppress recording.
-
-A later teacher event on the same path is not a conflict: it belongs to a later lecture timestamp and is shown only during normal playback. The old later-event conflict panel is no longer part of the learner flow. A base-hash/version mismatch instead reports an exceptional incompatible lecture version; no automatic merge is attempted.
+Selecting a legacy marker validates recording/version/base hash, materializes the old delta, and exposes it as an imported single-checkpoint branch. Conversion is lazy. New history is never written back as a `LearnerDelta`, and no automatic merge is attempted.
 
 ## 2. Data model
 
@@ -791,24 +780,22 @@ Responsibilities:
 - storage selection between local draft and remote published adapters;
 - async storage calls and compatibility state sync;
 - media-synced playback and fallback clock playback lifecycle;
-- pause/resume mode transitions with deterministic teacher-state reconstruction;
-- playback guard;
-- learner experiment save/open and marker grouping;
+- independent playback status and workspace ownership with deterministic teacher reconstruction;
+- explicit transaction-origin playback guards;
+- automatic takeover orchestration and legacy checkpoint migration;
 - historical recording/version/base-hash validation;
 - learner workspace dirty-state protection;
 - product control model returned to the UI.
 
-Current modes:
+Authoritative interaction dimensions are independent:
 
 ```ts
-type InteractiveMode = 'teacher-playback' | 'learner-editing' | 'idle';
-```
-
-Current playback statuses:
-
-```ts
+type WorkspaceOwner = 'teacher' | 'learner';
 type PlaybackStatus = 'idle' | 'playing' | 'paused' | 'finished' | 'missing-recording';
+type LearnerHistoryViewMode = 'none' | 'head' | 'historical';
 ```
+
+`InteractiveMode` remains only as a deprecated compatibility projection while older recording/authoring consumers migrate.
 
 ### `InteractivePocControls.tsx`
 
@@ -824,7 +811,7 @@ Renders the focused red recording HUD, elapsed/media state, optional live webcam
 
 ### `InteractiveVideoControls.tsx`
 
-Renders the shared full-width teacher/learner transport: custom progress track, accessible range seek, play/pause, restart, time display, synchronized media, keyboard controls, learner markers, experiment actions, dirty-work protection, and the My Experiments drawer.
+Renders the Lesson transport with play/pause/restart, synchronized media, grouped checkpoint/dirty-draft markers, an expandable complete My work branch graph, sync announcements, and the focus-managed My Work session library. Session cards summarize lesson position, recency, checkpoints, alternatives, and added/modified/removed files without exposing branch ids or event sequences.
 
 ### `InteractiveLearnerLibrary.tsx`
 

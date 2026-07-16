@@ -56,7 +56,7 @@ The current evidence consists of architecture documentation, deterministic demon
 - There is no archive streaming, checksum manifest, or package migration framework.
 - The editor player supports deterministic seeking, but has no production-grade speed, drift correction, captions, or advanced media controls.
 - Recording selectors and status panels are thesis-demo UI, not a final design system.
-- No transcript generation, screen capture, experiment naming, marker deletion, or dedicated checkpoint-version chooser exists.
+- No transcript generation, screen capture, user-defined branch naming, branch deletion, or side-by-side history comparison exists.
 - LocalStorage parsing and the file-backed backend assume controlled POC data.
 
 ## Future work
@@ -67,11 +67,11 @@ Replace demo login with a production identity provider and server-side authoriza
 
 ### Durable persistence and media infrastructure
 
-Implement a production adapter behind `InteractiveTimelineStorage`: durable database records for immutable recordings and learner deltas, object storage for media, checksums, quotas, retention, backup/restore, and transactional publication. React and workspace behavior should remain independent of the backend technology.
+Implement production adapters behind the timeline and learner-history storage boundaries: durable database records for immutable recordings and learner branch aggregates, object storage for media, checksums, quotas, retention, backup/restore, and transactional publication. React and workspace behavior should remain independent of the backend technology.
 
 ### Richer but still safe learner change handling
 
-Add experiment naming, marker deletion, checkpoint-version selection, changed-file summaries, and side-by-side comparison with the historical teacher base. Patch/hunk deltas or optional merge assistance should be evaluated only as separate advanced workflows; normal lecture playback must continue to ignore learner branches and preserve both source artifacts.
+Add user-defined branch names, deletion/archive policy, changed-file summaries, and side-by-side comparison with the historical teacher base. Patch/hunk deltas or optional merge assistance should be evaluated only as separate advanced workflows; normal lecture playback must continue to ignore learner branches and preserve both source artifacts.
 
 ### Playback and media controls
 

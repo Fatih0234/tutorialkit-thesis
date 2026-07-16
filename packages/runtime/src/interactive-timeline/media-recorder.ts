@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import type { RecordingMediaAsset, RecordingMediaKind } from './media.js';
 
 export type InteractiveMediaRecorderStatus =
@@ -44,11 +45,17 @@ function getSupportedMimeType(kind: RecordingMediaKind): string {
 }
 
 function getMediaConstraints(kind: RecordingMediaKind): MediaStreamConstraints {
+  const audio: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
   if (kind === 'audio') {
-    return { audio: true };
+    return { audio };
   }
 
-  return { audio: true, video: true };
+  return { audio, video: true };
 }
 
 function writeAscii(view: DataView, offset: number, value: string): void {
@@ -206,6 +213,7 @@ export class InteractiveMediaRecorder {
       };
 
       this.statusValue = 'stopped';
+
       return asset;
     }
 
@@ -252,7 +260,7 @@ export class InteractiveMediaRecorder {
         this.mediaRecorder.stop();
       }
     } catch {
-      // Best-effort cleanup for permission or device errors.
+      // best-effort cleanup for permission or device errors
     }
 
     this.stopTracks();

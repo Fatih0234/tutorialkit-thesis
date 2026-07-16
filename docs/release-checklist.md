@@ -84,17 +84,18 @@ pnpm --dir e2e run dev
 - [ ] Confirm owner-only **Delete Lesson** requires a second click, removes linked learner work/media, disappears after reload, and does not affect unrelated resources.
 - [ ] Validate package import/export and demo seed/reset contracts through automated integration coverage, not the default product UI.
 
-## 6. Learner experiment demonstration check
+## 6. Learner history demonstration check
 
-- [ ] Switch to **Learner Lesson** and choose **Learner Demo** in the **Account** selector.
-- [ ] Open and play `demo-interactive-conflict-flow` (legacy deterministic seed id).
-- [ ] Choose **Pause and Experiment** before the future teacher `/example.js` edit.
-- [ ] Edit `/example.js` and select **Save Experiment**.
-- [ ] Verify a violet marker and **My Experiments** entry appear at the paused timestamp.
-- [ ] Select **Return to Lecture** and verify teacher truth is restored before playback continues.
-- [ ] Verify playback passes the marker without applying learner work.
-- [ ] Select the marker and verify the learner experiment reopens from its historical teacher state without a conflict prompt.
-- [ ] Repeat with unsaved work and demonstrate **Save and Resume**, **Resume Without Saving**, and **Cancel**.
+- [ ] Switch to **Learner Lesson**, choose **Learner Demo**, and play a published lesson.
+- [ ] Focus and select code; verify playback continues and both cursor identities remain visible.
+- [ ] Type while playback runs; verify atomic pause, preserved input, and one ORIGIN marker.
+- [ ] Create two named checkpoints and verify no-op Save creates no duplicate.
+- [ ] Rewind to the first checkpoint, edit it, and verify My Work reports an alternative path while both versions remain selectable in the graph.
+- [ ] Open a checkpoint and an autosaved draft; verify review starts off, then the changed-area summary, inline red teacher rows, green learner rows, navigation, and review toggle work without creating checkpoints or branches.
+- [ ] Press Play and verify all learner-change decorations disappear while saved learner work remains recoverable.
+- [ ] Press Play from My work and verify teacher truth returns, detail collapses, and neither branch is deleted.
+- [ ] Repeat with dirty work and verify Play preserves the autosaved branch without creating a checkpoint.
+- [ ] Clear local history, reload from remote, then verify a second learner cannot access the branch.
 
 ## 7. Evidence capture
 

@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const serverOptions = {
   reuseExistingServer: !process.env.CI,
+  timeout: 180_000,
   stdout: 'ignore',
   stderr: 'pipe',
 } as const;
@@ -9,6 +10,7 @@ const serverOptions = {
 const launchOptions = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
   : undefined;
+const defaultOnly = process.env.TUTORIALKIT_E2E_DEFAULT_ONLY === 'true';
 
 export default defineConfig({
   use: launchOptions ? { launchOptions } : {},
@@ -23,21 +25,25 @@ export default defineConfig({
       ],
       use: { baseURL: 'http://localhost:4329' },
     },
-    {
-      name: 'Override Components',
-      testMatch: 'test/*.override-components.test.ts',
-      use: { baseURL: 'http://localhost:4330' },
-    },
-    {
-      name: 'Lessons in root',
-      testMatch: 'test/*.lessons-in-root.test.ts',
-      use: { baseURL: 'http://localhost:4331' },
-    },
-    {
-      name: 'Lessons in part',
-      testMatch: 'test/*.lessons-in-part.test.ts',
-      use: { baseURL: 'http://localhost:4332' },
-    },
+    ...(!defaultOnly
+      ? [
+          {
+            name: 'Override Components',
+            testMatch: 'test/*.override-components.test.ts',
+            use: { baseURL: 'http://localhost:4330' },
+          },
+          {
+            name: 'Lessons in root',
+            testMatch: 'test/*.lessons-in-root.test.ts',
+            use: { baseURL: 'http://localhost:4331' },
+          },
+          {
+            name: 'Lessons in part',
+            testMatch: 'test/*.lessons-in-part.test.ts',
+            use: { baseURL: 'http://localhost:4332' },
+          },
+        ]
+      : []),
   ],
   webServer: [
     {
@@ -45,21 +51,25 @@ export default defineConfig({
       url: 'http://localhost:4329',
       ...serverOptions,
     },
-    {
-      command: 'pnpm preview:override-components',
-      url: 'http://localhost:4330',
-      ...serverOptions,
-    },
-    {
-      command: 'pnpm preview:lessons-in-root',
-      url: 'http://localhost:4331',
-      ...serverOptions,
-    },
-    {
-      command: 'pnpm preview:lessons-in-part',
-      url: 'http://localhost:4332',
-      ...serverOptions,
-    },
+    ...(!defaultOnly
+      ? [
+          {
+            command: 'pnpm preview:override-components',
+            url: 'http://localhost:4330',
+            ...serverOptions,
+          },
+          {
+            command: 'pnpm preview:lessons-in-root',
+            url: 'http://localhost:4331',
+            ...serverOptions,
+          },
+          {
+            command: 'pnpm preview:lessons-in-part',
+            url: 'http://localhost:4332',
+            ...serverOptions,
+          },
+        ]
+      : []),
   ],
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
 

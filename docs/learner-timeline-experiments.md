@@ -1,66 +1,48 @@
-# Learner Timeline Experiments
+# Learner branches, checkpoints, and history
 
-## Product model
+The learner experience uses a local-first, Scrimba-style takeover model. The teacher recording remains immutable and the learner never needs to click a separate pause-to-edit action.
 
-The teacher recording is an immutable, video-like editor timeline. Lecture Playback always materializes the teacher's original files at the current playhead. Learner work is never merged into that playback state.
+## Takeover
 
-Selecting **Pause and Experiment** creates an experiment anchored to the current teacher timestamp:
+While playback is active, focus, cursor movement, selection, and scrolling do not pause playback or create history. The first user-originated project mutation synchronously:
 
-```text
-Teacher timeline  00:00 -------- 01:20 -------- 02:10 -------- 03:00
-                                  |
-                                  +-- learner experiment
-```
+1. pauses the teacher playback drivers without resetting their event cursor;
+2. captures the exact displayed teacher timestamp and last applied event sequence;
+3. hashes the visible normalized teacher files;
+4. creates a learner-owned branch and working tree;
+5. allows the initiating mutation to continue.
 
-The experiment workspace is `teacher state at anchor timestamp + learner file delta`. **Save Experiment** persists that branch. **Return to Lecture** reconstructs teacher truth at the anchor and continues the original timeline. A saved violet marker does nothing when ordinary playback passes it; selecting it explicitly reconstructs its historical teacher base and applies the learner delta.
+Programmatic playback, seeking, restoration, and runtime synchronization are explicitly annotated and cannot trigger takeover.
 
-## State transitions
+## History model
 
-```text
-idle/teacher playback
-  -> Pause and Experiment
-learner-editing(anchor timestamp)
-  -> Save Experiment
-saved learner-editing + timeline marker
-  -> Return to Lecture
-teacher state reconstructed at anchor + playback continues
-  -> marker click
-learner-editing(checkpoint timestamp + checkpoint delta)
-```
+A learner branch has an immutable `ORIGIN`, append-only learner events, a recoverable working tree, and immutable named commits. `HEAD` is the branch tip; selecting an earlier event or checkpoint changes only the viewed position. Editing that historical position creates a child branch and preserves the parent's later work.
 
-Unsaved learner edits produce a dirty indicator. Resuming while dirty requires **Save and Resume**, **Resume Without Saving**, or **Cancel**. This is loss protection, not a merge conflict.
+The default **Lesson** timeline shows playback progress and history groups anchored at takeover timestamps: purple diamonds represent checkpoints, orange circles represent dirty drafts, and a purple marker receives an orange badge when newer unsaved work exists. Internal teacher events and granular autosave events are not drawn.
+
+Opening a marker pauses playback without seeking, reveals the complete branching **My work** graph, and automatically selects the most recently modified branch state in that group (its autosaved draft/HEAD when dirty, otherwise its latest checkpoint). Selecting another Started here/ORIGIN, checkpoint, or Latest work/HEAD node changes only editor files; lesson and media positions remain fixed. Pressing Play reconstructs teacher editor truth at that current paused lesson position and continues from there without deleting learner branches.
+
+## Save and Run
+
+`Ctrl/Cmd+S` creates a named checkpoint only when the working tree is dirty. Repeated saves without edits are no-ops. Local autosave is not a checkpoint. Orange file-tree dots identify changed files only while the visible workspace is the dirty learner HEAD; they hide while following the teacher or inspecting ORIGIN/a checkpoint and return when dirty HEAD is reopened. Instructor presence remains editor-only.
+
+Run executes the current visible working tree. It does not create a checkpoint or mark the branch clean.
 
 ## Persistence
 
-The existing `LearnerDelta` is the checkpoint artifact. It remains keyed by learner, lesson, recording id/version, teacher timestamp, and historical base hash. Local lesson work uses IndexedDB with the compatibility localStorage mirror; published lesson work uses the remote adapter and server-derived demo identity.
+IndexedDB is authoritative during interaction. Branch aggregates synchronize remotely after branch creation, checkpoints, a bounded edit debounce, and safe visibility loss. Remote failure never blocks typing; local work remains valid and reports sync pending.
 
-The learner player loads all user-scoped deltas for the recording and groups them by `teacherTimestampMs`. One marker is rendered per timestamp. The newest save opens by default, while `versionCount` reports older saves retained at that timestamp.
+The remote server derives ownership from the authenticated session, validates recording/version/ORIGIN/materialization, and never exposes another learner's branches. Repeated writes are idempotent. Divergence is retained as a separate branch rather than overwritten.
 
-## Deterministic restoration
+## Legacy compatibility
 
-Teacher state is reconstructed by restoring `baseFiles` and applying ordered teacher events through the target timestamp. Opening a checkpoint then applies its complete file-level result. Trusted programmatic workspace operations create/update files and remove files absent from the restored snapshot while playback guards prevent those operations from being recorded.
+Existing `LearnerDelta` records remain readable as imported single-checkpoint branches. They are converted lazily when opened and edited or saved. The old Pause/Save Experiment workflow is no longer a primary UI path, and no new learner work is written in the legacy delta format.
 
-A checkpoint opens automatically only when recording id, recording version, and historical base hash match. A mismatch is an exceptional incompatible-lecture-version status. A later teacher edit to the same file is not a conflict because it belongs to a later point on the immutable lecture timeline.
+## Accessibility
 
-## Timeline UI
-
-`InteractiveEditorPlayer` renders accessible violet marker buttons over the real range timeline. Marker position is `teacherTimestampMs / recordingDurationMs`. The marker title reports timestamp, changed-file count, and saved-version count. Passing a marker during playback has no side effect.
-
-`InteractiveLearnerPlayback` provides:
-
-- **Pause and Experiment**;
-- **Save Experiment**;
-- **Return to Lecture**;
-- dirty/saved status;
-- an unsaved-work decision panel;
-- a **My Experiments** list synchronized with timeline markers.
-
-## Safety properties
-
-- teacher recordings remain immutable;
-- normal playback always returns to teacher truth;
-- learner experiments remain user-scoped and separate;
-- later teacher events never trigger a normal checkpoint conflict prompt;
-- programmatic reconstruction is guarded from recording;
-- file paths remain normalized to leading-slash form;
-- no automatic merge or screen-video capture is introduced.
+- Teacher and learner cursors have text labels as well as blue/orange styling.
+- ORIGIN, branch HEADs, and checkpoints are keyboard-operable graph buttons with descriptive labels; granular autosave events remain internal.
+- Checkpoint and sync status is announced through an `aria-live` region.
+- The My Work library groups work sessions by lesson position, summarizes autosaved drafts, checkpoints, alternative paths, and file-level changes, and never exposes internal event numbers. Opening it moves focus to Close; closing returns focus to the trigger.
+- Checkpoints and autosaved drafts include an editable **Learner changes** lens. It compares the visible file with teacher truth at the exact takeover position, starts with review mode off so normal editing remains visually clean. Enabling **Review learner changes** renders a unified inline diff: teacher lines appear as red, non-editable `−` ghost rows with original line numbers, while the learner's real editable lines appear green with `+` gutter markers. All changed areas expand together; previous/next navigation and the toggle remain presentation-only. Decoration and navigation transactions never create learner history. The lens disappears while following the teacher.
+- Instructor presence never moves learner focus or native editor selection.

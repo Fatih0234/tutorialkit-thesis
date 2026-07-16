@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
+import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
 import { classNames } from '../utils/classnames.js';
 
 export type InteractiveButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -9,7 +9,8 @@ const buttonVariantClasses: Record<InteractiveButtonVariant, string> = {
   secondary:
     'bg-tk-elements-secondaryButton-backgroundColor text-tk-elements-secondaryButton-textColor hover:bg-tk-elements-secondaryButton-backgroundColorHover hover:text-tk-elements-secondaryButton-textColorHover border border-tk-border-brighter',
   danger: 'bg-red-600 text-white hover:bg-red-700 border border-red-500',
-  ghost: 'bg-transparent text-tk-text-secondary hover:bg-tk-background-active hover:text-tk-text-primary border border-transparent',
+  ghost:
+    'bg-transparent text-tk-text-secondary hover:bg-tk-background-active hover:text-tk-text-primary border border-transparent',
 };
 
 interface InteractiveButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -17,40 +18,38 @@ interface InteractiveButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   variant?: InteractiveButtonVariant;
 }
 
-export function InteractiveButton({
-  children,
-  className,
-  icon,
-  type = 'button',
-  variant = 'secondary',
-  ...props
-}: InteractiveButtonProps) {
-  return (
-    <button
-      type={type}
-      className={classNames(
-        'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-500 transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tk-border-accent',
-        'disabled:cursor-not-allowed disabled:opacity-40',
-        buttonVariantClasses[variant],
-        className,
-      )}
-      {...props}
-    >
-      {icon ? <span aria-hidden="true" className={classNames('shrink-0 text-base', icon)} /> : null}
-      <span>{children}</span>
-    </button>
-  );
-}
+export const InteractiveButton = forwardRef<HTMLButtonElement, InteractiveButtonProps>(
+  ({ children, className, icon, type = 'button', variant = 'secondary', ...props }, ref) => {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={classNames(
+          'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-500 transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tk-border-accent',
+          'disabled:cursor-not-allowed disabled:opacity-40',
+          buttonVariantClasses[variant],
+          className,
+        )}
+        {...props}
+      >
+        {icon ? <span aria-hidden="true" className={classNames('shrink-0 text-base', icon)} /> : null}
+        <span>{children}</span>
+      </button>
+    );
+  },
+);
 
 interface InteractiveCardProps extends HTMLAttributes<HTMLElement> {
   children: ReactNode;
   as?: 'div' | 'section';
 }
 
-export function InteractiveCard({ as: Element = 'section', children, className, ...props }: InteractiveCardProps) {
+export function InteractiveCard({ as: component = 'section', children, className, ...props }: InteractiveCardProps) {
+  const Component = component;
+
   return (
-    <Element
+    <Component
       className={classNames(
         'rounded-lg border border-tk-border-primary bg-tk-background-secondary p-3 shadow-sm',
         className,
@@ -58,7 +57,7 @@ export function InteractiveCard({ as: Element = 'section', children, className, 
       {...props}
     >
       {children}
-    </Element>
+    </Component>
   );
 }
 

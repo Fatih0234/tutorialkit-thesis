@@ -18,3 +18,4 @@ export * from './remote-storage-adapter.js';
 export * from './export-package.js';
 export * from './identity.js';
 export * from './auth-client.js';
+export * from './learner-history/index.js';

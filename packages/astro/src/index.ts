@@ -5,10 +5,10 @@ import { extraIntegrations } from './integrations.js';
 import { updateMarkdownConfig } from './remark/index.js';
 import { tutorialkitCore } from './vite-plugins/core.js';
 import { userlandCSS, watchUserlandCSS } from './vite-plugins/css.js';
-import { interactivePersistence } from './vite-plugins/interactive-persistence.js';
-import { pythonRuntimeAssets } from './vite-plugins/python-assets.js';
 import { interactiveAi } from './vite-plugins/interactive-ai/index.js';
+import { interactivePersistence } from './vite-plugins/interactive-persistence.js';
 import { overrideComponents, type OverrideComponentsOptions } from './vite-plugins/override-components.js';
+import { getPythonWorkerDevUrl, pythonRuntimeAssets } from './vite-plugins/python-assets.js';
 import { tutorialkitStore } from './vite-plugins/store.js';
 import { WebContainerFiles } from './webcontainer-files/index.js';
 
@@ -130,6 +130,11 @@ export default function createPlugin({
               __ENTERPRISE__: `${!!enterprise}`,
               __WC_CONFIG__: enterprise ? JSON.stringify(enterprise) : 'undefined',
               __PYODIDE_BASE_URL__: JSON.stringify(`${config.base.replace(/\/$/, '')}/_tutorialkit/pyodide/`),
+              __PYODIDE_WORKER_URL__: JSON.stringify(
+                options.command === 'dev'
+                  ? getPythonWorkerDevUrl()
+                  : `${config.base.replace(/\/$/, '')}/_tutorialkit/python-worker.js`,
+              ),
             },
             ssr: {
               noExternal: ['@tutorialkit/astro', '@tutorialkit/react'],

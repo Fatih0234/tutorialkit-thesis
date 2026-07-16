@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { materializeExecutionState } from './materialize.js';
+import { materializeExecutionState, materializeTeacherStateAtPosition } from './materialize.js';
 import type { TeacherRecording, TimelineEvent } from './types.js';
 
 function recording(events: TimelineEvent[]): TeacherRecording {
@@ -129,5 +129,56 @@ describe('execution timeline materialization', () => {
       output: [],
       status: 'running',
     });
+  });
+});
+
+function sameTimestampRecording(): TeacherRecording {
+  return {
+    id: 'same-timestamp',
+    lessonId: 'lesson',
+    version: 1,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    durationMs: 1000,
+    baseFiles: { '/example.js': 'base' },
+    events: [
+      {
+        id: 'event-a',
+        seq: 10,
+        tMs: 1000,
+        type: 'file.changed',
+        filePath: '/example.js',
+        payload: { content: 'after A' },
+        origin: 'teacher',
+      },
+      {
+        id: 'event-b',
+        seq: 11,
+        tMs: 1000,
+        type: 'file.changed',
+        filePath: '/example.js',
+        payload: { content: 'after B' },
+        origin: 'teacher',
+      },
+    ],
+  };
+}
+
+describe('sequence-aware teacher materialization', () => {
+  it('applies only events through the exact sequence at a shared timestamp', () => {
+    expect(
+      materializeTeacherStateAtPosition(sameTimestampRecording(), {
+        timestampMs: 1000,
+        lastAppliedEventSeq: 10,
+      }),
+    ).toEqual({ '/example.js': 'after A' });
+  });
+
+  it('applies all earlier timestamp events regardless of sequence', () => {
+    expect(
+      materializeTeacherStateAtPosition(sameTimestampRecording(), {
+        timestampMs: 1001,
+        lastAppliedEventSeq: -1,
+      }),
+    ).toEqual({ '/example.js': 'after B' });
   });
 });
