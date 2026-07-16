@@ -1,10 +1,6 @@
 import { EditorSelection, EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
-import {
-  instructorPresenceField,
-  instructorPresenceExtension,
-  setInstructorPresence,
-} from './instructor-presence.js';
+import { instructorPresenceField, instructorPresenceExtension, setInstructorPresence } from './instructor-presence.js';
 
 function decorationRanges(state: EditorState) {
   const ranges: Array<{ from: number; to: number; className?: string }> = [];
@@ -34,9 +30,7 @@ describe('instructor editor presence', () => {
     const updated = transaction.state;
 
     expect(updated.selection.eq(initialSelection)).toBe(true);
-    expect(decorationRanges(updated)).toEqual([
-      { from: 2, to: 5, className: 'cm-instructor-selection' },
-    ]);
+    expect(decorationRanges(updated)).toEqual([{ from: 2, to: 5, className: 'cm-instructor-selection' }]);
   });
 
   it('renders and clears a collapsed instructor caret', () => {

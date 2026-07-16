@@ -1,10 +1,6 @@
 import { EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
-import {
-  blurredLearnerCaretField,
-  learnerPresenceExtension,
-  setBlurredLearnerCaret,
-} from './learner-presence.js';
+import { blurredLearnerCaretField, learnerPresenceExtension, setBlurredLearnerCaret } from './learner-presence.js';
 
 function caretPositions(state: EditorState) {
   const positions: number[] = [];

@@ -54,12 +54,9 @@ export function materializeLearnerBranchGraph(
     }
 
     visiting.add(branch.id);
+
     const parentBase = materializeBase(parent);
-    const result = materializeLearnerBranch(
-      parentBase,
-      eventsByBranch.get(parent.id) ?? [],
-      branch.parent.eventSeq,
-    );
+    const result = materializeLearnerBranch(parentBase, eventsByBranch.get(parent.id) ?? [], branch.parent.eventSeq);
     visiting.delete(branch.id);
 
     return result;
@@ -81,6 +78,7 @@ function applyEvent(files: FilesSnapshot, event: LearnerHistoryEvent) {
     }
 
     files[normalizePath(event.filePath)] = payload.content;
+
     return;
   }
 
@@ -90,6 +88,7 @@ function applyEvent(files: FilesSnapshot, event: LearnerHistoryEvent) {
     }
 
     delete files[normalizePath(event.filePath)];
+
     return;
   }
 
@@ -107,6 +106,7 @@ function applyEvent(files: FilesSnapshot, event: LearnerHistoryEvent) {
       files[to] = files[from];
       delete files[from];
     }
+
     return;
   }
 
@@ -118,6 +118,7 @@ function applyEvent(files: FilesSnapshot, event: LearnerHistoryEvent) {
         delete files[filePath];
       }
     }
+
     return;
   }
 

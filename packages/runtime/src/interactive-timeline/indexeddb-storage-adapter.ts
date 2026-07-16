@@ -1,4 +1,6 @@
-import { saveLearnerDeltas } from './storage.js';
+/* eslint-disable @typescript-eslint/naming-convention */
+import { upgradeLearnerHistoryStores } from './learner-history/indexeddb-storage.js';
+import type { RecordingMediaAsset } from './media.js';
 import {
   LocalStorageInteractiveTimelineStorage,
   getTeacherRecordingDraftSummary,
@@ -6,9 +8,8 @@ import {
   type LearnerDeltaQuery,
   type TeacherRecordingDraftSummary,
 } from './storage-adapter.js';
-import type { RecordingMediaAsset } from './media.js';
+import { saveLearnerDeltas } from './storage.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
-import { upgradeLearnerHistoryStores } from './learner-history/indexeddb-storage.js';
 
 const DB_NAME = 'interactive-timeline-poc';
 const DB_VERSION = 3;
@@ -263,7 +264,8 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       return;
     }
 
-    const migrationComplete = typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_STORAGE_MIGRATION_KEY) === 'true';
+    const migrationComplete =
+      typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_STORAGE_MIGRATION_KEY) === 'true';
     const localRecording = migrationComplete ? undefined : await this.fallbackStorage.loadTeacherRecording();
     const existingRecordings = await this.readAllTeacherRecordingsFromIndexedDB();
 
@@ -293,6 +295,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => resolve(undefined);
+
       request.onupgradeneeded = () => {
         const db = request.result;
 
@@ -320,6 +323,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
 
         upgradeLearnerHistoryStores(db);
       };
+
       request.onsuccess = () => {
         const db = request.result;
 
@@ -401,7 +405,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       transaction.objectStore(TEACHER_RECORDINGS_STORE).delete(id);
       await waitForTransaction(transaction);
     } catch {
-      // Deleting drafts is best-effort in this browser-only POC.
+      // deleting drafts is best-effort in this browser-only POC
     }
   }
 
@@ -512,7 +516,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       transaction.objectStore(MEDIA_ASSETS_STORE).delete(id);
       await waitForTransaction(transaction);
     } catch {
-      // Deleting media is best-effort in this browser-only POC.
+      // deleting media is best-effort in this browser-only POC
     }
   }
 }

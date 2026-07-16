@@ -21,16 +21,13 @@ import type { Theme } from '../types.js';
 import { BinaryContent } from './BinaryContent.js';
 import { getTheme, reconfigureTheme } from './cm-theme.js';
 import { indentKeyBinding } from './indent.js';
-import { getLanguage } from './languages.js';
 import {
   instructorPresenceExtension,
   setInstructorPresence,
   type InstructorEditorPresence,
 } from './instructor-presence.js';
-import {
-  learnerChangeHighlightExtension,
-  setLearnerChangeHighlights,
-} from './learner-change-highlights.js';
+import { getLanguage } from './languages.js';
+import { learnerChangeHighlightExtension, setLearnerChangeHighlights } from './learner-change-highlights.js';
 import { learnerPresenceExtension, setBlurredLearnerCaret } from './learner-presence.js';
 import { getEditorTextSelection, type EditorTextSelection } from './selection.js';
 import {
@@ -81,8 +78,16 @@ export type EditorSelectionRange = { anchor: number; head: number };
 export type OnSelectionChangeCallback = (selection: EditorTextSelection | null) => void;
 export type OnSelectionRangeChangeCallback = (selection: EditorSelectionRange) => void;
 export interface EditorPointerCoordinateApi {
-  positionAtCoordinates(clientX: number, clientY: number): { filePath: string; documentOffset: number; offsetX: number; offsetY: number } | null;
-  coordinatesAtPosition(position: { filePath: string; documentOffset: number; offsetX: number; offsetY: number }): { clientX: number; clientY: number } | null;
+  positionAtCoordinates(
+    clientX: number,
+    clientY: number,
+  ): { filePath: string; documentOffset: number; offsetX: number; offsetY: number } | null;
+  coordinatesAtPosition(position: {
+    filePath: string;
+    documentOffset: number;
+    offsetX: number;
+    offsetY: number;
+  }): { clientX: number; clientY: number } | null;
 }
 export type { InstructorEditorPresence } from './instructor-presence.js';
 export type { EditorTextSelection } from './selection.js';
@@ -104,6 +109,7 @@ export interface Props {
   debounceChange?: number;
   debounceScroll?: number;
   autoFocusOnDocumentChange?: boolean;
+
   /** @deprecated Use onDocumentChangeSettled. */
   onChange?: OnChangeCallback;
   onBeforeUserDocumentChange?: OnBeforeUserDocumentChangeCallback;
@@ -254,25 +260,56 @@ export function CodeMirrorEditor({
     });
 
     viewRef.current = view;
+
     const pointerCoordinateApi: EditorPointerCoordinateApi = {
       positionAtCoordinates(clientX, clientY) {
         const document = docRef.current;
         const editorBounds = view.dom.getBoundingClientRect();
-        if (clientX < editorBounds.left || clientX > editorBounds.right || clientY < editorBounds.top || clientY > editorBounds.bottom || !document || typeof document.value !== 'string') return null;
+
+        if (
+          clientX < editorBounds.left ||
+          clientX > editorBounds.right ||
+          clientY < editorBounds.top ||
+          clientY > editorBounds.bottom ||
+          !document ||
+          typeof document.value !== 'string'
+        ) {
+          return null;
+        }
+
         const documentOffset = view.posAtCoords({ x: clientX, y: clientY }, false) ?? view.state.selection.main.head;
         const coordinates = view.coordsAtPos(documentOffset);
-        if (!coordinates) return null;
-        return { filePath: document.filePath, documentOffset, offsetX: clientX - coordinates.left, offsetY: clientY - coordinates.top };
+
+        if (!coordinates) {
+          return null;
+        }
+
+        return {
+          filePath: document.filePath,
+          documentOffset,
+          offsetX: clientX - coordinates.left,
+          offsetY: clientY - coordinates.top,
+        };
       },
       coordinatesAtPosition(position) {
         const document = docRef.current;
-        if (!document || document.filePath !== position.filePath || typeof document.value !== 'string') return null;
+
+        if (!document || document.filePath !== position.filePath || typeof document.value !== 'string') {
+          return null;
+        }
+
         const coordinates = view.coordsAtPos(Math.min(view.state.doc.length, Math.max(0, position.documentOffset)));
-        if (!coordinates) return null;
+
+        if (!coordinates) {
+          return null;
+        }
+
         return { clientX: coordinates.left + position.offsetX, clientY: coordinates.top + position.offsetY };
       },
     };
-    (view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }).__tutorialKitPointerCoordinateApi = pointerCoordinateApi;
+    (
+      view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }
+    ).__tutorialKitPointerCoordinateApi = pointerCoordinateApi;
     onPointerCoordinateApiChange?.(pointerCoordinateApi);
 
     // we grab the style tag that codemirror mounts
@@ -281,7 +318,8 @@ export function CodeMirrorEditor({
 
     return () => {
       onPointerCoordinateApiChange?.(null);
-      delete (view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi }).__tutorialKitPointerCoordinateApi;
+      delete (view.dom as HTMLElement & { __tutorialKitPointerCoordinateApi?: EditorPointerCoordinateApi })
+        .__tutorialKitPointerCoordinateApi;
       viewRef.current?.destroy();
       viewRef.current = undefined;
     };
@@ -347,12 +385,20 @@ export function CodeMirrorEditor({
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !doc || doc.value instanceof Uint8Array) return undefined;
+
+    if (!view || !doc || doc.value instanceof Uint8Array) {
+      return undefined;
+    }
+
     const frame = requestAnimationFrame(() => {
       const left = doc.scroll?.left ?? 0;
       const top = doc.scroll?.top ?? 0;
-      if (view.scrollDOM.scrollLeft !== left || view.scrollDOM.scrollTop !== top) view.scrollDOM.scrollTo(left, top);
+
+      if (view.scrollDOM.scrollLeft !== left || view.scrollDOM.scrollTop !== top) {
+        view.scrollDOM.scrollTo(left, top);
+      }
     });
+
     return () => cancelAnimationFrame(frame);
   }, [doc?.filePath, doc?.scroll?.left, doc?.scroll?.top]);
 
@@ -363,9 +409,8 @@ export function CodeMirrorEditor({
       return;
     }
 
-    const visiblePresence = instructorPresence && instructorPresence.filePath === doc?.filePath
-      ? instructorPresence
-      : null;
+    const visiblePresence =
+      instructorPresence && instructorPresence.filePath === doc?.filePath ? instructorPresence : null;
     view.dispatch({
       effects: setInstructorPresence.of(visiblePresence),
       annotations: editorTransactionOrigin.of('teacher-playback'),
@@ -380,9 +425,14 @@ export function CodeMirrorEditor({
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !doc || doc.value instanceof Uint8Array) return undefined;
-    const shouldPulse = Boolean(learnerChangeDiff?.hunks.length)
-      && learnerChangeSelectionKey !== lastLearnerChangeSelectionKeyRef.current;
+
+    if (!view || !doc || doc.value instanceof Uint8Array) {
+      return undefined;
+    }
+
+    const shouldPulse =
+      Boolean(learnerChangeDiff?.hunks.length) &&
+      learnerChangeSelectionKey !== lastLearnerChangeSelectionKeyRef.current;
     lastLearnerChangeSelectionKeyRef.current = learnerChangeSelectionKey;
     view.dispatch({
       effects: setLearnerChangeHighlights.of(
@@ -392,20 +442,26 @@ export function CodeMirrorEditor({
       ),
       annotations: editorTransactionOrigin.of('runtime-sync'),
     });
+
     return undefined;
   }, [doc?.filePath, learnerChangeDiff, learnerChangeHighlightsEnabled, learnerChangeSelectionKey]);
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !learnerChangeNavigationRequest || !learnerChangeDiff?.hunks.length) return;
+
+    if (!view || !learnerChangeNavigationRequest || !learnerChangeDiff?.hunks.length) {
+      return;
+    }
+
     const positions = learnerChangeDiff.hunks.map((hunk) => {
       const lineNumber = Math.max(1, Math.min(view.state.doc.lines, hunk.currentFromLine));
       return view.state.doc.line(lineNumber).from;
     });
     const cursor = view.state.selection.main.head;
-    const target = learnerChangeNavigationRequest.direction === 'next'
-      ? positions.find((position) => position > cursor) ?? positions[0]
-      : [...positions].reverse().find((position) => position < cursor) ?? positions.at(-1)!;
+    const target =
+      learnerChangeNavigationRequest.direction === 'next'
+        ? (positions.find((position) => position > cursor) ?? positions[0])
+        : ([...positions].reverse().find((position) => position < cursor) ?? positions.at(-1)!);
     view.dispatch({
       selection: { anchor: target },
       effects: EditorView.scrollIntoView(target, { y: 'center' }),
@@ -481,6 +537,7 @@ function newEditorState(
               content: view.state.doc.toString(),
               selection: { anchor, head },
             });
+
             return true;
           },
         },

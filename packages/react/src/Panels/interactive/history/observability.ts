@@ -14,6 +14,9 @@ export function logLearnerHistoryEvent(
   event: LearnerHistoryDiagnosticEvent,
   details: Record<string, string | number | boolean | undefined> = {},
 ) {
-  if (typeof window === 'undefined' || window.localStorage.getItem('interactive-poc.debugHistory') !== 'true') return;
+  if (typeof window === 'undefined' || window.localStorage.getItem('interactive-poc.debugHistory') !== 'true') {
+    return;
+  }
+
   console.info('[interactive-history]', { event, ...details });
 }

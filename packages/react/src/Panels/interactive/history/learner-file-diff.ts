@@ -2,10 +2,13 @@ export type LearnerDiffHunkType = 'added' | 'removed' | 'modified';
 
 export interface LearnerDiffHunk {
   type: LearnerDiffHunkType;
+
   /** One-based original line at which the hunk starts in teacher truth. */
   previousFromLine: number;
+
   /** One-based line at which the hunk starts in the visible document. */
   currentFromLine: number;
+
   /** Inclusive one-based final visible line. Equal to currentFromLine for removal-only hunks. */
   currentToLine: number;
   previousLines: string[];
@@ -19,13 +22,17 @@ export interface LearnerFileDiff {
 }
 
 type DiffOperation = { type: 'equal' | 'add' | 'remove'; line: string };
+
 const MAX_LCS_CELLS = 1_500_000;
 
 /** Computes a presentation-only, line-level diff. Inputs are never modified. */
 export function computeLearnerFileDiff(baseContent: string, currentContent: string): LearnerFileDiff {
   const previous = splitLines(baseContent);
   const current = splitLines(currentContent);
-  if (arraysEqual(previous, current)) return { hunks: [], addedLineCount: 0, removedLineCount: 0 };
+
+  if (arraysEqual(previous, current)) {
+    return { hunks: [], addedLineCount: 0, removedLineCount: 0 };
+  }
 
   const operations = computeOperations(previous, current);
   const hunks: LearnerDiffHunk[] = [];
@@ -45,12 +52,15 @@ export function computeLearnerFileDiff(baseContent: string, currentContent: stri
     const currentFromLine = currentLine;
     const previousLines: string[] = [];
     const currentLines: string[] = [];
+
     while (index < operations.length && operations[index].type !== 'equal') {
       const operation = operations[index++];
+
       if (operation.type === 'remove') {
         previousLines.push(operation.line);
         previousLine += 1;
       }
+
       if (operation.type === 'add') {
         currentLines.push(operation.line);
         currentLine += 1;
@@ -76,11 +86,17 @@ export function computeLearnerFileDiff(baseContent: string, currentContent: stri
 
 function computeOperations(previous: string[], current: string[]): DiffOperation[] {
   let prefixLength = 0;
-  while (prefixLength < previous.length && prefixLength < current.length && previous[prefixLength] === current[prefixLength]) {
+
+  while (
+    prefixLength < previous.length &&
+    prefixLength < current.length &&
+    previous[prefixLength] === current[prefixLength]
+  ) {
     prefixLength += 1;
   }
 
   let suffixLength = 0;
+
   while (
     suffixLength < previous.length - prefixLength &&
     suffixLength < current.length - prefixLength &&
@@ -100,47 +116,69 @@ function computeOperations(previous: string[], current: string[]): DiffOperation
     operations.push(...computeLcsOperations(previousMiddle, currentMiddle));
   }
 
-  operations.push(...previous.slice(previous.length - suffixLength).map((line): DiffOperation => ({ type: 'equal', line })));
+  operations.push(
+    ...previous.slice(previous.length - suffixLength).map((line): DiffOperation => ({ type: 'equal', line })),
+  );
+
   return operations;
 }
 
 function computeLcsOperations(previous: string[], current: string[]): DiffOperation[] {
   const width = current.length + 1;
   const table = new Uint32Array((previous.length + 1) * width);
+
   for (let previousIndex = previous.length - 1; previousIndex >= 0; previousIndex -= 1) {
     for (let currentIndex = current.length - 1; currentIndex >= 0; currentIndex -= 1) {
       const tableIndex = previousIndex * width + currentIndex;
-      table[tableIndex] = previous[previousIndex] === current[currentIndex]
-        ? table[(previousIndex + 1) * width + currentIndex + 1] + 1
-        : Math.max(table[(previousIndex + 1) * width + currentIndex], table[previousIndex * width + currentIndex + 1]);
+      table[tableIndex] =
+        previous[previousIndex] === current[currentIndex]
+          ? table[(previousIndex + 1) * width + currentIndex + 1] + 1
+          : Math.max(
+              table[(previousIndex + 1) * width + currentIndex],
+              table[previousIndex * width + currentIndex + 1],
+            );
     }
   }
 
   const operations: DiffOperation[] = [];
   let previousIndex = 0;
   let currentIndex = 0;
+
   while (previousIndex < previous.length || currentIndex < current.length) {
-    if (previousIndex < previous.length && currentIndex < current.length && previous[previousIndex] === current[currentIndex]) {
+    if (
+      previousIndex < previous.length &&
+      currentIndex < current.length &&
+      previous[previousIndex] === current[currentIndex]
+    ) {
       operations.push({ type: 'equal', line: previous[previousIndex] });
       previousIndex += 1;
       currentIndex += 1;
     } else if (
       currentIndex < current.length &&
-      (previousIndex === previous.length || table[previousIndex * width + currentIndex + 1] >= table[(previousIndex + 1) * width + currentIndex])
+      (previousIndex === previous.length ||
+        table[previousIndex * width + currentIndex + 1] >= table[(previousIndex + 1) * width + currentIndex])
     ) {
       operations.push({ type: 'add', line: current[currentIndex++] });
     } else {
       operations.push({ type: 'remove', line: previous[previousIndex++] });
     }
   }
+
   return operations;
 }
 
 function splitLines(content: string) {
-  if (content === '') return [];
+  if (content === '') {
+    return [];
+  }
+
   const lines = content.replace(/\r\n?/g, '\n').split('\n');
-  // A final newline terminates the previous line; it is not an additional blank code line.
-  if (lines.at(-1) === '') lines.pop();
+
+  // a final newline terminates the previous line; it is not an additional blank code line
+  if (lines.at(-1) === '') {
+    lines.pop();
+  }
+
   return lines;
 }
 

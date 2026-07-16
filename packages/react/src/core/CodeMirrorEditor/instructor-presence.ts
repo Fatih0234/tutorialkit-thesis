@@ -45,16 +45,15 @@ export const instructorPresenceField = StateField.define<DecorationSet>({
       const anchor = clampOffset(presence.anchor, transaction.state.doc.length);
       const head = clampOffset(presence.head, transaction.state.doc.length);
 
-      nextDecorations = anchor === head
-        ? Decoration.set([
-            Decoration.widget({ widget: new InstructorCaretWidget(), side: 1 }).range(head),
-          ])
-        : Decoration.set([
-            Decoration.mark({
-              class: 'cm-instructor-selection',
-              attributes: { 'data-instructor-selection': 'true', 'aria-label': 'Instructor selection' },
-            }).range(Math.min(anchor, head), Math.max(anchor, head)),
-          ]);
+      nextDecorations =
+        anchor === head
+          ? Decoration.set([Decoration.widget({ widget: new InstructorCaretWidget(), side: 1 }).range(head)])
+          : Decoration.set([
+              Decoration.mark({
+                class: 'cm-instructor-selection',
+                attributes: { 'data-instructor-selection': 'true', 'aria-label': 'Instructor selection' },
+              }).range(Math.min(anchor, head), Math.max(anchor, head)),
+            ]);
     }
 
     return nextDecorations;

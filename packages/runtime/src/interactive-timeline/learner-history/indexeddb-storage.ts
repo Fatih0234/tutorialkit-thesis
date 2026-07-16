@@ -14,21 +14,17 @@ const EVENTS_STORE = 'learnerHistoryEvents';
 const COMMITS_STORE = 'learnerCommits';
 const WORKING_TREES_STORE = 'learnerWorkingTrees';
 
-type StoreName =
-  | typeof BRANCHES_STORE
-  | typeof EVENTS_STORE
-  | typeof COMMITS_STORE
-  | typeof WORKING_TREES_STORE;
+type StoreName = typeof BRANCHES_STORE | typeof EVENTS_STORE | typeof COMMITS_STORE | typeof WORKING_TREES_STORE;
 
 export class IndexedDBLearnerHistoryStorage implements LearnerHistoryStorage {
-  private dbPromise: Promise<IDBDatabase | undefined> | undefined;
-  private readonly memoryBranches = new Map<string, LearnerBranch>();
-  private readonly memoryEvents = new Map<string, LearnerHistoryEvent[]>();
-  private readonly memoryCommits = new Map<string, LearnerCommit[]>();
-  private readonly memoryTrees = new Map<string, LearnerWorkingTree>();
+  private _dbPromise: Promise<IDBDatabase | undefined> | undefined;
+  private readonly _memoryBranches = new Map<string, LearnerBranch>();
+  private readonly _memoryEvents = new Map<string, LearnerHistoryEvent[]>();
+  private readonly _memoryCommits = new Map<string, LearnerCommit[]>();
+  private readonly _memoryTrees = new Map<string, LearnerWorkingTree>();
 
   async listBranches(query: LearnerBranchQuery): Promise<LearnerBranch[]> {
-    const branches = (await this.readAll<LearnerBranch>(BRANCHES_STORE)) ?? [...this.memoryBranches.values()];
+    const branches = (await this._readAll<LearnerBranch>(BRANCHES_STORE)) ?? [...this._memoryBranches.values()];
 
     return branches
       .filter((branch) => matchesQuery(branch, query))
@@ -36,16 +32,16 @@ export class IndexedDBLearnerHistoryStorage implements LearnerHistoryStorage {
   }
 
   async loadBranch(branchId: string) {
-    return (await this.read<LearnerBranch>(BRANCHES_STORE, branchId)) ?? this.memoryBranches.get(branchId);
+    return (await this._read<LearnerBranch>(BRANCHES_STORE, branchId)) ?? this._memoryBranches.get(branchId);
   }
 
   async saveBranch(branch: LearnerBranch) {
-    this.memoryBranches.set(branch.id, branch);
-    await this.write(BRANCHES_STORE, branch);
+    this._memoryBranches.set(branch.id, branch);
+    await this._write(BRANCHES_STORE, branch);
   }
 
   async loadEvents(branchId: string) {
-    const events = (await this.readAll<LearnerHistoryEvent>(EVENTS_STORE)) ?? this.memoryEvents.get(branchId) ?? [];
+    const events = (await this._readAll<LearnerHistoryEvent>(EVENTS_STORE)) ?? this._memoryEvents.get(branchId) ?? [];
     return events.filter((event) => event.branchId === branchId).sort((a, b) => a.seq - b.seq);
   }
 
@@ -54,93 +50,112 @@ export class IndexedDBLearnerHistoryStorage implements LearnerHistoryStorage {
       throw new Error('Cannot append learner events to another branch.');
     }
 
-    const existing = this.memoryEvents.get(branchId) ?? [];
+    const existing = this._memoryEvents.get(branchId) ?? [];
     const byId = new Map(existing.map((event) => [event.id, event]));
 
     for (const event of events) {
       byId.set(event.id, event);
     }
 
-    this.memoryEvents.set(branchId, [...byId.values()].sort((a, b) => a.seq - b.seq));
-    await this.writeMany(EVENTS_STORE, events);
+    this._memoryEvents.set(
+      branchId,
+      [...byId.values()].sort((a, b) => a.seq - b.seq),
+    );
+    await this._writeMany(EVENTS_STORE, events);
   }
 
   async loadCommits(branchId: string) {
-    const commits = (await this.readAll<LearnerCommit>(COMMITS_STORE)) ?? this.memoryCommits.get(branchId) ?? [];
+    const commits = (await this._readAll<LearnerCommit>(COMMITS_STORE)) ?? this._memoryCommits.get(branchId) ?? [];
     return commits
       .filter((commit) => commit.branchId === branchId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async saveCommit(commit: LearnerCommit) {
-    const commits = this.memoryCommits.get(commit.branchId) ?? [];
+    const commits = this._memoryCommits.get(commit.branchId) ?? [];
     const next = commits.filter((candidate) => candidate.id !== commit.id);
     next.push(commit);
-    this.memoryCommits.set(commit.branchId, next);
-    await this.write(COMMITS_STORE, commit);
+    this._memoryCommits.set(commit.branchId, next);
+    await this._write(COMMITS_STORE, commit);
   }
 
   async loadWorkingTree(branchId: string) {
-    return (await this.read<LearnerWorkingTree>(WORKING_TREES_STORE, branchId)) ?? this.memoryTrees.get(branchId);
+    return (await this._read<LearnerWorkingTree>(WORKING_TREES_STORE, branchId)) ?? this._memoryTrees.get(branchId);
   }
 
   async saveWorkingTree(tree: LearnerWorkingTree) {
-    this.memoryTrees.set(tree.branchId, tree);
-    await this.write(WORKING_TREES_STORE, tree);
+    this._memoryTrees.set(tree.branchId, tree);
+    await this._write(WORKING_TREES_STORE, tree);
   }
 
-  private async openDatabase(): Promise<IDBDatabase | undefined> {
+  private async _openDatabase(): Promise<IDBDatabase | undefined> {
     if (typeof window === 'undefined' || !window.indexedDB) {
       return undefined;
     }
 
-    this.dbPromise ??= new Promise((resolve) => {
+    this._dbPromise ??= new Promise((resolve) => {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
       request.onerror = () => resolve(undefined);
       request.onupgradeneeded = () => upgradeLearnerHistoryStores(request.result);
+
       request.onsuccess = () => {
         request.result.onversionchange = () => request.result.close();
         resolve(request.result);
       };
     });
 
-    return this.dbPromise;
+    return this._dbPromise;
   }
 
-  private async read<T>(storeName: StoreName, key: IDBValidKey): Promise<T | undefined> {
+  private async _read<T>(storeName: StoreName, key: IDBValidKey): Promise<T | undefined> {
     try {
-      const db = await this.openDatabase();
-      if (!db) return undefined;
+      const db = await this._openDatabase();
+
+      if (!db) {
+        return undefined;
+      }
+
       return await requestToPromise<T | undefined>(db.transaction(storeName).objectStore(storeName).get(key));
     } catch {
       return undefined;
     }
   }
 
-  private async readAll<T>(storeName: StoreName): Promise<T[] | undefined> {
+  private async _readAll<T>(storeName: StoreName): Promise<T[] | undefined> {
     try {
-      const db = await this.openDatabase();
-      if (!db) return undefined;
+      const db = await this._openDatabase();
+
+      if (!db) {
+        return undefined;
+      }
+
       return await requestToPromise<T[]>(db.transaction(storeName).objectStore(storeName).getAll());
     } catch {
       return undefined;
     }
   }
 
-  private async write(storeName: StoreName, value: unknown): Promise<void> {
-    await this.writeMany(storeName, [value]);
+  private async _write(storeName: StoreName, value: unknown): Promise<void> {
+    await this._writeMany(storeName, [value]);
   }
 
-  private async writeMany(storeName: StoreName, values: unknown[]): Promise<void> {
+  private async _writeMany(storeName: StoreName, values: unknown[]): Promise<void> {
     try {
-      const db = await this.openDatabase();
-      if (!db) throw new Error('IndexedDB learner history storage is unavailable.');
+      const db = await this._openDatabase();
+
+      if (!db) {
+        throw new Error('IndexedDB learner history storage is unavailable.');
+      }
+
       const transaction = db.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
-      for (const value of values) store.put(value);
+
+      for (const value of values) {
+        store.put(value);
+      }
       await waitForTransaction(transaction);
     } catch (error) {
-      // The in-memory copy remains usable, but callers must not claim the write is durable.
+      // the in-memory copy remains usable, but callers must not claim the write is durable
       throw error;
     }
   }
@@ -163,17 +178,20 @@ export function upgradeLearnerHistoryStores(db: IDBDatabase) {
     store.createIndex('teacherRecordingId', 'origin.teacherRecordingId');
     store.createIndex('updatedAt', 'updatedAt');
   }
+
   if (!db.objectStoreNames.contains(EVENTS_STORE)) {
     const store = db.createObjectStore(EVENTS_STORE, { keyPath: 'id' });
     store.createIndex('branchId', 'branchId');
     store.createIndex('createdAt', 'createdAt');
     store.createIndex('branchSeq', ['branchId', 'seq'], { unique: true });
   }
+
   if (!db.objectStoreNames.contains(COMMITS_STORE)) {
     const store = db.createObjectStore(COMMITS_STORE, { keyPath: 'id' });
     store.createIndex('branchId', 'branchId');
     store.createIndex('createdAt', 'createdAt');
   }
+
   if (!db.objectStoreNames.contains(WORKING_TREES_STORE)) {
     const store = db.createObjectStore(WORKING_TREES_STORE, { keyPath: 'branchId' });
     store.createIndex('branchId', 'branchId', { unique: true });

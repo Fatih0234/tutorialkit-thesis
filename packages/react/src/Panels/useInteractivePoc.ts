@@ -23,7 +23,6 @@ import {
   HIDDEN_TEACHER_POINTER,
   materializeTeacherStateAtPosition,
   materializeExecutionState,
-  materializeWhiteboardScene,
   normalizeEditorSelectionPayload,
   normalizeTeacherPointerClickPayload,
   normalizeTeacherPointerPayload,
@@ -74,8 +73,12 @@ import type {
   EditorUserMutationContext,
   InstructorEditorPresence,
 } from '../core/CodeMirrorEditor/index.js';
+import type {
+  LearnerFileChangeSummary,
+  LearnerGraphNodeKind,
+  LearnerTimelineCommitSummary,
+} from './interactive/history/learner-history-graph.js';
 import { logLearnerHistoryEvent } from './interactive/history/observability.js';
-import type { LearnerFileChangeSummary, LearnerGraphNodeKind, LearnerTimelineCommitSummary } from './interactive/history/learner-history-graph.js';
 import { useLearnerHistory } from './interactive/history/useLearnerHistory.js';
 import { useInteractiveWhiteboard } from './interactive/whiteboard/useInteractiveWhiteboard.js';
 
@@ -292,14 +295,8 @@ export interface UseInteractivePocResult {
   onEditorSelectionChange: (selection: EditorSelectionChangedPayload) => void;
   onBeforeUserProjectMutation: () => boolean;
   onEditorSaveShortcut: (update: EditorUserMutationContext) => void;
-  onEditorDocumentChangeImmediate: (
-    update: EditorUserMutationContext,
-    origin: EditorTransactionOrigin,
-  ) => void;
-  onEditorDocumentChangeSettled: (
-    update: EditorUserMutationContext,
-    origin: EditorTransactionOrigin,
-  ) => void;
+  onEditorDocumentChangeImmediate: (update: EditorUserMutationContext, origin: EditorTransactionOrigin) => void;
+  onEditorDocumentChangeSettled: (update: EditorUserMutationContext, origin: EditorTransactionOrigin) => void;
   onRuntimeEvent: (event: RuntimeEvent, provider: RuntimeProvider) => void;
 }
 
@@ -308,25 +305,53 @@ const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
 const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
 const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
-const CAMERA_PRESENTATION_RESOURCE: PresentationResource = { id: 'instructor-camera', kind: 'camera', title: 'Instructor Camera' };
+const CAMERA_PRESENTATION_RESOURCE: PresentationResource = {
+  id: 'instructor-camera',
+  kind: 'camera',
+  title: 'Instructor Camera',
+};
 const WHITEBOARD_RESOURCE_ID = 'lecture-whiteboard';
 const DEFAULT_PRESENTATION_RESOURCES: PresentationResource[] = [
   { id: 'website-preview', kind: 'preview', title: 'Website Preview' },
   { id: 'lesson-explanation', kind: 'explanation', title: 'Explanation' },
   { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } },
   {
-    id: 'javascript-counter-deck', kind: 'deck', title: 'Building a JavaScript Counter', accent: 'indigo',
+    id: 'javascript-counter-deck',
+    kind: 'deck',
+    title: 'Building a JavaScript Counter',
+    accent: 'indigo',
     slides: [
-      { id: 'counter-state', title: 'JavaScript remembers state', eyebrow: 'Counter concept · 1', elements: [
-        { id: 'state-intro', kind: 'paragraph', text: 'A variable stores the current count between button clicks.', revealStep: 0 },
-        { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
-        { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
-      ] },
-      { id: 'counter-dom', title: 'Events update the DOM', eyebrow: 'Counter concept · 2', elements: [
-        { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
-        { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
-        { id: 'dom-code', kind: 'code', language: 'javascript', code: "button.addEventListener('click', () => {\n  count += 1;\n  output.textContent = count;\n});", revealStep: 3 },
-      ] },
+      {
+        id: 'counter-state',
+        title: 'JavaScript remembers state',
+        eyebrow: 'Counter concept · 1',
+        elements: [
+          {
+            id: 'state-intro',
+            kind: 'paragraph',
+            text: 'A variable stores the current count between button clicks.',
+            revealStep: 0,
+          },
+          { id: 'state-read', kind: 'bullet', text: 'Read the current value.', revealStep: 1 },
+          { id: 'state-change', kind: 'bullet', text: 'Increment it after every click.', revealStep: 2 },
+        ],
+      },
+      {
+        id: 'counter-dom',
+        title: 'Events update the DOM',
+        eyebrow: 'Counter concept · 2',
+        elements: [
+          { id: 'dom-listener', kind: 'bullet', text: 'A click listener runs JavaScript.', revealStep: 1 },
+          { id: 'dom-text', kind: 'bullet', text: 'textContent displays the new value.', revealStep: 2 },
+          {
+            id: 'dom-code',
+            kind: 'code',
+            language: 'javascript',
+            code: "button.addEventListener('click', () => {\n  count += 1;\n  output.textContent = count;\n});",
+            revealStep: 3,
+          },
+        ],
+      },
     ],
   },
 ];
@@ -344,12 +369,16 @@ function withInstructorCamera(resources: PresentationResource[]): PresentationRe
 function withWhiteboard(resources: PresentationResource[]): PresentationResource[] {
   return resources.some((resource) => resource.kind === 'whiteboard')
     ? resources
-    : [...resources, { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } }];
+    : [
+        ...resources,
+        { id: WHITEBOARD_RESOURCE_ID, kind: 'whiteboard', title: 'Whiteboard', initialScene: { elements: [] } },
+      ];
 }
 
 function createDefaultPresentationLayout(): PresentationLayout {
   let layout = createPresentationLayout(DEFAULT_PRESENTATION_RESOURCES);
   layout = setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'website-preview', 'minimized');
+
   return setPresentationMode(DEFAULT_PRESENTATION_RESOURCES, layout, 'javascript-counter-deck', 'minimized');
 }
 
@@ -416,18 +445,26 @@ export function useInteractivePoc({
   const workspaceLayoutGuardUntilRef = useRef(0);
   const importPackageFileRef = useRef<File | null>(null);
   const currentUserRef = useRef<InteractiveUser | null>(null);
-  const presentationResourcesRef = useRef<PresentationResource[]>(clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
+  const presentationResourcesRef = useRef<PresentationResource[]>(
+    clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES),
+  );
   const teacherPresentationLayoutRef = useRef<PresentationLayout>(createDefaultPresentationLayout());
   const learnerPresentationOverrideRef = useRef<PresentationLayout | null>(null);
   const lastRecordedPointerRef = useRef<TeacherPointerChangedPayload | null>(null);
   const pointerClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [teacherPointer, setTeacherPointer] = useState<TeacherPointerChangedPayload>({ ...HIDDEN_TEACHER_POINTER });
-  const [instructorPresenceByFile, setInstructorPresenceByFile] = useState<Record<string, InstructorEditorPresence>>({});
-  const [instructorFilePath, setInstructorFilePath] = useState<string>();
+  const [instructorPresenceByFile, setInstructorPresenceByFile] = useState<Record<string, InstructorEditorPresence>>(
+    {},
+  );
+  const [, setInstructorFilePath] = useState<string>();
   const [teacherPointerClickButton, setTeacherPointerClickButton] = useState<TeacherPointerButton | null>(null);
   const [teacherPointerClickSequence, setTeacherPointerClickSequence] = useState(0);
-  const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() => clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES));
-  const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(createDefaultPresentationLayout);
+  const [presentationResources, setPresentationResources] = useState<PresentationResource[]>(() =>
+    clonePresentationResources(DEFAULT_PRESENTATION_RESOURCES),
+  );
+  const [teacherPresentationLayout, setTeacherPresentationLayout] = useState<PresentationLayout>(
+    createDefaultPresentationLayout,
+  );
   const [learnerPresentationOverride, setLearnerPresentationOverride] = useState<PresentationLayout | null>(null);
   const whiteboard = useInteractiveWhiteboard({ elements: [] }, onWhiteboardSceneCommit);
   const learnerHistory = useLearnerHistory();
@@ -443,8 +480,8 @@ export function useInteractivePoc({
   const [playheadMs, setPlayheadMs] = useState(0);
   const [pausedTeacherTimestampMs, setPausedTeacherTimestampMs] = useState(0);
   const [pausedTeacherEventSeq, setPausedTeacherEventSeq] = useState(-1);
-  const [hasPausedTeacherTimestamp, setHasPausedTeacherTimestamp] = useState(false);
-  const [hasTeacherRecording, setHasTeacherRecording] = useState(false);
+  const [, setHasPausedTeacherTimestamp] = useState(false);
+  const [, setHasTeacherRecording] = useState(false);
   const [learnerDeltaCount, setLearnerDeltaCount] = useState(0);
   const [learnerDeltaStatus, setLearnerDeltaStatus] = useState('idle');
   const [learnerCheckpoints, setLearnerCheckpoints] = useState<LearnerCheckpointView[]>([]);
@@ -482,7 +519,9 @@ export function useInteractivePoc({
   }
 
   function syncEventCount() {
-    setEventCount(recorderRef.current?.getRecording()?.events.length ?? currentDraftRecordingRef.current?.events.length ?? 0);
+    setEventCount(
+      recorderRef.current?.getRecording()?.events.length ?? currentDraftRecordingRef.current?.events.length ?? 0,
+    );
   }
 
   function setCurrentRecordingSource(source: RecordingStorageSource) {
@@ -790,6 +829,7 @@ export function useInteractivePoc({
     }
 
     setNoMedia(status);
+
     return [];
   }
 
@@ -843,9 +883,7 @@ export function useInteractivePoc({
       }
     }
 
-    return Object.keys(visibleFiles).length > 0
-      ? visibleFiles
-      : normalizeFiles(tutorialStore.takeSnapshot().files);
+    return Object.keys(visibleFiles).length > 0 ? visibleFiles : normalizeFiles(tutorialStore.takeSnapshot().files);
   }
 
   function setInteractiveMode(nextMode: InteractiveMode) {
@@ -951,6 +989,7 @@ export function useInteractivePoc({
     } else {
       disposePlaybackDrivers({ pauseMedia: true });
     }
+
     setIsPlaying(false);
     setPlaybackStatus(status);
     setInteractiveMode(nextMode);
@@ -976,13 +1015,24 @@ export function useInteractivePoc({
     const nextLayout = normalizePresentationLayout(resources, layout);
     let nextLearnerOverride: PresentationLayout | null = null;
 
-    // Camera visibility is a personal learner preference. Keep an explicit camera
-    // override when an unrelated teacher presentation cue replaces the layout.
+    /**
+     * Camera visibility is a personal learner preference. Keep an explicit camera
+     * override when an unrelated teacher presentation cue replaces the layout.
+     */
     for (const resource of resources) {
-      if (resource.kind !== 'camera') continue;
+      if (resource.kind !== 'camera') {
+        continue;
+      }
+
       const learnerMode = previousLearnerOverride?.resources[resource.id];
+
       if (learnerMode && learnerMode !== previousTeacherLayout.resources[resource.id]) {
-        nextLearnerOverride = setPresentationMode(resources, nextLearnerOverride ?? nextLayout, resource.id, learnerMode);
+        nextLearnerOverride = setPresentationMode(
+          resources,
+          nextLearnerOverride ?? nextLayout,
+          resource.id,
+          learnerMode,
+        );
       }
     }
 
@@ -993,9 +1043,9 @@ export function useInteractivePoc({
   }
 
   function restoreInitialPresentation(recording: TeacherRecording) {
-    const recordedResources = withWhiteboard(recording.presentationResources?.length
-      ? recording.presentationResources
-      : DEFAULT_PRESENTATION_RESOURCES);
+    const recordedResources = withWhiteboard(
+      recording.presentationResources?.length ? recording.presentationResources : DEFAULT_PRESENTATION_RESOURCES,
+    );
     const hasWebcam = recording.mediaAssets?.some((asset) => asset.kind === 'webcam') ?? false;
     const resources = hasWebcam ? withInstructorCamera(recordedResources) : recordedResources;
     let initialLayout = recording.initialPresentationLayout ?? createPresentationLayout(resources);
@@ -1005,7 +1055,10 @@ export function useInteractivePoc({
     }
 
     setPresentationResourcesAndLayout(resources, initialLayout);
-    const whiteboardResource = resources.find((resource): resource is WhiteboardPresentationResource => resource.kind === 'whiteboard');
+
+    const whiteboardResource = resources.find(
+      (resource): resource is WhiteboardPresentationResource => resource.kind === 'whiteboard',
+    );
     whiteboard.applyScene(whiteboardResource?.initialScene ?? { elements: [] }, 'initialization');
   }
 
@@ -1035,15 +1088,31 @@ export function useInteractivePoc({
   }
 
   function reduceDeckAction(layout: PresentationLayout, deckId: string, action: DeckAction, slideIndex?: number) {
-    if (action === 'next-reveal') return stepDeckReveal(presentationResourcesRef.current, layout, deckId, 1);
-    if (action === 'previous-reveal') return stepDeckReveal(presentationResourcesRef.current, layout, deckId, -1);
-    if (action === 'next-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, 1);
-    if (action === 'previous-slide') return stepDeckSlide(presentationResourcesRef.current, layout, deckId, -1);
-    return setDeckProgress(presentationResourcesRef.current, layout, deckId, { slideIndex: slideIndex ?? 0, revealedStep: 0 });
+    if (action === 'next-reveal') {
+      return stepDeckReveal(presentationResourcesRef.current, layout, deckId, 1);
+    }
+
+    if (action === 'previous-reveal') {
+      return stepDeckReveal(presentationResourcesRef.current, layout, deckId, -1);
+    }
+
+    if (action === 'next-slide') {
+      return stepDeckSlide(presentationResourcesRef.current, layout, deckId, 1);
+    }
+
+    if (action === 'previous-slide') {
+      return stepDeckSlide(presentationResourcesRef.current, layout, deckId, -1);
+    }
+
+    return setDeckProgress(presentationResourcesRef.current, layout, deckId, {
+      slideIndex: slideIndex ?? 0,
+      revealedStep: 0,
+    });
   }
 
   function recordTeacherPresentationLayout(nextLayout: PresentationLayout) {
     applyTeacherPresentationLayout(nextLayout);
+
     if (modeRef.current === 'idle' && recorderRef.current?.isRecording()) {
       recorderRef.current.append<PresentationChangedPayload>('presentation.changed', {
         payload: { layout: clonePresentationLayout(nextLayout) },
@@ -1064,24 +1133,30 @@ export function useInteractivePoc({
   }
 
   function onUpdatePresentationDeck(deck: DeckPresentationResource) {
-    const nextResources = presentationResourcesRef.current.map((resource) => resource.id === deck.id ? structuredClone(deck) : resource);
+    const nextResources = presentationResourcesRef.current.map((resource) =>
+      resource.id === deck.id ? structuredClone(deck) : resource,
+    );
     const nextLayout = normalizePresentationLayout(nextResources, teacherPresentationLayoutRef.current);
     setPresentationResourcesAndLayout(nextResources, nextLayout);
   }
 
   function onWhiteboardSceneCommit(scene: WhiteboardScene) {
     const recorder = recorderRef.current;
+
     if (recorder?.isRecording()) {
       recorder.append<WhiteboardSceneChangedPayload>('whiteboard.scene.changed', {
         payload: { resourceId: WHITEBOARD_RESOURCE_ID, scene: structuredClone(scene) },
       });
       syncEventCount();
+
       return;
     }
 
-    const nextResources = presentationResourcesRef.current.map((resource) => resource.kind === 'whiteboard' && resource.id === WHITEBOARD_RESOURCE_ID
-      ? { ...resource, initialScene: structuredClone(scene) } satisfies WhiteboardPresentationResource
-      : resource);
+    const nextResources = presentationResourcesRef.current.map((resource) =>
+      resource.kind === 'whiteboard' && resource.id === WHITEBOARD_RESOURCE_ID
+        ? ({ ...resource, initialScene: structuredClone(scene) } satisfies WhiteboardPresentationResource)
+        : resource,
+    );
     setPresentationResourcesAndLayout(nextResources, teacherPresentationLayoutRef.current);
   }
 
@@ -1148,8 +1223,12 @@ export function useInteractivePoc({
 
       return;
     }
+
     if (event.type === 'editor.selection.changed') {
-      if (!event.filePath) return;
+      if (!event.filePath) {
+        return;
+      }
+
       try {
         const filePath = normalizePath(event.filePath);
         const presence: InstructorEditorPresence = {
@@ -1163,14 +1242,23 @@ export function useInteractivePoc({
         setInstructorPresenceByFile({});
         setInstructorFilePath(undefined);
       }
+
       return;
     }
 
     if (event.type === 'pointer.clicked') {
       try {
         const click = normalizeTeacherPointerClickPayload(event.payload);
-        setTeacherPointer({ surface: click.surface, x: click.x, y: click.y, visible: true, ...(click.coordinateSpaceVersion ? { coordinateSpaceVersion: click.coordinateSpaceVersion } : {}), ...(click.anchor ? { anchor: click.anchor } : {}) });
+        setTeacherPointer({
+          surface: click.surface,
+          x: click.x,
+          y: click.y,
+          visible: true,
+          ...(click.coordinateSpaceVersion ? { coordinateSpaceVersion: click.coordinateSpaceVersion } : {}),
+          ...(click.anchor ? { anchor: click.anchor } : {}),
+        });
         clearTimeout(pointerClickTimeoutRef.current);
+
         if (animatePointerClick) {
           setTeacherPointerClickButton(click.button);
           setTeacherPointerClickSequence((sequence) => sequence + 1);
@@ -1195,7 +1283,11 @@ export function useInteractivePoc({
 
     if (event.type === 'whiteboard.scene.changed') {
       const payload = event.payload as WhiteboardSceneChangedPayload | undefined;
-      if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene) whiteboard.applyScene(payload.scene, 'playback');
+
+      if (payload?.resourceId === WHITEBOARD_RESOURCE_ID && payload.scene) {
+        whiteboard.applyScene(payload.scene, 'playback');
+      }
+
       return;
     }
 
@@ -1334,7 +1426,11 @@ export function useInteractivePoc({
     restoreTeacherWorkspaceAt(currentTimeMs, recording);
   }
 
-  function getPlaybackEndMs(events: TimelineEvent[], recording: TeacherRecording, mediaAsset?: RecordingMediaAsset | null) {
+  function getPlaybackEndMs(
+    events: TimelineEvent[],
+    recording: TeacherRecording,
+    mediaAsset?: RecordingMediaAsset | null,
+  ) {
     return Math.max(events.at(-1)?.tMs ?? 0, recording.durationMs ?? 0, mediaAsset?.durationMs ?? 0);
   }
 
@@ -1360,6 +1456,7 @@ export function useInteractivePoc({
 
     if (!hiddenElement || hiddenElement.tagName.toLowerCase() !== expectedTagName) {
       hiddenElement?.pause();
+
       const nextElement = document.createElement(expectedTagName) as HTMLMediaElement;
 
       nextElement.preload = 'auto';
@@ -1418,7 +1515,10 @@ export function useInteractivePoc({
 
   function playRecordingFrom(
     startMs: number,
-    { resetToBase, startAfterEventSeq = Number.POSITIVE_INFINITY }: {
+    {
+      resetToBase,
+      startAfterEventSeq = Number.POSITIVE_INFINITY,
+    }: {
       resetToBase: boolean;
       startAfterEventSeq?: number;
     },
@@ -1434,6 +1534,7 @@ export function useInteractivePoc({
       setInteractiveMode('idle');
       setPlaybackStatus('missing-recording');
       setPlaybackTimestampMs(0);
+
       return;
     }
 
@@ -1481,6 +1582,7 @@ export function useInteractivePoc({
         setMediaError(error instanceof Error ? error.message : 'Unable to play media.');
         stopPlayback('paused', 'idle');
       });
+
       return;
     }
 
@@ -1517,10 +1619,12 @@ export function useInteractivePoc({
       return false;
     }
 
-    const originFiles = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: restored.branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: restored.branch.origin.lastAppliedTeacherEventSeq,
-    }));
+    const originFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: restored.branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: restored.branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
 
     if (simpleHashFiles(originFiles) !== restored.branch.origin.baseTeacherFilesHash) {
       setLearnerDeltaStatus('learner history belongs to another lecture version');
@@ -1543,7 +1647,8 @@ export function useInteractivePoc({
     }
 
     learnerOriginFilesRef.current = originFiles;
-    learnerWorkspaceSavedHashRef.current = restored.tree.latestCommitFilesHash ?? restored.branch.origin.baseTeacherFilesHash;
+    learnerWorkspaceSavedHashRef.current =
+      restored.tree.latestCommitFilesHash ?? restored.branch.origin.baseTeacherFilesHash;
     setPausedTimestampMs(restored.branch.origin.teacherTimestampMs);
     setPausedEventSeq(restored.branch.origin.lastAppliedTeacherEventSeq);
     setHasPausedTeacherTimestamp(true);
@@ -1572,7 +1677,7 @@ export function useInteractivePoc({
 
     await syncLearnerDeltaState(recording ?? undefined, storage);
 
-    if (recording && await restoreDirtyLearnerHistory(recording)) {
+    if (recording && (await restoreDirtyLearnerHistory(recording))) {
       return;
     }
 
@@ -1634,22 +1739,14 @@ export function useInteractivePoc({
         }
       }
 
-      if (
-        !learnerHistory.hasActiveBranch() &&
-        activeLegacyDeltaRef.current &&
-        activeLegacyOriginFilesRef.current
-      ) {
+      if (!learnerHistory.hasActiveBranch() && activeLegacyDeltaRef.current && activeLegacyOriginFilesRef.current) {
         learnerHistory.importLegacyDelta(activeLegacyDeltaRef.current, activeLegacyOriginFilesRef.current);
       }
 
       return true;
     }
 
-    if (
-      !learnerTakeoverEnabled ||
-      currentUserRef.current?.role !== 'learner' ||
-      isRecording
-    ) {
+    if (!learnerTakeoverEnabled || currentUserRef.current?.role !== 'learner' || isRecording) {
       return true;
     }
 
@@ -1661,12 +1758,15 @@ export function useInteractivePoc({
 
     const displayedTimestampMs = playheadMsRef.current;
     logLearnerHistoryEvent('takeover.started', { recordingId: recording.id, teacherTimestampMs: displayedTimestampMs });
+
     const mediaElement = playbackUsesMediaRef.current ? getMediaPlaybackElement() : undefined;
 
     pausePlaybackDriversPreservingCursor();
+
     const origin = captureDisplayedTeacherOrigin();
     activeLegacyDeltaRef.current = null;
     activeLegacyOriginFilesRef.current = null;
+
     const branch = learnerHistory.createBranch({
       userId: currentUserRef.current!.id,
       lessonId: recording.lessonId || lessonId,
@@ -1764,6 +1864,7 @@ export function useInteractivePoc({
       branchId: learnerHistory.activeBranch?.id,
       teacherTimestampMs: pausedTeacherTimestampMsRef.current,
     });
+
     const recording = playbackRecordingRef.current;
 
     if (!recording || modeRef.current !== 'learner-editing') {
@@ -1786,21 +1887,21 @@ export function useInteractivePoc({
       mediaElement.currentTime = resumeTimestampMs / 1000;
     }
 
-    playRecordingFrom(
-      resumeTimestampMs,
-      { resetToBase: false, startAfterEventSeq: resumeEventSeq },
-      recording,
-    );
+    playRecordingFrom(resumeTimestampMs, { resetToBase: false, startAfterEventSeq: resumeEventSeq }, recording);
   }
 
   function onResumeTeacher() {
-    if (modeRef.current !== 'learner-editing') return;
+    if (modeRef.current !== 'learner-editing') {
+      return;
+    }
 
     if (learnerWorkspaceDirtyRef.current) {
       migrateActiveLegacyExperimentIfNeeded();
+
       const filePath = getCurrentFilePath();
       const filesSnapshot = getCurrentLearnerFiles();
       const content = filePath ? filesSnapshot[normalizePath(filePath)] : undefined;
+
       if (filePath && typeof content === 'string') {
         learnerHistory.recordFileChange({
           filePath,
@@ -1820,6 +1921,7 @@ export function useInteractivePoc({
     }
 
     stopPlaybackDrivers({ pauseMedia: true });
+
     const baseFiles: FilesSnapshot = getCurrentLearnerFiles();
     const recorder = new TimelineRecorder();
     let mediaRecorder: InteractiveMediaRecorder | null = null;
@@ -1837,28 +1939,38 @@ export function useInteractivePoc({
         mediaRecorder = null;
         setMediaStatus(canUseMediaRecorder() ? 'error' : 'unavailable');
         setMediaError(message);
+
         return false;
       }
     }
 
     const startedAtMs = Date.now();
-    const recordingResources = mediaRecorder && mediaKindToRecord === 'webcam'
-      ? withInstructorCamera(presentationResourcesRef.current)
-      : presentationResourcesRef.current;
-    const recordingLayout = mediaRecorder && mediaKindToRecord === 'webcam'
-      ? setPresentationMode(recordingResources, teacherPresentationLayoutRef.current, CAMERA_PRESENTATION_RESOURCE.id, 'minimized')
-      : normalizePresentationLayout(recordingResources, teacherPresentationLayoutRef.current);
+    const recordingResources =
+      mediaRecorder && mediaKindToRecord === 'webcam'
+        ? withInstructorCamera(presentationResourcesRef.current)
+        : presentationResourcesRef.current;
+    const recordingLayout =
+      mediaRecorder && mediaKindToRecord === 'webcam'
+        ? setPresentationMode(
+            recordingResources,
+            teacherPresentationLayoutRef.current,
+            CAMERA_PRESENTATION_RESOURCE.id,
+            'minimized',
+          )
+        : normalizePresentationLayout(recordingResources, teacherPresentationLayoutRef.current);
 
     setPresentationResourcesAndLayout(recordingResources, recordingLayout);
 
-    const recording = getRecordingWithOwner(recorder.start({
-      lessonId,
-      version: 1,
-      baseFiles,
-      startedAtMs,
-      presentationResources: recordingResources,
-      initialPresentationLayout: recordingLayout,
-    }));
+    const recording = getRecordingWithOwner(
+      recorder.start({
+        lessonId,
+        version: 1,
+        baseFiles,
+        startedAtMs,
+        presentationResources: recordingResources,
+        initialPresentationLayout: recordingLayout,
+      }),
+    );
 
     if (selectedFile) {
       recorder.append('file.opened', {
@@ -1866,6 +1978,7 @@ export function useInteractivePoc({
         payload: { filePath: normalizePath(selectedFile) },
         tMs: 0,
       });
+
       const initialScroll = tutorialStore.currentDocument.get()?.scroll ?? { top: 0, left: 0 };
       recorder.append<EditorScrolledPayload>('editor.scrolled', {
         filePath: selectedFile,
@@ -1903,8 +2016,10 @@ export function useInteractivePoc({
     setIsRecording(true);
     setEventCount(recording.events.length);
 
-    // Moving the editor and persistent preview into the recording shell may emit delayed
-    // CodeMirror resize scroll callbacks. They are layout effects, not teacher intent.
+    /**
+     * Moving the editor and persistent preview into the recording shell may emit delayed
+     * CodeMirror resize scroll callbacks. They are layout effects, not teacher intent.
+     */
     workspaceLayoutGuardUntilRef.current = Date.now() + 1500;
     startPlaybackGuard();
     releaseRecordingTransitionGuard();
@@ -1935,6 +2050,7 @@ export function useInteractivePoc({
     if (!stopped) {
       mediaRecorder?.abort();
       setIsRecording(false);
+
       return;
     }
 
@@ -2009,6 +2125,7 @@ export function useInteractivePoc({
       setCurrentDraftRecording(null, 'missing');
       setNoMedia(getInitialMediaStatus());
       await refreshRecordingLibrary();
+
       return undefined;
     }
 
@@ -2018,6 +2135,7 @@ export function useInteractivePoc({
       setCurrentDraftRecording(null, 'missing');
       setNoMedia(getInitialMediaStatus());
       await refreshRecordingLibrary();
+
       return undefined;
     }
 
@@ -2068,12 +2186,14 @@ export function useInteractivePoc({
     if (!canPublishInteractiveRecording(currentUserRef.current)) {
       setPublishedStatus('error');
       setPublishedError('Sign in as a teacher to publish recordings.');
+
       return;
     }
 
     if (!recording || isRecording) {
       setPublishedStatus('missing');
       setPublishedError('No stopped draft is available to publish.');
+
       return;
     }
 
@@ -2131,6 +2251,7 @@ export function useInteractivePoc({
         setPublishedStatus('missing');
         setPublishedRecordingId('none');
         await refreshRecordingLibrary();
+
         return undefined;
       }
 
@@ -2140,6 +2261,7 @@ export function useInteractivePoc({
         setPublishedStatus('missing');
         setPublishedRecordingId('none');
         await refreshRecordingLibrary();
+
         return undefined;
       }
 
@@ -2158,6 +2280,7 @@ export function useInteractivePoc({
     } catch (error) {
       setPublishedStatus('error');
       setPublishedError(error instanceof Error ? error.message : 'Unable to load published recording.');
+
       return undefined;
     }
   }
@@ -2170,7 +2293,9 @@ export function useInteractivePoc({
     const targetId = recordingId || selectedPublishedRecordingId;
     const currentRecording = playbackRecordingRef.current;
     const recording =
-      currentRecording && currentRecordingSourceRef.current === 'published' && (!targetId || currentRecording.id === targetId)
+      currentRecording &&
+      currentRecordingSourceRef.current === 'published' &&
+      (!targetId || currentRecording.id === targetId)
         ? currentRecording
         : await loadPublishedRecording(targetId);
 
@@ -2309,6 +2434,7 @@ export function useInteractivePoc({
         setPublishedStatus('published');
         setPublishedRecordingId(recording.id);
         setSelectedPublishedRecordingId(recording.id);
+
         const warningText = result.warnings.length > 0 ? ` (${result.warnings.join(' ')})` : '';
 
         setImportStatus(`imported published copy ${recording.id}${warningText}`);
@@ -2317,6 +2443,7 @@ export function useInteractivePoc({
         setCurrentRecordingSource('local-draft');
         setCurrentDraftRecording(recording, 'loaded');
         setSelectedDraftId(recording.id);
+
         const warningText = result.warnings.length > 0 ? ` (${result.warnings.join(' ')})` : '';
 
         setImportStatus(`imported draft copy ${recording.id}${warningText}`);
@@ -2359,7 +2486,7 @@ export function useInteractivePoc({
       window.localStorage.removeItem('interactive-poc.teacherRecording');
       window.localStorage.removeItem('interactive-poc.learnerDeltas');
     } catch {
-      // localStorage is best-effort for the explicit demo reset control.
+      // localStorage is best-effort for the explicit demo reset control
     }
   }
 
@@ -2469,10 +2596,12 @@ export function useInteractivePoc({
 
       if (currentDraftRecordingRef.current?.id === targetId) {
         currentDraftRecordingRef.current = null;
+
         if (currentRecordingSourceRef.current === 'local-draft') {
           playbackRecordingRef.current = null;
           setCurrentRecordingSource('none');
         }
+
         setDraftStatus('discarded');
         setCurrentDraftId('none');
         setRecordingDurationMs(0);
@@ -2489,7 +2618,9 @@ export function useInteractivePoc({
   }
 
   async function deletePublishedRecording(recordingId: string) {
-    if (!recordingId || !canPublishInteractiveRecording(currentUserRef.current) || isRecording) return;
+    if (!recordingId || !canPublishInteractiveRecording(currentUserRef.current) || isRecording) {
+      return;
+    }
 
     setPublishedDeleteStatus('deleting');
     setPublishedDeleteError('none');
@@ -2556,10 +2687,12 @@ export function useInteractivePoc({
       return;
     }
 
-    const baseTeacherFiles = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: delta.teacherTimestampMs,
-      lastAppliedEventSeq: delta.lastAppliedTeacherEventSeq ?? Number.POSITIVE_INFINITY,
-    }));
+    const baseTeacherFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: delta.teacherTimestampMs,
+        lastAppliedEventSeq: delta.lastAppliedTeacherEventSeq ?? Number.POSITIVE_INFINITY,
+      }),
+    );
 
     if (
       delta.teacherRecordingId !== recording.id ||
@@ -2595,7 +2728,6 @@ export function useInteractivePoc({
       learnerWorkspaceSavedHashRef.current = simpleHashFiles(restoredFiles);
       setLearnerWorkspaceDirty(false);
       setLearnerDeltaStatus('legacy checkpoint imported');
-
     } finally {
       releasePlaybackGuardSoon();
       await syncLearnerDeltaState(recording, storage);
@@ -2610,7 +2742,12 @@ export function useInteractivePoc({
   function onFileSelect(filePath: string | undefined) {
     tutorialStore.setSelectedFile(filePath);
 
-    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorderRef.current?.isRecording()) {
+    if (
+      !filePath ||
+      modeRef.current !== 'idle' ||
+      isApplyingPlaybackRef.current ||
+      !recorderRef.current?.isRecording()
+    ) {
       return;
     }
 
@@ -2619,13 +2756,11 @@ export function useInteractivePoc({
   }
 
   function onFileCreated(filePath: string, content = '') {
-    if (
-      modeRef.current === 'learner-editing' &&
-      !isApplyingPlaybackRef.current
-    ) {
+    if (modeRef.current === 'learner-editing' && !isApplyingPlaybackRef.current) {
       const learnerFiles = getCurrentLearnerFiles();
       setLearnerWorkspaceDirty(simpleHashFiles(learnerFiles) !== learnerWorkspaceSavedHashRef.current);
       learnerHistory.recordFileCreated(filePath, content, learnerFiles);
+
       return;
     }
 
@@ -2665,12 +2800,31 @@ export function useInteractivePoc({
 
   const onTeacherPointerChange = useCallback((pointer: TeacherPointerChangedPayload) => {
     const recorder = recorderRef.current;
-    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+
+    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) {
+      return;
+    }
+
     let normalized: TeacherPointerChangedPayload;
-    try { normalized = normalizeTeacherPointerPayload(pointer); } catch { return; }
+
+    try {
+      normalized = normalizeTeacherPointerPayload(pointer);
+    } catch {
+      return;
+    }
+
     const previous = lastRecordedPointerRef.current;
-    if (previous && previous.surface === normalized.surface && previous.visible === normalized.visible &&
-      Math.abs(previous.x - normalized.x) < 0.002 && Math.abs(previous.y - normalized.y) < 0.002) return;
+
+    if (
+      previous &&
+      previous.surface === normalized.surface &&
+      previous.visible === normalized.visible &&
+      Math.abs(previous.x - normalized.x) < 0.002 &&
+      Math.abs(previous.y - normalized.y) < 0.002
+    ) {
+      return;
+    }
+
     recorder.append<TeacherPointerChangedPayload>('pointer.changed', { payload: normalized });
     lastRecordedPointerRef.current = normalized;
     setEventCount(recorder.getRecording()?.events.length ?? 0);
@@ -2679,25 +2833,51 @@ export function useInteractivePoc({
   function onEditorSelectionChange(selection: EditorSelectionChangedPayload) {
     const recorder = recorderRef.current;
     const filePath = getCurrentFilePath();
-    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+
+    if (!filePath || modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) {
+      return;
+    }
+
     let normalized: EditorSelectionChangedPayload;
-    try { normalized = normalizeEditorSelectionPayload(selection); } catch { return; }
+
+    try {
+      normalized = normalizeEditorSelectionPayload(selection);
+    } catch {
+      return;
+    }
     recorder.append<EditorSelectionChangedPayload>('editor.selection.changed', { filePath, payload: normalized });
     syncEventCount();
   }
 
   const onTeacherPointerClick = useCallback((click: TeacherPointerClickedPayload) => {
     const recorder = recorderRef.current;
-    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) return;
+
+    if (modeRef.current !== 'idle' || isApplyingPlaybackRef.current || !recorder?.isRecording()) {
+      return;
+    }
+
     let normalized: TeacherPointerClickedPayload;
-    try { normalized = normalizeTeacherPointerClickPayload(click); } catch { return; }
+
+    try {
+      normalized = normalizeTeacherPointerClickPayload(click);
+    } catch {
+      return;
+    }
     recorder.append<TeacherPointerClickedPayload>('pointer.clicked', { payload: normalized });
-    lastRecordedPointerRef.current = { surface: normalized.surface, x: normalized.x, y: normalized.y, visible: true, ...(normalized.coordinateSpaceVersion ? { coordinateSpaceVersion: normalized.coordinateSpaceVersion } : {}), ...(normalized.anchor ? { anchor: normalized.anchor } : {}) };
+    lastRecordedPointerRef.current = {
+      surface: normalized.surface,
+      x: normalized.x,
+      y: normalized.y,
+      visible: true,
+      ...(normalized.coordinateSpaceVersion ? { coordinateSpaceVersion: normalized.coordinateSpaceVersion } : {}),
+      ...(normalized.anchor ? { anchor: normalized.anchor } : {}),
+    };
     setEventCount(recorder.getRecording()?.events.length ?? 0);
   }, []);
 
   function onEditorDocumentChangeImmediate(update: EditorUserMutationContext, origin: EditorTransactionOrigin) {
     tutorialStore.updateFile(update.filePath, update.content);
+
     if (origin === 'user' && modeRef.current === 'learner-editing' && !isApplyingPlaybackRef.current) {
       setLearnerWorkspaceDirty(true);
     }
@@ -2708,10 +2888,7 @@ export function useInteractivePoc({
       return;
     }
 
-    if (
-      modeRef.current === 'learner-editing' &&
-      !isApplyingPlaybackRef.current
-    ) {
+    if (modeRef.current === 'learner-editing' && !isApplyingPlaybackRef.current) {
       const learnerFiles = getCurrentLearnerFiles();
       setLearnerWorkspaceDirty(simpleHashFiles(learnerFiles) !== learnerWorkspaceSavedHashRef.current);
       learnerHistory.recordFileChange({
@@ -2735,11 +2912,7 @@ export function useInteractivePoc({
   }
 
   function migrateActiveLegacyExperimentIfNeeded() {
-    if (
-      !learnerHistory.hasActiveBranch() &&
-      activeLegacyDeltaRef.current &&
-      activeLegacyOriginFilesRef.current
-    ) {
+    if (!learnerHistory.hasActiveBranch() && activeLegacyDeltaRef.current && activeLegacyOriginFilesRef.current) {
       learnerHistory.importLegacyDelta(activeLegacyDeltaRef.current, activeLegacyOriginFilesRef.current);
     }
   }
@@ -2763,10 +2936,12 @@ export function useInteractivePoc({
       return undefined;
     }
 
-    const files = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-    }));
+    const files = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
 
     return simpleHashFiles(files) === branch.origin.baseTeacherFilesHash ? files : undefined;
   }
@@ -2776,6 +2951,7 @@ export function useInteractivePoc({
       pausePlaybackDriversPreservingCursor();
       setIsPlaying(false);
       setPlaybackStatus('paused');
+
       return;
     }
 
@@ -2791,11 +2967,7 @@ export function useInteractivePoc({
     setInteractiveMode('idle');
   }
 
-  function showLearnerHistoryFiles(
-    files: FilesSnapshot,
-    selectedFilePath?: string,
-    branchOverride?: LearnerBranch,
-  ) {
+  function showLearnerHistoryFiles(files: FilesSnapshot, selectedFilePath?: string, branchOverride?: LearnerBranch) {
     const branch = branchOverride ?? learnerHistory.activeBranch;
 
     if (!branch) {
@@ -2819,6 +2991,7 @@ export function useInteractivePoc({
 
   function onSelectLearnerEvent(eventSeq: number) {
     onOpenLearnerHistoryGroup();
+
     const originFiles = getLearnerHistoryOriginFiles();
     const files = originFiles ? learnerHistory.selectEvent(originFiles, eventSeq) : undefined;
 
@@ -2829,6 +3002,7 @@ export function useInteractivePoc({
 
   function onSelectLearnerCommit(commitId: string) {
     onOpenLearnerHistoryGroup();
+
     const selected = learnerHistory.selectCommit(commitId);
 
     if (selected) {
@@ -2838,6 +3012,7 @@ export function useInteractivePoc({
 
   function onSelectLearnerHead() {
     onOpenLearnerHistoryGroup();
+
     const selected = learnerHistory.selectHead();
 
     if (selected) {
@@ -2847,6 +3022,7 @@ export function useInteractivePoc({
 
   function onSelectLearnerBranch(branchId: string) {
     onOpenLearnerHistoryGroup();
+
     const recording = playbackRecordingRef.current;
     const branch = learnerHistory.branches.find((candidate) => candidate.id === branchId);
 
@@ -2854,10 +3030,12 @@ export function useInteractivePoc({
       return;
     }
 
-    const teacherOriginFiles = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-    }));
+    const teacherOriginFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
 
     if (simpleHashFiles(teacherOriginFiles) !== branch.origin.baseTeacherFilesHash) {
       setLearnerDeltaStatus('learner history belongs to another lecture version');
@@ -2874,44 +3052,64 @@ export function useInteractivePoc({
   function onSelectLearnerGraphNode(branchId: string, kind: LearnerGraphNodeKind, commitId?: string) {
     const selectionToken = ++learnerHistorySelectionTokenRef.current;
     onOpenLearnerHistoryGroup();
+
     const recording = playbackRecordingRef.current;
     const branch = learnerHistory.branches.find((candidate) => candidate.id === branchId);
-    if (!recording || !branch) return;
 
-    const teacherOriginFiles = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-    }));
+    if (!recording || !branch) {
+      return;
+    }
+
+    const teacherOriginFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
+
     if (simpleHashFiles(teacherOriginFiles) !== branch.origin.baseTeacherFilesHash) {
       setLearnerDeltaStatus('learner history belongs to another lecture version');
       return;
     }
 
     const applySelection = async () => {
-      if (learnerHistorySelectionTokenRef.current !== selectionToken) return;
+      if (learnerHistorySelectionTokenRef.current !== selectionToken) {
+        return;
+      }
+
       const loaded = await learnerHistory.switchBranch(branchId, teacherOriginFiles);
-      if (!loaded || learnerHistorySelectionTokenRef.current !== selectionToken) return;
+
+      if (!loaded || learnerHistorySelectionTokenRef.current !== selectionToken) {
+        return;
+      }
+
       if (kind === 'origin') {
         const files = learnerHistory.selectEvent(teacherOriginFiles, 0);
+
         if (files) {
           setLearnerWorkspaceDirty(false);
           showLearnerHistoryFiles(files, loaded.tree.selectedFile, loaded.branch);
         }
       } else if (kind === 'commit' && commitId) {
         const selected = learnerHistory.selectCommit(commitId);
+
         if (selected) {
           setLearnerWorkspaceDirty(false);
           showLearnerHistoryFiles(selected.files, selected.selectedFile, loaded.branch);
         }
       } else if (kind === 'head') {
         const selected = learnerHistory.selectHead();
+
         if (selected) {
           setLearnerWorkspaceDirty(loaded.tree.dirty);
           showLearnerHistoryFiles(selected.files, selected.selectedFile, loaded.branch);
         }
       }
     };
-    learnerHistorySelectionQueueRef.current = learnerHistorySelectionQueueRef.current.then(applySelection, applySelection);
+    learnerHistorySelectionQueueRef.current = learnerHistorySelectionQueueRef.current.then(
+      applySelection,
+      applySelection,
+    );
   }
 
   function onSelectTeacherTimelinePosition(timestampMs: number) {
@@ -2946,33 +3144,54 @@ export function useInteractivePoc({
   const learnerComparisonBaseFiles = (() => {
     const recording = playbackRecordingRef.current;
     const branch = learnerHistory.activeBranch;
-    if (!recording || !branch) return null;
+
+    if (!recording || !branch) {
+      return null;
+    }
+
     const cacheKey = `${recording.id}:${recording.version}:${branch.origin.teacherTimestampMs}:${branch.origin.lastAppliedTeacherEventSeq}:${branch.origin.baseTeacherFilesHash}`;
     const cachedFiles = learnerComparisonBaseCacheRef.current.get(cacheKey);
-    if (cachedFiles) return cachedFiles;
-    const files = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-    }));
-    if (simpleHashFiles(files) !== branch.origin.baseTeacherFilesHash) return null;
+
+    if (cachedFiles) {
+      return cachedFiles;
+    }
+
+    const files = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
+
+    if (simpleHashFiles(files) !== branch.origin.baseTeacherFilesHash) {
+      return null;
+    }
+
     learnerComparisonBaseCacheRef.current.set(cacheKey, files);
+
     return files;
   })();
-  const isLearnerOriginSelected = learnerHistory.viewMode === 'historical'
-    && learnerHistory.selectedEventSeq === 0
-    && !learnerHistory.selectedCommitId;
-  const learnerChangeKind: InteractivePocControlsModel['learnerChangeKind'] = learnerHistory.viewMode === 'none' || isLearnerOriginSelected
-    ? 'none'
-    : learnerHistory.viewMode === 'head' && learnerHistory.workingTree?.dirty
-      ? 'draft'
-      : 'checkpoint';
-  const learnerChangeSelectionKey = learnerChangeKind === 'none' || !learnerHistory.activeBranch
-    ? ''
-    : `${learnerHistory.activeBranch.id}:${learnerHistory.viewMode}:${learnerHistory.viewMode === 'head' ? 'head' : learnerHistory.selectedCommitId ?? learnerHistory.selectedEventSeq ?? 'history'}`;
+  const isLearnerOriginSelected =
+    learnerHistory.viewMode === 'historical' &&
+    learnerHistory.selectedEventSeq === 0 &&
+    !learnerHistory.selectedCommitId;
+  const learnerChangeKind: InteractivePocControlsModel['learnerChangeKind'] =
+    learnerHistory.viewMode === 'none' || isLearnerOriginSelected
+      ? 'none'
+      : learnerHistory.viewMode === 'head' && learnerHistory.workingTree?.dirty
+        ? 'draft'
+        : 'checkpoint';
+  const learnerChangeSelectionKey =
+    learnerChangeKind === 'none' || !learnerHistory.activeBranch
+      ? ''
+      : `${learnerHistory.activeBranch.id}:${learnerHistory.viewMode}:${learnerHistory.viewMode === 'head' ? 'head' : (learnerHistory.selectedCommitId ?? learnerHistory.selectedEventSeq ?? 'history')}`;
 
   const hasCurrentDraftRecording = currentDraftRecordingRef.current !== null;
-  const hasCurrentPublishedRecording = currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
-  const hasDraftSelection = Boolean(selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0);
+  const hasCurrentPublishedRecording =
+    currentRecordingSourceRef.current === 'published' && playbackRecordingRef.current !== null;
+  const hasDraftSelection = Boolean(
+    selectedDraftId || currentDraftRecordingRef.current?.id || draftRecordings.length > 0,
+  );
   const canStartAnyRecording = !isRecording && mode === 'idle' && lessonFullyLoaded;
   const canPublishAsTeacher = canPublishInteractiveRecording(currentUser);
   const canUseLearnerWork = canSaveInteractiveLearnerWork(currentUser);
@@ -3017,20 +3236,39 @@ export function useInteractivePoc({
     syncEventCount();
   }
 
-  function summarizeLearnerFileChanges(branch: LearnerBranch, filesSnapshot: FilesSnapshot): LearnerFileChangeSummary[] {
+  function summarizeLearnerFileChanges(
+    branch: LearnerBranch,
+    filesSnapshot: FilesSnapshot,
+  ): LearnerFileChangeSummary[] {
     const recording = playbackRecordingRef.current;
-    if (!recording) return [];
-    const teacherFiles = normalizeFiles(materializeTeacherStateAtPosition(recording, {
-      timestampMs: branch.origin.teacherTimestampMs,
-      lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-    }));
+
+    if (!recording) {
+      return [];
+    }
+
+    const teacherFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: branch.origin.teacherTimestampMs,
+        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+      }),
+    );
     const learnerFiles = normalizeFiles(filesSnapshot);
+
     return [...new Set([...Object.keys(teacherFiles), ...Object.keys(learnerFiles)])]
       .sort()
       .flatMap((path): LearnerFileChangeSummary[] => {
-        if (!(path in teacherFiles)) return [{ path, status: 'added' }];
-        if (!(path in learnerFiles)) return [{ path, status: 'removed' }];
-        if (teacherFiles[path] !== learnerFiles[path]) return [{ path, status: 'modified' }];
+        if (!(path in teacherFiles)) {
+          return [{ path, status: 'added' }];
+        }
+
+        if (!(path in learnerFiles)) {
+          return [{ path, status: 'removed' }];
+        }
+
+        if (teacherFiles[path] !== learnerFiles[path]) {
+          return [{ path, status: 'modified' }];
+        }
+
         return [];
       });
   }
@@ -3130,9 +3368,14 @@ export function useInteractivePoc({
       canSaveDraft: hasCurrentDraftRecording && !isRecording && mode === 'idle',
       canLoadDraft: !isRecording && mode === 'idle',
       canPreviewDraft: (hasCurrentDraftRecording || hasDraftSelection) && !isRecording && mode === 'idle',
-      canDiscardDraft: (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
+      canDiscardDraft:
+        (hasCurrentDraftRecording || draftStatus !== 'missing') && !isRecording && mode !== 'teacher-playback',
       canPublishRecording:
-        hasCurrentDraftRecording && !isRecording && mode === 'idle' && publishedStatus !== 'publishing' && canPublishAsTeacher,
+        hasCurrentDraftRecording &&
+        !isRecording &&
+        mode === 'idle' &&
+        publishedStatus !== 'publishing' &&
+        canPublishAsTeacher,
       canLoadPublishedRecording: !isRecording && mode === 'idle' && publishedStatus !== 'publishing',
       canPreviewPublishedRecording:
         (hasCurrentPublishedRecording || Boolean(selectedPublishedRecordingId || publishedRecordings.length > 0)) &&
@@ -3141,7 +3384,8 @@ export function useInteractivePoc({
       canDeleteSelectedDraft: hasDraftSelection && !isRecording && mode !== 'teacher-playback',
       canDeletePublishedRecording: canPublishAsTeacher && !isRecording && publishedDeleteStatus !== 'deleting',
       canExportRecording: hasExportableRecording && !isRecording && mode === 'idle' && exportStatus !== 'exporting',
-      canImportRecordingPackage: hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
+      canImportRecordingPackage:
+        hasSelectedImportPackage && !isRecording && mode === 'idle' && !importStatus.startsWith('importing'),
       canImportPublishedPackage:
         hasSelectedImportPackage &&
         !isRecording &&
@@ -3149,7 +3393,8 @@ export function useInteractivePoc({
         !importStatus.startsWith('importing') &&
         canPublishAsTeacher,
       canSeedDemoData: !isRecording && mode === 'idle' && canPublishAsTeacher && demoDataStatus !== 'seeding',
-      canResetDemoData: !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
+      canResetDemoData:
+        !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
       canPlayRecording: !isRecording && (mode === 'idle' || mode === 'learner-editing'),
       canPausePlayback: isPlaying,
       canSeekPlayback: Boolean(playbackRecordingRef.current) && !isRecording && mode !== 'learner-editing',

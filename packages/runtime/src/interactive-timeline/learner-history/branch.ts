@@ -1,5 +1,5 @@
-import { normalizeFiles, normalizePath } from '../path.js';
 import { simpleHashFiles } from '../learner-delta.js';
+import { normalizeFiles, normalizePath } from '../path.js';
 import type { FilesSnapshot } from '../types.js';
 import type {
   LearnerBranch,
@@ -61,9 +61,10 @@ interface AppendEventOptions<TPayload> {
   now?: string;
 }
 
-export function appendLearnerHistoryEvent<TPayload>(
-  options: AppendEventOptions<TPayload>,
-): { branch: LearnerBranch; event: LearnerHistoryEvent<TPayload> } {
+export function appendLearnerHistoryEvent<TPayload>(options: AppendEventOptions<TPayload>): {
+  branch: LearnerBranch;
+  event: LearnerHistoryEvent<TPayload>;
+} {
   const now = options.now ?? new Date().toISOString();
   const seq = options.branch.headEventSeq + 1;
   const event: LearnerHistoryEvent<TPayload> = {
@@ -114,10 +115,7 @@ export function createLearnerCommit(options: CreateCommitOptions): LearnerCommit
   };
 }
 
-export function markWorkingTreeCommitted(
-  tree: LearnerWorkingTree,
-  commit: LearnerCommit,
-): LearnerWorkingTree {
+export function markWorkingTreeCommitted(tree: LearnerWorkingTree, commit: LearnerCommit): LearnerWorkingTree {
   return {
     ...tree,
     filesSnapshot: normalizeFiles(commit.filesSnapshot),

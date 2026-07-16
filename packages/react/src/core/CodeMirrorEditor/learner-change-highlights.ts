@@ -20,6 +20,7 @@ class AddedLineGutterMarker extends GutterMarker {
     marker.className = 'tk-learner-diff-added-marker';
     marker.textContent = '+';
     marker.setAttribute('aria-hidden', 'true');
+
     return marker;
   }
 }
@@ -29,47 +30,57 @@ class AddedLineGutterSpacer extends GutterMarker {
     const marker = document.createElement('span');
     marker.textContent = '+';
     marker.setAttribute('aria-hidden', 'true');
+
     return marker;
   }
 }
 
 class PreviousLinesWidget extends WidgetType {
   constructor(
-    private readonly previousFromLine: number,
-    private readonly lines: string[],
-    private readonly pulse: boolean,
+    private readonly _previousFromLine: number,
+    private readonly _lines: string[],
+    private readonly _pulse: boolean,
   ) {
     super();
   }
 
   override eq(other: PreviousLinesWidget) {
-    return this.previousFromLine === other.previousFromLine
-      && this.pulse === other.pulse
-      && this.lines.join('\n') === other.lines.join('\n');
+    return (
+      this._previousFromLine === other._previousFromLine &&
+      this._pulse === other._pulse &&
+      this._lines.join('\n') === other._lines.join('\n')
+    );
   }
 
   override toDOM() {
     const container = document.createElement('div');
-    container.className = `tk-learner-inline-diff-removed${this.pulse ? ' tk-learner-change-pulse' : ''}`;
+    container.className = `tk-learner-inline-diff-removed${this._pulse ? ' tk-learner-change-pulse' : ''}`;
     container.setAttribute('role', 'group');
-    container.setAttribute('aria-label', `${this.lines.length} removed teacher line${this.lines.length === 1 ? '' : 's'}`);
+    container.setAttribute(
+      'aria-label',
+      `${this._lines.length} removed teacher line${this._lines.length === 1 ? '' : 's'}`,
+    );
     container.setAttribute('contenteditable', 'false');
 
-    this.lines.forEach((line, index) => {
+    this._lines.forEach((line, index) => {
       const row = document.createElement('div');
       row.className = 'tk-learner-inline-diff-removed-row';
+
       const sign = document.createElement('span');
       sign.className = 'tk-learner-inline-diff-sign';
       sign.textContent = '−';
+
       const lineNumber = document.createElement('span');
       lineNumber.className = 'tk-learner-inline-diff-line-number';
-      lineNumber.textContent = String(this.previousFromLine + index);
+      lineNumber.textContent = String(this._previousFromLine + index);
+
       const code = document.createElement('span');
       code.className = 'tk-learner-inline-diff-code';
       code.textContent = line || ' ';
       row.append(sign, lineNumber, code);
       container.append(row);
     });
+
     return container;
   }
 
@@ -90,11 +101,13 @@ const learnerChangeHighlightField = StateField.define<HighlightFieldValue>({
       decorations: value.decorations.map(transaction.changes),
       gutterMarkers: value.gutterMarkers.map(transaction.changes),
     };
+
     for (const effect of transaction.effects) {
       if (effect.is(setLearnerChangeHighlights)) {
         nextValue = effect.value ? buildHighlights(transaction.state, effect.value) : emptyValue;
       }
     }
+
     return nextValue;
   },
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
@@ -179,21 +192,26 @@ function buildHighlights(state: EditorState, value: LearnerChangeHighlightValue)
 
     if (hunk.previousLines.length > 0) {
       const isRemovalAfterDocument = hunk.type === 'removed' && hunk.currentFromLine > documentLineCount;
-      decorationRanges.push(Decoration.widget({
-        widget: new PreviousLinesWidget(hunk.previousFromLine, hunk.previousLines, value.pulse),
-        block: true,
-        side: isRemovalAfterDocument ? 1 : -1,
-      }).range(isRemovalAfterDocument ? state.doc.length : firstLine.from));
+      decorationRanges.push(
+        Decoration.widget({
+          widget: new PreviousLinesWidget(hunk.previousFromLine, hunk.previousLines, value.pulse),
+          block: true,
+          side: isRemovalAfterDocument ? 1 : -1,
+        }).range(isRemovalAfterDocument ? state.doc.length : firstLine.from),
+      );
     }
 
     if (hunk.currentLines.length > 0) {
       const finalVisibleLine = clampLine(hunk.currentToLine, documentLineCount);
+
       for (let visibleLine = firstVisibleLine; visibleLine <= finalVisibleLine; visibleLine += 1) {
         const line = state.doc.line(visibleLine);
-        decorationRanges.push(Decoration.line({
-          class: `tk-learner-line-${hunk.type}${value.pulse ? ' tk-learner-change-pulse' : ''}`,
-          attributes: { 'data-learner-change': hunk.type },
-        }).range(line.from));
+        decorationRanges.push(
+          Decoration.line({
+            class: `tk-learner-line-${hunk.type}${value.pulse ? ' tk-learner-change-pulse' : ''}`,
+            attributes: { 'data-learner-change': hunk.type },
+          }).range(line.from),
+        );
         gutterRanges.push(new AddedLineGutterMarker().range(line.from));
       }
     }

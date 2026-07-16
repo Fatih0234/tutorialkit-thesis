@@ -17,30 +17,40 @@ interface Props {
 export function InteractiveHistoryTimeline({ model, isLearner }: Props) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>();
   const durationMs = Math.max(1, model.recordingDurationMs);
-  const timelineValueMs = model.recordingDurationMs > 0
-    ? Math.min(model.recordingDurationMs, Math.max(0, model.playheadMs))
-    : 0;
+  const timelineValueMs =
+    model.recordingDurationMs > 0 ? Math.min(model.recordingDurationMs, Math.max(0, model.playheadMs)) : 0;
   const playedPercent = (timelineValueMs / durationMs) * 100;
   const groups = useMemo(
     () => buildLearnerTimelineGroups(model.learnerBranchTimelineSummaries),
     [model.learnerBranchTimelineSummaries],
   );
-  const activeBranch = model.learnerBranchTimelineSummaries.find((branch) => branch.branchId === model.activeLearnerBranchId);
+  const activeBranch = model.learnerBranchTimelineSummaries.find(
+    (branch) => branch.branchId === model.activeLearnerBranchId,
+  );
   const activeGroupKey = activeBranch
     ? `${activeBranch.teacherTimestampMs}:${activeBranch.lastAppliedTeacherEventSeq}`
     : undefined;
-  const selectedGroup = groups.find((group) => group.key === selectedGroupKey)
-    ?? (model.workspaceOwner === 'learner' ? groups.find((group) => group.key === activeGroupKey) : undefined);
+  const selectedGroup =
+    groups.find((group) => group.key === selectedGroupKey) ??
+    (model.workspaceOwner === 'learner' ? groups.find((group) => group.key === activeGroupKey) : undefined);
 
   useEffect(() => {
-    if (model.workspaceOwner === 'learner' && activeGroupKey) setSelectedGroupKey(activeGroupKey);
-    else if (model.isPlaying) setSelectedGroupKey(undefined);
+    if (model.workspaceOwner === 'learner' && activeGroupKey) {
+      setSelectedGroupKey(activeGroupKey);
+    } else if (model.isPlaying) {
+      setSelectedGroupKey(undefined);
+    }
   }, [activeGroupKey, model.isPlaying, model.workspaceOwner]);
 
   function openGroup(group: LearnerTimelineGroup) {
     const latest = getLatestLearnerGraphSelection(group);
-    if (latest) model.onSelectLearnerGraphNode(latest.branchId, latest.kind, latest.commitId);
-    else model.onOpenLearnerHistoryGroup();
+
+    if (latest) {
+      model.onSelectLearnerGraphNode(latest.branchId, latest.kind, latest.commitId);
+    } else {
+      model.onOpenLearnerHistoryGroup();
+    }
+
     setSelectedGroupKey(group.key);
   }
 
@@ -53,28 +63,35 @@ export function InteractiveHistoryTimeline({ model, isLearner }: Props) {
             <div className="h-full rounded-full bg-blue-500" style={{ width: `${playedPercent}%` }} />
           </div>
 
-          {isLearner ? groups.map((group) => (
-            <LessonHistoryMarker
-              key={group.key}
-              group={group}
-              durationMs={durationMs}
-              selected={selectedGroup?.key === group.key}
-              onClick={() => openGroup(group)}
-            />
-          )) : null}
+          {isLearner
+            ? groups.map((group) => (
+                <LessonHistoryMarker
+                  key={group.key}
+                  group={group}
+                  durationMs={durationMs}
+                  selected={selectedGroup?.key === group.key}
+                  onClick={() => openGroup(group)}
+                />
+              ))
+            : null}
 
-          {isLearner ? model.learnerCheckpoints.map((checkpoint) => (
-            <button
-              key={checkpoint.id}
-              type="button"
-              aria-label={`Open imported legacy checkpoint at ${checkpoint.teacherTimestampMs} milliseconds`}
-              onClick={() => model.onOpenLearnerCheckpoint(checkpoint.id)}
-              className="absolute top-0 z-20 grid h-8 w-8 -translate-x-1/2 cursor-pointer place-items-center rounded-full transition hover:scale-110 hover:bg-violet-500/15 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
-              style={{ left: `${positionPercent(checkpoint.teacherTimestampMs, durationMs)}%` }}
-            >
-              <span aria-hidden="true" className="h-3.5 w-3.5 rotate-45 border-2 border-violet-100 bg-violet-500 shadow" />
-            </button>
-          )) : null}
+          {isLearner
+            ? model.learnerCheckpoints.map((checkpoint) => (
+                <button
+                  key={checkpoint.id}
+                  type="button"
+                  aria-label={`Open imported legacy checkpoint at ${checkpoint.teacherTimestampMs} milliseconds`}
+                  onClick={() => model.onOpenLearnerCheckpoint(checkpoint.id)}
+                  className="absolute top-0 z-20 grid h-8 w-8 -translate-x-1/2 cursor-pointer place-items-center rounded-full transition hover:scale-110 hover:bg-violet-500/15 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
+                  style={{ left: `${positionPercent(checkpoint.teacherTimestampMs, durationMs)}%` }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 rotate-45 border-2 border-violet-100 bg-violet-500 shadow"
+                  />
+                </button>
+              ))
+            : null}
 
           <input
             type="range"
@@ -90,9 +107,7 @@ export function InteractiveHistoryTimeline({ model, isLearner }: Props) {
         </div>
       </div>
 
-      {isLearner && selectedGroup ? (
-        <LearnerHistoryGraphLane model={model} group={selectedGroup} />
-      ) : null}
+      {isLearner && selectedGroup ? <LearnerHistoryGraphLane model={model} group={selectedGroup} /> : null}
     </div>
   );
 }
@@ -114,7 +129,9 @@ function LessonHistoryMarker({
     group.checkpointCount > 0 ? `${group.checkpointCount} checkpoint${group.checkpointCount === 1 ? '' : 's'}` : '',
     group.dirtyHeadCount > 0 ? `${group.dirtyHeadCount} unsaved draft${group.dirtyHeadCount === 1 ? '' : 's'}` : '',
     group.branchCount > 1 ? `${group.branchCount} branches` : '',
-  ].filter(Boolean).join(', ');
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <button
@@ -137,7 +154,10 @@ function LessonHistoryMarker({
         )}
       />
       {hasDirtyHead && hasCheckpoints ? (
-        <span aria-hidden="true" className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border-2 border-tk-background-primary bg-orange-400" />
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border-2 border-tk-background-primary bg-orange-400"
+        />
       ) : null}
       {group.checkpointCount + group.dirtyHeadCount > 1 || group.branchCount > 1 ? (
         <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-violet-700 px-1 text-[0.55rem] font-bold text-white">
@@ -148,15 +168,29 @@ function LessonHistoryMarker({
   );
 }
 
-function LearnerHistoryGraphLane({ model, group }: { model: InteractivePocControlsModel; group: LearnerTimelineGroup }) {
+function LearnerHistoryGraphLane({
+  model,
+  group,
+}: {
+  model: InteractivePocControlsModel;
+  group: LearnerTimelineGroup;
+}) {
   const graph = useMemo(() => buildLearnerHistoryGraph(group), [group]);
 
   return (
     <div className="grid grid-cols-[4rem_1fr] items-start gap-2">
       <strong className="pt-2 text-orange-300">My work</strong>
-      <div aria-label="My work history graph" className="max-h-48 overflow-auto rounded-md border border-orange-400/20 bg-orange-950/15 py-1">
+      <div
+        aria-label="My work history graph"
+        className="max-h-48 overflow-auto rounded-md border border-orange-400/20 bg-orange-950/15 py-1"
+      >
         <div className="relative" style={{ width: graph.width, height: graph.height }}>
-          <svg aria-hidden="true" className="absolute inset-0 h-full w-full overflow-visible" viewBox={`0 0 ${graph.width} ${graph.height}`} preserveAspectRatio="none">
+          <svg
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full overflow-visible"
+            viewBox={`0 0 ${graph.width} ${graph.height}`}
+            preserveAspectRatio="none"
+          >
             {graph.edges.map((edge) => (
               <line
                 key={edge.id}
@@ -180,16 +214,12 @@ function LearnerHistoryGraphLane({ model, group }: { model: InteractivePocContro
 
 function GraphNodeButton({ node, model }: { node: LearnerGraphNode; model: InteractivePocControlsModel }) {
   const isActiveBranch = node.branchId === model.activeLearnerBranchId;
-  const selected = isActiveBranch && (
-    (node.kind === 'origin' && model.selectedLearnerEventSeq === 0)
-    || (node.kind === 'commit' && model.selectedLearnerCommitId === node.commitId)
-    || (node.kind === 'head' && model.learnerHistoryViewMode === 'head')
-  );
-  const label = node.kind === 'commit'
-    ? `Checkpoint ${node.label}`
-    : node.kind === 'head'
-      ? node.label
-      : node.label;
+  const selected =
+    isActiveBranch &&
+    ((node.kind === 'origin' && model.selectedLearnerEventSeq === 0) ||
+      (node.kind === 'commit' && model.selectedLearnerCommitId === node.commitId) ||
+      (node.kind === 'head' && model.learnerHistoryViewMode === 'head'));
+  const label = node.kind === 'commit' ? `Checkpoint ${node.label}` : node.kind === 'head' ? node.label : node.label;
 
   return (
     <button

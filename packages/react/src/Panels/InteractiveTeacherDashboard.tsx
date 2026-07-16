@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import { InteractiveButton, InteractiveCard, interactiveSelectClassName } from './InteractivePocUi.js';
+import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
 export type InteractiveRecordingMode = 'none' | 'audio' | 'webcam';
@@ -22,12 +22,14 @@ interface InteractiveTeacherDashboardProps extends InteractivePocControlsModel {
 export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardProps) {
   const [deletingDraftId, setDeletingDraftId] = useState('');
   const [deletingPublishedId, setDeletingPublishedId] = useState('');
-  const canStartConfiguredRecording = props.recordingMode === 'none' ? props.canStartRecording : props.canStartMediaRecording;
+  const canStartConfiguredRecording =
+    props.recordingMode === 'none' ? props.canStartRecording : props.canStartMediaRecording;
 
   function deleteDraft(recordingId: string) {
     if (deletingDraftId !== recordingId) {
       props.onSelectDraftRecording(recordingId);
       setDeletingDraftId(recordingId);
+
       return;
     }
 
@@ -48,8 +50,12 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
   return (
     <section aria-labelledby="interactive-teacher-heading" className="grid gap-5">
       <header>
-        <h2 id="interactive-teacher-heading" className="m-0 text-xl font-700 text-tk-text-primary">Teacher Studio</h2>
-        <p className="mb-0 mt-1 text-sm text-tk-text-secondary">Prepare a lecture or continue working with an existing recording.</p>
+        <h2 id="interactive-teacher-heading" className="m-0 text-xl font-700 text-tk-text-primary">
+          Teacher Studio
+        </h2>
+        <p className="mb-0 mt-1 text-sm text-tk-text-secondary">
+          Prepare a lecture or continue working with an existing recording.
+        </p>
       </header>
 
       <InteractiveCard role="region" aria-label="Lecture setup" className="grid gap-4 p-4">
@@ -58,26 +64,45 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
             <span aria-hidden="true" className="i-ph-presentation-chart-duotone text-lg text-tk-text-accent" />
             Lecture Setup
           </h3>
-          <p className="mb-0 mt-1 text-xs text-tk-text-secondary">Choose how to capture this lecture, then edit the material or begin recording.</p>
+          <p className="mb-0 mt-1 text-xs text-tk-text-secondary">
+            Choose how to capture this lecture, then edit the material or begin recording.
+          </p>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="grid gap-1 text-xs font-500 text-tk-text-secondary">
             Initial file
-            <select aria-label="Initial file" value={props.initialFile} onChange={(event) => props.onInitialFileChange(event.currentTarget.value)} className={interactiveSelectClassName}>
-              {props.filePaths.map((filePath) => <option key={filePath} value={filePath}>{filePath}</option>)}
+            <select
+              aria-label="Initial file"
+              value={props.initialFile}
+              onChange={(event) => props.onInitialFileChange(event.currentTarget.value)}
+              className={interactiveSelectClassName}
+            >
+              {props.filePaths.map((filePath) => (
+                <option key={filePath} value={filePath}>
+                  {filePath}
+                </option>
+              ))}
             </select>
           </label>
 
           <fieldset className="grid gap-1.5 rounded-md border border-tk-border-primary p-2">
             <legend className="px-1 text-xs font-500 text-tk-text-secondary">Recording mode</legend>
-            {([
-              ['none', 'Editor only'],
-              ['audio', 'Editor + microphone'],
-              ['webcam', 'Editor + camera + microphone'],
-            ] as const).map(([value, label]) => (
+            {(
+              [
+                ['none', 'Editor only'],
+                ['audio', 'Editor + microphone'],
+                ['webcam', 'Editor + camera + microphone'],
+              ] as const
+            ).map(([value, label]) => (
               <label key={value} className="inline-flex items-center gap-2 text-xs text-tk-text-primary">
-                <input type="radio" name="interactive-recording-mode" value={value} checked={props.recordingMode === value} onChange={() => props.onRecordingModeChange(value)} />
+                <input
+                  type="radio"
+                  name="interactive-recording-mode"
+                  value={value}
+                  checked={props.recordingMode === value}
+                  onChange={() => props.onRecordingModeChange(value)}
+                />
                 {label}
               </label>
             ))}
@@ -85,13 +110,19 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
         </div>
 
         {props.mediaStatus === 'error' || props.mediaStatus === 'unavailable' ? (
-          <p role="alert" className="m-0 rounded-md border border-red-500/50 bg-red-950/30 px-3 py-2 text-xs text-red-200">
-            Microphone/camera could not start: {props.mediaError}. Check browser site permissions and the selected input device.
+          <p
+            role="alert"
+            className="m-0 rounded-md border border-red-500/50 bg-red-950/30 px-3 py-2 text-xs text-red-200"
+          >
+            Microphone/camera could not start: {props.mediaError}. Check browser site permissions and the selected input
+            device.
           </p>
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          <InteractiveButton icon="i-ph-pencil-line" onClick={props.onPrepareMaterials}>Edit Materials</InteractiveButton>
+          <InteractiveButton icon="i-ph-pencil-line" onClick={props.onPrepareMaterials}>
+            Edit Materials
+          </InteractiveButton>
           <InteractiveButton
             variant="primary"
             icon={props.isStartingRecording ? 'i-ph-spinner-gap' : 'i-ph-record-fill'}
@@ -125,13 +156,23 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
           actionIcon="i-ph-play-circle"
           onOpenRecording={props.onPreviewSelectedPublished}
           onDeleteRecording={deletePublished}
-          canDeleteRecording={(recording) => props.canDeletePublishedRecording && recording.ownerUserId === props.currentUser?.id}
+          canDeleteRecording={(recording) =>
+            props.canDeletePublishedRecording && recording.ownerUserId === props.currentUser?.id
+          }
           deletingRecordingId={deletingPublishedId}
           deleteLabel="Lesson"
           deleteConfirmationText="This removes the lesson, its media, and linked learner experiments."
         />
-        {props.publishedDeleteStatus === 'deleted' ? <p role="status" className="m-0 text-xs text-green-300">Published lesson deleted.</p> : null}
-        {props.publishedDeleteError !== 'none' ? <p role="alert" className="m-0 text-xs text-red-300">{props.publishedDeleteError}</p> : null}
+        {props.publishedDeleteStatus === 'deleted' ? (
+          <p role="status" className="m-0 text-xs text-green-300">
+            Published lesson deleted.
+          </p>
+        ) : null}
+        {props.publishedDeleteError !== 'none' ? (
+          <p role="alert" className="m-0 text-xs text-red-300">
+            {props.publishedDeleteError}
+          </p>
+        ) : null}
       </InteractiveCard>
     </section>
   );

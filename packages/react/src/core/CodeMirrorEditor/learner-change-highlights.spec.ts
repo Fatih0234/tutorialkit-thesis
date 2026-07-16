@@ -8,14 +8,16 @@ describe('learner change highlights', () => {
     const transaction = state.update({
       effects: setLearnerChangeHighlights.of({
         pulse: false,
-        hunks: [{
-          type: 'modified',
-          previousFromLine: 2,
-          currentFromLine: 2,
-          currentToLine: 2,
-          previousLines: ['old'],
-          currentLines: ['two'],
-        }],
+        hunks: [
+          {
+            type: 'modified',
+            previousFromLine: 2,
+            currentFromLine: 2,
+            currentToLine: 2,
+            previousLines: ['old'],
+            currentLines: ['two'],
+          },
+        ],
       }),
     });
 

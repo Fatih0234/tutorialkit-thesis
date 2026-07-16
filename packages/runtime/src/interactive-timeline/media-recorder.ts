@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import type { RecordingMediaAsset, RecordingMediaKind } from './media.js';
 
 export type InteractiveMediaRecorderStatus =
@@ -212,6 +213,7 @@ export class InteractiveMediaRecorder {
       };
 
       this.statusValue = 'stopped';
+
       return asset;
     }
 
@@ -258,7 +260,7 @@ export class InteractiveMediaRecorder {
         this.mediaRecorder.stop();
       }
     } catch {
-      // Best-effort cleanup for permission or device errors.
+      // best-effort cleanup for permission or device errors
     }
 
     this.stopTracks();

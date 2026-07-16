@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildLearnerHistoryGraph, buildLearnerTimelineGroups, getLatestLearnerGraphSelection, type LearnerTimelineBranchSummary } from './learner-history-graph.js';
+import {
+  buildLearnerHistoryGraph,
+  buildLearnerTimelineGroups,
+  getLatestLearnerGraphSelection,
+  type LearnerTimelineBranchSummary,
+} from './learner-history-graph.js';
 
 const root: LearnerTimelineBranchSummary = {
   branchId: 'root',
@@ -39,10 +44,15 @@ describe('learner history graph presentation', () => {
     const graph = buildLearnerHistoryGraph(buildLearnerTimelineGroups([root, child])[0]);
     expect(graph.nodes.map((node) => node.kind)).toEqual(['origin', 'commit', 'head', 'origin', 'commit', 'head']);
     expect(graph.nodes.map((node) => node.label)).toEqual([
-      'Started here', 'Checkpoint 1', 'Autosaved draft',
-      'Alternative 1 started here', 'Checkpoint 1', 'Alternative 1 · Latest work',
+      'Started here',
+      'Checkpoint 1',
+      'Autosaved draft',
+      'Alternative 1 started here',
+      'Checkpoint 1',
+      'Alternative 1 · Latest work',
     ]);
     expect(graph.nodes.some((node) => node.id.includes('event'))).toBe(false);
+
     const forkEdge = graph.edges.find((edge) => edge.id === 'child:parent');
     const parentCommit = graph.nodes.find((node) => node.id === 'commit-a');
     expect(forkEdge?.fromX).toBe(parentCommit?.x);

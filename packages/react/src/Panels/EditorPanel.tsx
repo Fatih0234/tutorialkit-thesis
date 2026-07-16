@@ -18,13 +18,14 @@ import {
 import { FileTree } from '../core/FileTree.js';
 import type { Theme } from '../core/types.js';
 import resizePanelStyles from '../styles/resize-panel.module.css';
-import { computeLearnerFileDiff, type LearnerFileDiff } from './interactive/history/learner-file-diff.js';
 import { isMobile } from '../utils/mobile.js';
+import { computeLearnerFileDiff, type LearnerFileDiff } from './interactive/history/learner-file-diff.js';
 
 const DEFAULT_FILE_TREE_SIZE = 25;
 
 export interface LearnerChangeComparison {
   kind: 'checkpoint' | 'draft';
+
   /** Null means the visible file was added by the learner. */
   baseContent: string | null;
   selectionKey: string;
@@ -42,6 +43,7 @@ interface Props {
   editorDocument?: EditorDocument;
   selectedFile?: string | undefined;
   allowEditPatterns?: ComponentProps<typeof FileTree>['allowEditPatterns'];
+
   /** @deprecated Use the immediate and settled callbacks. */
   onEditorChange?: OnEditorChange;
   onBeforeUserDocumentChange?: OnBeforeUserDocumentChangeCallback;
@@ -92,27 +94,46 @@ export function EditorPanel({
 }: Props) {
   const fileTreePanelRef = useRef<ImperativePanelHandle>(null);
   const [learnerHighlightsEnabled, setLearnerHighlightsEnabled] = useState(false);
-  const [learnerChangeNavigationRequest, setLearnerChangeNavigationRequest] = useState<{ id: number; direction: 'previous' | 'next' }>();
-  const diffSourceKey = learnerChangeComparison && editorDocument
-    ? `${learnerChangeComparison.selectionKey}:${editorDocument.filePath}`
-    : '';
+  const [learnerChangeNavigationRequest, setLearnerChangeNavigationRequest] = useState<{
+    id: number;
+    direction: 'previous' | 'next';
+  }>();
+  const diffSourceKey =
+    learnerChangeComparison && editorDocument
+      ? `${learnerChangeComparison.selectionKey}:${editorDocument.filePath}`
+      : '';
   const currentTextContent = typeof editorDocument?.value === 'string' ? editorDocument.value : '';
   const [settledDiffSource, setSettledDiffSource] = useState({ key: diffSourceKey, content: currentTextContent });
   const learnerFileDiff = useMemo<LearnerFileDiff | undefined>(() => {
-    if (!learnerChangeComparison || !editorDocument || typeof editorDocument.value !== 'string') return undefined;
+    if (!learnerChangeComparison || !editorDocument || typeof editorDocument.value !== 'string') {
+      return undefined;
+    }
+
     const content = settledDiffSource.key === diffSourceKey ? settledDiffSource.content : editorDocument.value;
+
     return computeLearnerFileDiff(learnerChangeComparison.baseContent ?? '', content);
-  }, [diffSourceKey, editorDocument?.value, learnerChangeComparison?.baseContent, learnerChangeComparison?.selectionKey, settledDiffSource]);
+  }, [
+    diffSourceKey,
+    editorDocument?.value,
+    learnerChangeComparison?.baseContent,
+    learnerChangeComparison?.selectionKey,
+    settledDiffSource,
+  ]);
 
   useEffect(() => {
-    if (!diffSourceKey) return;
+    if (!diffSourceKey) {
+      return;
+    }
+
     if (settledDiffSource.key !== diffSourceKey) {
       setSettledDiffSource({ key: diffSourceKey, content: currentTextContent });
       return;
     }
+
     const timeout = window.setTimeout(() => {
       setSettledDiffSource({ key: diffSourceKey, content: currentTextContent });
     }, 120);
+
     return () => window.clearTimeout(timeout);
   }, [currentTextContent, diffSourceKey]);
 
@@ -173,7 +194,9 @@ export function EditorPanel({
           learnerFileDiff={learnerFileDiff}
           learnerHighlightsEnabled={learnerHighlightsEnabled}
           onLearnerHighlightsEnabledChange={setLearnerHighlightsEnabled}
-          onNavigateLearnerChange={(direction) => setLearnerChangeNavigationRequest((current) => ({ id: (current?.id ?? 0) + 1, direction }))}
+          onNavigateLearnerChange={(direction) =>
+            setLearnerChangeNavigationRequest((current) => ({ id: (current?.id ?? 0) + 1, direction }))
+          }
         />
         <div className="h-full flex-1 overflow-hidden">
           <CodeMirrorEditor
@@ -194,7 +217,9 @@ export function EditorPanel({
             instructorPresence={instructorPresence}
             learnerChangeDiff={learnerFileDiff}
             learnerChangeHighlightsEnabled={learnerHighlightsEnabled}
-            learnerChangeSelectionKey={learnerChangeComparison ? `${learnerChangeComparison.selectionKey}:${editorDocument?.filePath ?? ''}` : ''}
+            learnerChangeSelectionKey={
+              learnerChangeComparison ? `${learnerChangeComparison.selectionKey}:${editorDocument?.filePath ?? ''}` : ''
+            }
             learnerChangeNavigationRequest={learnerChangeNavigationRequest}
             onPointerCoordinateApiChange={onPointerCoordinateApiChange}
           />
@@ -240,33 +265,58 @@ function FileTab({
       <div className="flex items-center gap-1">
         {learnerChangeComparison && learnerFileDiff ? (
           <div aria-label="Learner changes" className="mr-1 flex items-center gap-1 text-xs">
-            <span className={`rounded-full px-2 py-0.5 font-medium ${learnerChangeComparison.kind === 'draft' ? 'bg-orange-500/15 text-orange-300' : 'bg-violet-500/15 text-violet-300'}`}>
+            <span
+              className={`rounded-full px-2 py-0.5 font-medium ${learnerChangeComparison.kind === 'draft' ? 'bg-orange-500/15 text-orange-300' : 'bg-violet-500/15 text-violet-300'}`}
+            >
               {learnerChangeComparison.kind === 'draft' ? 'Autosaved draft' : 'Checkpoint'}
             </span>
             <span className="whitespace-nowrap text-tk-text-secondary">
               {learnerFileDiff.hunks.length === 0
-                ? learnerChangeComparison.baseContent === null ? 'Added empty file' : 'No changes'
+                ? learnerChangeComparison.baseContent === null
+                  ? 'Added empty file'
+                  : 'No changes'
                 : `${learnerFileDiff.hunks.length} changed area${learnerFileDiff.hunks.length === 1 ? '' : 's'}`}
             </span>
-            <button type="button" className="panel-button px-1.5 py-0.5" title="Previous learner change" aria-label="Previous learner change" disabled={!learnerHighlightsEnabled || learnerFileDiff.hunks.length === 0} onClick={() => onNavigateLearnerChange('previous')}>
+            <button
+              type="button"
+              className="panel-button px-1.5 py-0.5"
+              title="Previous learner change"
+              aria-label="Previous learner change"
+              disabled={!learnerHighlightsEnabled || learnerFileDiff.hunks.length === 0}
+              onClick={() => onNavigateLearnerChange('previous')}
+            >
               <span className="i-ph-arrow-up" aria-hidden="true" />
             </button>
-            <button type="button" className="panel-button px-1.5 py-0.5" title="Next learner change" aria-label="Next learner change" disabled={!learnerHighlightsEnabled || learnerFileDiff.hunks.length === 0} onClick={() => onNavigateLearnerChange('next')}>
+            <button
+              type="button"
+              className="panel-button px-1.5 py-0.5"
+              title="Next learner change"
+              aria-label="Next learner change"
+              disabled={!learnerHighlightsEnabled || learnerFileDiff.hunks.length === 0}
+              onClick={() => onNavigateLearnerChange('next')}
+            >
               <span className="i-ph-arrow-down" aria-hidden="true" />
             </button>
-            <button type="button" className="panel-button px-1.5 py-0.5" title={`${learnerHighlightsEnabled ? 'Hide' : 'Review'} learner changes`} aria-label="Review learner changes" aria-pressed={learnerHighlightsEnabled} onClick={() => onLearnerHighlightsEnabledChange(!learnerHighlightsEnabled)}>
+            <button
+              type="button"
+              className="panel-button px-1.5 py-0.5"
+              title={`${learnerHighlightsEnabled ? 'Hide' : 'Review'} learner changes`}
+              aria-label="Review learner changes"
+              aria-pressed={learnerHighlightsEnabled}
+              onClick={() => onLearnerHighlightsEnabledChange(!learnerHighlightsEnabled)}
+            >
               <span className={learnerHighlightsEnabled ? 'i-ph-eye' : 'i-ph-eye-slash'} aria-hidden="true" />
             </button>
           </div>
         ) : null}
-      {!!helpAction && (
-        <button onClick={onHelpClick} disabled={!onHelpClick} className="panel-button px-2 py-0.5 -mr-1 -my-1">
-          {helpAction === 'solve' && <div className="i-ph-lightbulb-duotone text-lg" />}
-          {helpAction === 'solve' && i18n.solveButtonText}
-          {helpAction === 'reset' && <div className="i-ph-clock-counter-clockwise-duotone" />}
-          {helpAction === 'reset' && i18n.resetButtonText}
-        </button>
-      )}
+        {!!helpAction && (
+          <button onClick={onHelpClick} disabled={!onHelpClick} className="panel-button px-2 py-0.5 -mr-1 -my-1">
+            {helpAction === 'solve' && <div className="i-ph-lightbulb-duotone text-lg" />}
+            {helpAction === 'solve' && i18n.solveButtonText}
+            {helpAction === 'reset' && <div className="i-ph-clock-counter-clockwise-duotone" />}
+            {helpAction === 'reset' && i18n.resetButtonText}
+          </button>
+        )}
       </div>
     </div>
   );

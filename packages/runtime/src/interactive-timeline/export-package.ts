@@ -109,14 +109,45 @@ function normalizeTimelinePayload(payload: unknown): unknown {
 }
 
 function normalizePresentationResources(value: unknown): PresentationResource[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) throw new Error('Presentation resources must be an array.');
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Presentation resources must be an array.');
+  }
+
   return value.map((item) => {
     const resource = assertObject(item, 'Expected presentation resource object.') as Partial<PresentationResource>;
     const id = assertSafeId(resource.id, 'presentation resource id');
-    if (typeof resource.title !== 'string' || !resource.title.trim() || resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH) throw new Error('Presentation resource title is invalid.');
-    if (resource.kind === 'whiteboard') return { id, kind: 'whiteboard', title: resource.title, initialScene: sanitizeWhiteboardScene(resource.initialScene) };
-    if (resource.kind !== 'preview' && resource.kind !== 'explanation' && resource.kind !== 'camera' && resource.kind !== 'slide' && resource.kind !== 'deck') throw new Error('Presentation resource kind is invalid.');
+
+    if (
+      typeof resource.title !== 'string' ||
+      !resource.title.trim() ||
+      resource.title.length > MAX_WHITEBOARD_TITLE_LENGTH
+    ) {
+      throw new Error('Presentation resource title is invalid.');
+    }
+
+    if (resource.kind === 'whiteboard') {
+      return {
+        id,
+        kind: 'whiteboard',
+        title: resource.title,
+        initialScene: sanitizeWhiteboardScene(resource.initialScene),
+      };
+    }
+
+    if (
+      resource.kind !== 'preview' &&
+      resource.kind !== 'explanation' &&
+      resource.kind !== 'camera' &&
+      resource.kind !== 'slide' &&
+      resource.kind !== 'deck'
+    ) {
+      throw new Error('Presentation resource kind is invalid.');
+    }
+
     return { ...resource, id, title: resource.title } as PresentationResource;
   });
 }
@@ -146,7 +177,10 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
     payload = normalizeEditorSelectionPayload(candidate.payload);
   } else if (candidate.type === 'whiteboard.scene.changed') {
     const whiteboardPayload = assertObject(candidate.payload, 'Whiteboard event payload must be an object.');
-    payload = { resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'), scene: sanitizeWhiteboardScene(whiteboardPayload.scene) };
+    payload = {
+      resourceId: assertSafeId(whiteboardPayload.resourceId, 'whiteboard resource id'),
+      scene: sanitizeWhiteboardScene(whiteboardPayload.scene),
+    };
   } else if (candidate.type === 'pointer.changed') {
     payload = normalizeTeacherPointerPayload(candidate.payload);
   } else if (candidate.type === 'pointer.clicked') {
@@ -166,7 +200,10 @@ function normalizeTimelineEvent(event: unknown): TimelineEvent {
 }
 
 function normalizeMediaMetadata(value: unknown, fallbackRecordingId: string): RecordingMediaAssetMetadata {
-  const candidate = assertObject(value, 'Expected media asset metadata object.') as Partial<RecordingMediaAssetMetadata>;
+  const candidate = assertObject(
+    value,
+    'Expected media asset metadata object.',
+  ) as Partial<RecordingMediaAssetMetadata>;
   const recordingId = candidate.recordingId ?? fallbackRecordingId;
 
   if (candidate.kind !== 'audio' && candidate.kind !== 'webcam') {
@@ -252,7 +289,11 @@ function normalizeLearnerDelta(value: unknown): LearnerDelta {
     throw new Error('Learner delta teacherRecordingVersion must be a number.');
   }
 
-  if (typeof candidate.teacherTimestampMs !== 'number' || !Number.isFinite(candidate.teacherTimestampMs) || candidate.teacherTimestampMs < 0) {
+  if (
+    typeof candidate.teacherTimestampMs !== 'number' ||
+    !Number.isFinite(candidate.teacherTimestampMs) ||
+    candidate.teacherTimestampMs < 0
+  ) {
     throw new Error('Learner delta teacherTimestampMs must be non-negative.');
   }
 
@@ -306,7 +347,10 @@ function isBlob(value: unknown): value is Blob {
 }
 
 function validateMediaPackageEntry(value: unknown, recordingId: string): InteractiveRecordingPackageMediaAsset {
-  const candidate = assertObject(value, 'Expected package media asset object.') as Partial<InteractiveRecordingPackageMediaAsset>;
+  const candidate = assertObject(
+    value,
+    'Expected package media asset object.',
+  ) as Partial<InteractiveRecordingPackageMediaAsset>;
   const metadata = normalizeMediaMetadata(candidate.metadata, recordingId);
 
   if (metadata.recordingId !== recordingId) {
@@ -488,7 +532,9 @@ export function validateRecordingPackage(value: unknown): InteractiveRecordingPa
     .filter((asset) => Boolean(asset.blob || asset.dataBase64));
   const teacherMediaAssets = teacherRecording.mediaAssets ?? mediaAssets.map((asset) => asset.metadata);
 
-  const learnerDeltas = Array.isArray(candidate.learnerDeltas) ? candidate.learnerDeltas.map(normalizeLearnerDelta) : undefined;
+  const learnerDeltas = Array.isArray(candidate.learnerDeltas)
+    ? candidate.learnerDeltas.map(normalizeLearnerDelta)
+    : undefined;
 
   return {
     formatVersion: SUPPORTED_FORMAT_VERSION,
@@ -517,7 +563,8 @@ export async function importRecordingPackage(
   const availableMediaIds = new Set(validatedPackage.mediaAssets.map((asset) => asset.metadata.id));
   const sourceMediaReferences = sourceRecording.mediaAssets ?? [];
   const missingMediaCount = sourceMediaReferences.filter((metadata) => !availableMediaIds.has(metadata.id)).length;
-  const warnings = missingMediaCount > 0 ? [`${missingMediaCount} media asset(s) were skipped because package data was missing.`] : [];
+  const warnings =
+    missingMediaCount > 0 ? [`${missingMediaCount} media asset(s) were skipped because package data was missing.`] : [];
 
   for (const asset of validatedPackage.mediaAssets) {
     mediaIdMap.set(asset.metadata.id, shouldImportAsCopy ? createCopyId(asset.metadata.id) : asset.metadata.id);
@@ -550,7 +597,8 @@ export async function importRecordingPackage(
         : undefined,
     createdByUserId: target.importedByUserId ?? sourceRecording.createdByUserId,
     ownerUserId: target.importedByUserId ?? sourceRecording.ownerUserId,
-    publishedByUserId: target.mode === 'published' ? target.importedByUserId ?? sourceRecording.publishedByUserId : undefined,
+    publishedByUserId:
+      target.mode === 'published' ? (target.importedByUserId ?? sourceRecording.publishedByUserId) : undefined,
     publishedAt: target.mode === 'published' ? now : undefined,
   };
 

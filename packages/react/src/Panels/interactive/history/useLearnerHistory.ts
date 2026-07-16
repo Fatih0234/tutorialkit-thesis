@@ -90,36 +90,58 @@ export function useLearnerHistory(
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all(branches.map(async (branch): Promise<LearnerBranchHistorySummary | undefined> => {
-      const [storedCommits, storedTree] = await Promise.all([
-        historyStorage.loadCommits(branch.id),
-        historyStorage.loadWorkingTree(branch.id),
-      ]);
-      if (!storedTree) return undefined;
-      return {
-        branch,
-        commits: storedCommits.map(toCommitSummary),
-        headEventSeq: branch.headEventSeq,
-        latestCommitId: storedTree.latestCommitId,
-        dirty: storedTree.dirty,
-        headUpdatedAt: storedTree.updatedAt,
-        filesSnapshot: storedTree.filesSnapshot,
-      };
-    })).then((summaries) => {
-      if (cancelled) return;
+    void Promise.all(
+      branches.map(async (branch): Promise<LearnerBranchHistorySummary | undefined> => {
+        const [storedCommits, storedTree] = await Promise.all([
+          historyStorage.loadCommits(branch.id),
+          historyStorage.loadWorkingTree(branch.id),
+        ]);
+
+        if (!storedTree) {
+          return undefined;
+        }
+
+        return {
+          branch,
+          commits: storedCommits.map(toCommitSummary),
+          headEventSeq: branch.headEventSeq,
+          latestCommitId: storedTree.latestCommitId,
+          dirty: storedTree.dirty,
+          headUpdatedAt: storedTree.updatedAt,
+          filesSnapshot: storedTree.filesSnapshot,
+        };
+      }),
+    ).then((summaries) => {
+      if (cancelled) {
+        return;
+      }
+
       const loaded = summaries.filter((summary): summary is LearnerBranchHistorySummary => Boolean(summary));
-      setBranchHistorySummaries((current) => branches.flatMap((branch) => {
-        const currentSummary = current.find((summary) => summary.branch.id === branch.id);
-        if (branch.id === branchRef.current?.id && currentSummary) return [currentSummary];
-        const loadedSummary = loaded.find((summary) => summary.branch.id === branch.id);
-        return loadedSummary ? [loadedSummary] : currentSummary ? [currentSummary] : [];
-      }));
+      setBranchHistorySummaries((current) =>
+        branches.flatMap((branch) => {
+          const currentSummary = current.find((summary) => summary.branch.id === branch.id);
+
+          if (branch.id === branchRef.current?.id && currentSummary) {
+            return [currentSummary];
+          }
+
+          const loadedSummary = loaded.find((summary) => summary.branch.id === branch.id);
+
+          return loadedSummary ? [loadedSummary] : currentSummary ? [currentSummary] : [];
+        }),
+      );
     });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [branchIdsKey, historyStorage]);
 
   useEffect(() => {
-    if (!activeBranch || !workingTree) return;
+    if (!activeBranch || !workingTree) {
+      return;
+    }
+
     const activeSummary: LearnerBranchHistorySummary = {
       branch: activeBranch,
       commits: commits.map(toCommitSummary),
@@ -129,19 +151,27 @@ export function useLearnerHistory(
       headUpdatedAt: workingTree.updatedAt,
       filesSnapshot: workingTree.filesSnapshot,
     };
-    setBranchHistorySummaries((current) => current.some((summary) => summary.branch.id === activeBranch.id)
-      ? current.map((summary) => summary.branch.id === activeBranch.id ? activeSummary : summary)
-      : [activeSummary, ...current]);
+    setBranchHistorySummaries((current) =>
+      current.some((summary) => summary.branch.id === activeBranch.id)
+        ? current.map((summary) => (summary.branch.id === activeBranch.id ? activeSummary : summary))
+        : [activeSummary, ...current],
+    );
   }, [activeBranch, commits, workingTree]);
 
   useEffect(() => {
     const flushOnHide = () => {
-      if (document.visibilityState === 'hidden') void syncActiveBranchRemote();
+      if (document.visibilityState === 'hidden') {
+        void syncActiveBranchRemote();
+      }
     };
     document.addEventListener('visibilitychange', flushOnHide);
+
     return () => {
       document.removeEventListener('visibilitychange', flushOnHide);
-      if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
+
+      if (remoteSyncTimerRef.current) {
+        clearTimeout(remoteSyncTimerRef.current);
+      }
     };
   }, []);
 
@@ -166,7 +196,10 @@ export function useLearnerHistory(
     setStatus('saving draft');
     void queuePersistence(() => persistBranchShell(created.branch, created.workingTree));
     void syncAggregateRemote(toAggregate(created.branch, created.workingTree, [], []));
-    logLearnerHistoryEvent('branch.created', { branchId: created.branch.id, teacherTimestampMs: created.branch.origin.teacherTimestampMs });
+    logLearnerHistoryEvent('branch.created', {
+      branchId: created.branch.id,
+      teacherTimestampMs: created.branch.origin.teacherTimestampMs,
+    });
 
     return created.branch;
   }
@@ -208,7 +241,9 @@ export function useLearnerHistory(
     eventsRef.current = [...eventsRef.current, appended.event];
     selectedFilesRef.current = nextTree.filesSnapshot;
     setActiveBranch(appended.branch);
-    setBranches((current) => current.map((candidate) => candidate.id === appended.branch.id ? appended.branch : candidate));
+    setBranches((current) =>
+      current.map((candidate) => (candidate.id === appended.branch.id ? appended.branch : candidate)),
+    );
     setWorkingTree(nextTree);
     setEvents(eventsRef.current);
     setSelectedEventSeq(appended.event.seq);
@@ -217,7 +252,11 @@ export function useLearnerHistory(
     setStatus('saving draft');
     void queuePersistence(() => persistEvent(appended.branch, appended.event, nextTree));
     scheduleRemoteSync();
-    logLearnerHistoryEvent('learner-event.appended', { branchId: appended.branch.id, eventSeq: appended.event.seq, type: appended.event.type });
+    logLearnerHistoryEvent('learner-event.appended', {
+      branchId: appended.branch.id,
+      eventSeq: appended.event.seq,
+      type: appended.event.type,
+    });
   }
 
   function recordFileCreated(filePath: string, content: string, filesInput: FilesSnapshot) {
@@ -248,7 +287,9 @@ export function useLearnerHistory(
     eventsRef.current = [...eventsRef.current, appended.event];
     selectedFilesRef.current = nextTree.filesSnapshot;
     setActiveBranch(appended.branch);
-    setBranches((current) => current.map((candidate) => candidate.id === appended.branch.id ? appended.branch : candidate));
+    setBranches((current) =>
+      current.map((candidate) => (candidate.id === appended.branch.id ? appended.branch : candidate)),
+    );
     setWorkingTree(nextTree);
     setEvents(eventsRef.current);
     setSelectedEventSeq(appended.event.seq);
@@ -257,7 +298,11 @@ export function useLearnerHistory(
     setStatus('saving draft');
     void queuePersistence(() => persistEvent(appended.branch, appended.event, nextTree));
     scheduleRemoteSync();
-    logLearnerHistoryEvent('learner-event.appended', { branchId: appended.branch.id, eventSeq: appended.event.seq, type: appended.event.type });
+    logLearnerHistoryEvent('learner-event.appended', {
+      branchId: appended.branch.id,
+      eventSeq: appended.event.seq,
+      type: appended.event.type,
+    });
   }
 
   async function commitCurrent(filesInput: FilesSnapshot, selectedFile?: string): Promise<LearnerCommit | undefined> {
@@ -289,7 +334,11 @@ export function useLearnerHistory(
 
     const commit = createLearnerCommit({
       branch,
-      workingTree: { ...tree, filesSnapshot, selectedFile: selectedFile ? normalizePath(selectedFile) : tree.selectedFile },
+      workingTree: {
+        ...tree,
+        filesSnapshot,
+        selectedFile: selectedFile ? normalizePath(selectedFile) : tree.selectedFile,
+      },
       parentCommitId: tree.latestCommitId,
       name: generateLearnerCommitName(commitsRef.current.map((candidate) => candidate.name)),
     });
@@ -299,10 +348,7 @@ export function useLearnerHistory(
       return undefined;
     }
 
-    const nextTree = markWorkingTreeCommitted(
-      { ...tree, filesSnapshot, selectedFile: commit.selectedFile },
-      commit,
-    );
+    const nextTree = markWorkingTreeCommitted({ ...tree, filesSnapshot, selectedFile: commit.selectedFile }, commit);
     commitsRef.current = [...commitsRef.current, commit];
     treeRef.current = nextTree;
     selectedFilesRef.current = nextTree.filesSnapshot;
@@ -354,7 +400,10 @@ export function useLearnerHistory(
     void queuePersistence(async () => {
       await historyStorage.saveBranch(migrated.branch);
       await historyStorage.appendEvents(migrated.branch.id, migrated.events);
-      for (const commit of migrated.commits) await historyStorage.saveCommit(commit);
+
+      for (const commit of migrated.commits) {
+        await historyStorage.saveCommit(commit);
+      }
       await historyStorage.saveWorkingTree(migrated.workingTree);
     }, 'imported experiment');
     void syncAggregateRemote(toAggregate(migrated.branch, migrated.workingTree, migrated.events, migrated.commits));
@@ -364,8 +413,10 @@ export function useLearnerHistory(
 
   async function restoreLatest(query: LearnerBranchQuery) {
     await pullRemoteBranches(query);
+
     const storedBranches = await historyStorage.listBranches(query);
     setBranches(storedBranches);
+
     const storedCommitEntries = await Promise.all(
       storedBranches.map(async (branch) => [branch.id, (await historyStorage.loadCommits(branch.id)).length] as const),
     );
@@ -492,18 +543,26 @@ export function useLearnerHistory(
     setStatus('branch forked');
     void queuePersistence(() => persistBranchShell(created.branch, created.workingTree), 'branch forked');
     void syncAggregateRemote(toAggregate(created.branch, created.workingTree, [], []));
-    logLearnerHistoryEvent('branch.forked', { branchId: created.branch.id, parentBranchId: parentBranch.id, parentEventSeq: selectedEventSeq });
+    logLearnerHistoryEvent('branch.forked', {
+      branchId: created.branch.id,
+      parentBranchId: parentBranch.id,
+      parentEventSeq: selectedEventSeq,
+    });
 
     return created.branch;
   }
 
-  async function resolveBranchBaseFiles(branch: LearnerBranch, teacherOriginFiles: FilesSnapshot): Promise<FilesSnapshot> {
+  async function resolveBranchBaseFiles(
+    branch: LearnerBranch,
+    teacherOriginFiles: FilesSnapshot,
+  ): Promise<FilesSnapshot> {
     if (!branch.parent) {
       return normalizeFiles(teacherOriginFiles);
     }
 
-    const parent = branches.find((candidate) => candidate.id === branch.parent!.branchId)
-      ?? await historyStorage.loadBranch(branch.parent.branchId);
+    const parent =
+      branches.find((candidate) => candidate.id === branch.parent!.branchId) ??
+      (await historyStorage.loadBranch(branch.parent.branchId));
 
     if (!parent) {
       throw new Error(`Missing parent learner branch: ${branch.parent.branchId}`);
@@ -511,21 +570,27 @@ export function useLearnerHistory(
 
     const parentBase = await resolveBranchBaseFiles(parent, teacherOriginFiles);
     const parentEvents = await historyStorage.loadEvents(parent.id);
+
     return materializeLearnerBranch(parentBase, parentEvents, branch.parent.eventSeq);
   }
 
   async function resolveActiveBranchBase(teacherOriginFiles: FilesSnapshot) {
     const branch = branchRef.current;
-    if (!branch) return undefined;
+
+    if (!branch) {
+      return undefined;
+    }
+
     const base = await resolveBranchBaseFiles(branch, teacherOriginFiles);
     branchBaseFilesRef.current = base;
     setBranchBaseFiles(base);
+
     return base;
   }
 
   async function switchBranch(branchId: string, teacherOriginFiles: FilesSnapshot) {
-    const branch = branches.find((candidate) => candidate.id === branchId)
-      ?? await historyStorage.loadBranch(branchId);
+    const branch =
+      branches.find((candidate) => candidate.id === branchId) ?? (await historyStorage.loadBranch(branchId));
 
     if (!branch) {
       return undefined;
@@ -563,7 +628,10 @@ export function useLearnerHistory(
   }
 
   function clearActiveBranch() {
-    if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
+    if (remoteSyncTimerRef.current) {
+      clearTimeout(remoteSyncTimerRef.current);
+    }
+
     remoteSyncTimerRef.current = undefined;
     branchRef.current = undefined;
     treeRef.current = undefined;
@@ -601,17 +669,26 @@ export function useLearnerHistory(
   async function saveAggregateLocally(aggregate: LearnerBranchAggregate) {
     await historyStorage.saveBranch(aggregate.branch);
     await historyStorage.appendEvents(aggregate.branch.id, aggregate.events);
-    for (const commit of aggregate.commits) await historyStorage.saveCommit(commit);
+
+    for (const commit of aggregate.commits) {
+      await historyStorage.saveCommit(commit);
+    }
     await historyStorage.saveWorkingTree(aggregate.workingTree);
   }
 
   async function syncAggregateRemote(aggregate: LearnerBranchAggregate) {
     const token = ++remoteSyncTokenRef.current;
     setRemoteStatus('syncing');
+
     try {
       const result = await historyRemoteStorage.syncAggregate(aggregate);
-      if (remoteSyncTokenRef.current !== token) return result;
+
+      if (remoteSyncTokenRef.current !== token) {
+        return result;
+      }
+
       await saveAggregateLocally(result.aggregate);
+
       if (result.outcome === 'forked' && branchRef.current?.id === aggregate.branch.id) {
         branchRef.current = result.aggregate.branch;
         treeRef.current = result.aggregate.workingTree;
@@ -627,11 +704,17 @@ export function useLearnerHistory(
         }));
         setBranches((current) => [result.aggregate.branch, ...current]);
       }
+
       setRemoteStatus(result.outcome === 'forked' ? 'divergence preserved as fork' : 'synced');
+
       return result;
     } catch {
-      if (remoteSyncTokenRef.current === token) setRemoteStatus('sync pending');
+      if (remoteSyncTokenRef.current === token) {
+        setRemoteStatus('sync pending');
+      }
+
       logLearnerHistoryEvent('history.sync.failed', { branchId: aggregate.branch.id });
+
       return undefined;
     }
   }
@@ -639,38 +722,57 @@ export function useLearnerHistory(
   function scheduleRemoteSync() {
     remoteSyncTokenRef.current += 1;
     setRemoteStatus('sync pending');
-    if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
+
+    if (remoteSyncTimerRef.current) {
+      clearTimeout(remoteSyncTimerRef.current);
+    }
+
     remoteSyncTimerRef.current = setTimeout(() => void syncActiveBranchRemote(), 2000);
   }
 
   async function syncActiveBranchRemote() {
     const branch = branchRef.current;
     const tree = treeRef.current;
-    if (!branch || !tree) return undefined;
+
+    if (!branch || !tree) {
+      return undefined;
+    }
+
     await persistenceQueueRef.current;
+
     return syncAggregateRemote(toAggregate(branch, tree, eventsRef.current, commitsRef.current));
   }
 
   async function pullRemoteBranches(query: LearnerBranchQuery) {
     try {
       const aggregates = await historyRemoteStorage.listAggregates(query);
+
       for (const aggregate of aggregates) {
         const localBranch = await historyStorage.loadBranch(aggregate.branch.id);
+
         if (localBranch) {
           const localEvents = await historyStorage.loadEvents(localBranch.id);
           const localTree = await historyStorage.loadWorkingTree(localBranch.id);
           const localCommits = await historyStorage.loadCommits(localBranch.id);
           const localAggregate = localTree ? toAggregate(localBranch, localTree, localEvents, localCommits) : undefined;
-          if (localAggregate && (localBranch.headEventSeq > aggregate.branch.headEventSeq
-            || (localBranch.headEventSeq === aggregate.branch.headEventSeq
-              && JSON.stringify(localEvents) !== JSON.stringify(aggregate.events)))) {
+
+          if (
+            localAggregate &&
+            (localBranch.headEventSeq > aggregate.branch.headEventSeq ||
+              (localBranch.headEventSeq === aggregate.branch.headEventSeq &&
+                JSON.stringify(localEvents) !== JSON.stringify(aggregate.events)))
+          ) {
             await syncAggregateRemote(localAggregate);
             continue;
           }
         }
+
         await saveAggregateLocally(aggregate);
       }
-      if (aggregates.length > 0) setRemoteStatus('synced');
+
+      if (aggregates.length > 0) {
+        setRemoteStatus('synced');
+      }
     } catch {
       setRemoteStatus('offline; using local history');
     }
@@ -681,6 +783,7 @@ export function useLearnerHistory(
     const runTask = async () => {
       try {
         await task();
+
         if (persistenceTokenRef.current === token) {
           setStatus(successStatus);
         }
@@ -691,6 +794,7 @@ export function useLearnerHistory(
       }
     };
     persistenceQueueRef.current = persistenceQueueRef.current.then(runTask, runTask);
+
     return persistenceQueueRef.current;
   }
 
@@ -721,9 +825,12 @@ export function useLearnerHistory(
   }
 
   const checkpointFiles = commits.at(-1)?.filesSnapshot ?? branchBaseFiles;
-  const changedFilePaths = workingTree && checkpointFiles
-    ? Object.keys(workingTree.filesSnapshot).filter((path) => workingTree.filesSnapshot[path] !== checkpointFiles[path])
-    : [];
+  const changedFilePaths =
+    workingTree && checkpointFiles
+      ? Object.keys(workingTree.filesSnapshot).filter(
+          (path) => workingTree.filesSnapshot[path] !== checkpointFiles[path],
+        )
+      : [];
 
   return {
     activeBranch,

@@ -48,9 +48,10 @@ export class PyodideEnvironment implements ExecutionEnvironment {
 
   constructor(
     private readonly createWorker: WorkerFactory = () => {
-      const workerUrl = typeof __PYODIDE_WORKER_URL__ === 'string' && __PYODIDE_WORKER_URL__
-        ? __PYODIDE_WORKER_URL__
-        : new URL('./pyodide.worker.js', import.meta.url);
+      const workerUrl =
+        typeof __PYODIDE_WORKER_URL__ === 'string' && __PYODIDE_WORKER_URL__
+          ? __PYODIDE_WORKER_URL__
+          : new URL('./pyodide.worker.js', import.meta.url);
       return new Worker(workerUrl, { type: 'module' });
     },
   ) {}
