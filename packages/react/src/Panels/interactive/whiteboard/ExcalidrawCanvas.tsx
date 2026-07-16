@@ -22,7 +22,7 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ scene, readOnly
   useEffect(() => {
     sceneRef.current = scene;
     const api = apiRef.current;
-    if (!api) return;
+    if (!api) {return;}
     programmaticRef.current = true;
     api.updateScene(toExcalidrawInitialData(scene));
     queueMicrotask(() => { programmaticRef.current = false; });
@@ -31,7 +31,7 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ scene, readOnly
   useEffect(() => () => window.clearTimeout(commitTimerRef.current), []);
 
   const onChange = useCallback((elements: readonly unknown[], appState: unknown) => {
-    if (readOnly || programmaticRef.current) return;
+    if (readOnly || programmaticRef.current) {return;}
     window.clearTimeout(commitTimerRef.current);
     commitTimerRef.current = window.setTimeout(() => {
       try {

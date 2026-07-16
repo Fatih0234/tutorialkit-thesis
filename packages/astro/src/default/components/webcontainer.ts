@@ -1,4 +1,3 @@
-// eslint-disable-next-line -- must be imported first
 import { useAuth } from './setup.js';
 
 import { safeBoot, TutorialStore } from '@tutorialkit/runtime';

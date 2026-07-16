@@ -73,10 +73,10 @@ export function InteractivePresentationLayer({ resources, layout, explanationHtm
   const frontmostLeftId = layout.frontmostBySide?.left;
 
   useEffect(() => {
-    if (!focusedResource) return undefined;
+    if (!focusedResource) {return undefined;}
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, [contenteditable="true"], .cm-editor, .xterm')) return;
+      if (target?.closest('input, textarea, [contenteditable="true"], .cm-editor, .xterm')) {return;}
       if (event.key === 'Escape') {
         event.preventDefault();
         onModeChange(focusedResource.id, 'minimized');
@@ -135,7 +135,7 @@ function DeckContent({ deck, progress, compact, canEdit, onAction, onChange }: {
   const slideIndex = Math.min(deck.slides.length - 1, Math.max(0, progress?.slideIndex ?? 0));
   const slide = deck.slides[slideIndex];
   const revealedStep = progress?.revealedStep ?? 0;
-  if (!slide) return <p className="p-6 text-sm text-tk-text-secondary">This presentation has no slides yet.</p>;
+  if (!slide) {return <p className="p-6 text-sm text-tk-text-secondary">This presentation has no slides yet.</p>;}
   return <div className="flex h-full min-h-0 flex-col bg-gradient-to-br from-indigo-100 to-violet-200 text-slate-950">
     <div className={`min-h-0 flex-1 overflow-auto ${compact ? 'p-4' : 'p-10 md:p-14'}`}>
       {slide.eyebrow ? <p className={`${compact ? 'text-[9px]' : 'text-sm'} font-800 uppercase tracking-[0.18em] text-indigo-700`}>{slide.eyebrow}</p> : null}
@@ -152,11 +152,11 @@ function DeckContent({ deck, progress, compact, canEdit, onAction, onChange }: {
 }
 
 function SlideElement({ element }: { element: PresentationSlideElement }) {
-  if (element.kind === 'heading') return <h3 className="font-800 text-slate-900">{element.text}</h3>;
-  if (element.kind === 'paragraph') return <p>{element.text}</p>;
-  if (element.kind === 'bullet') return <p className="flex gap-3 before:mt-[0.55em] before:h-2 before:w-2 before:shrink-0 before:rounded-full before:bg-indigo-600">{element.text}</p>;
-  if (element.kind === 'code') return <pre className="overflow-auto rounded-lg bg-slate-950 p-4 text-sm text-indigo-100"><code>{element.code}</code></pre>;
-  if ('src' in element) return <figure><img src={element.src} alt={element.alt} className="max-h-72 rounded-lg object-contain" />{element.caption ? <figcaption className="mt-2 text-sm">{element.caption}</figcaption> : null}</figure>;
+  if (element.kind === 'heading') {return <h3 className="font-800 text-slate-900">{element.text}</h3>;}
+  if (element.kind === 'paragraph') {return <p>{element.text}</p>;}
+  if (element.kind === 'bullet') {return <p className="flex gap-3 before:mt-[0.55em] before:h-2 before:w-2 before:shrink-0 before:rounded-full before:bg-indigo-600">{element.text}</p>;}
+  if (element.kind === 'code') {return <pre className="overflow-auto rounded-lg bg-slate-950 p-4 text-sm text-indigo-100"><code>{element.code}</code></pre>;}
+  if ('src' in element) {return <figure><img src={element.src} alt={element.alt} className="max-h-72 rounded-lg object-contain" />{element.caption ? <figcaption className="mt-2 text-sm">{element.caption}</figcaption> : null}</figure>;}
   return null;
 }
 
@@ -166,7 +166,7 @@ function DeckEditor({ deck, slideIndex, onChange }: { deck: DeckPresentationReso
   const addElement = (element: PresentationSlideElement) => updateSlide({ ...slide, elements: [...slide.elements, element] });
   const moveSlide = (direction: -1 | 1) => {
     const destination = slideIndex + direction;
-    if (destination < 0 || destination >= deck.slides.length) return;
+    if (destination < 0 || destination >= deck.slides.length) {return;}
     const slides = [...deck.slides];
     [slides[slideIndex], slides[destination]] = [slides[destination], slides[slideIndex]];
     onChange({ ...deck, slides });
@@ -174,7 +174,7 @@ function DeckEditor({ deck, slideIndex, onChange }: { deck: DeckPresentationReso
   const updateElement = (id: string, update: (element: PresentationSlideElement) => PresentationSlideElement) => updateSlide({ ...slide, elements: slide.elements.map((element) => element.id === id ? update(element) : element) });
   const moveElement = (index: number, direction: -1 | 1) => {
     const destination = index + direction;
-    if (destination < 0 || destination >= slide.elements.length) return;
+    if (destination < 0 || destination >= slide.elements.length) {return;}
     const elements = [...slide.elements];
     [elements[index], elements[destination]] = [elements[destination], elements[index]];
     updateSlide({ ...slide, elements });
@@ -184,14 +184,14 @@ function DeckEditor({ deck, slideIndex, onChange }: { deck: DeckPresentationReso
     <label>Deck title<input aria-label="Deck title" className="mt-1 w-full rounded border border-slate-300 px-2 py-1" value={deck.title} onChange={(event) => onChange({ ...deck, title: event.target.value })} /></label>
     <label>Slide title<input aria-label="Slide title" className="mt-1 w-full rounded border border-slate-300 px-2 py-1" value={slide.title} onChange={(event) => updateSlide({ ...slide, title: event.target.value })} /></label>
     <div className="flex flex-wrap gap-1"><button type="button" className="rounded border border-slate-300 px-2 py-1" onClick={() => moveSlide(-1)}>Move slide left</button><button type="button" className="rounded border border-slate-300 px-2 py-1" onClick={() => moveSlide(1)}>Move slide right</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => onChange({ ...deck, slides: [...deck.slides, { id: `slide-${Date.now()}`, title: 'New slide', elements: [] }] })}>Add slide</button><button type="button" className="rounded border border-indigo-500 px-2 py-1" onClick={() => onChange({ ...deck, slides: [...deck.slides, { ...structuredClone(slide), id: `slide-${Date.now()}`, title: `${slide.title} copy` }] })}>Duplicate slide</button>{deck.slides.length > 1 ? <button type="button" className="rounded border border-red-400 px-2 py-1 text-red-700" onClick={() => onChange({ ...deck, slides: deck.slides.filter((_, index) => index !== slideIndex) })}>Delete slide</button> : null}</div>
-    <div className="flex flex-wrap gap-1"><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `heading-${Date.now()}`, kind: 'heading', text: 'New heading', revealStep: nextStep })}>Add heading</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `paragraph-${Date.now()}`, kind: 'paragraph', text: 'New paragraph', revealStep: nextStep })}>Add paragraph</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `point-${Date.now()}`, kind: 'bullet', text: 'New point', revealStep: nextStep })}>Add reveal point</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `code-${Date.now()}`, kind: 'code', code: '// code', language: 'javascript', revealStep: nextStep })}>Add code</button><label className="cursor-pointer rounded bg-indigo-700 px-2 py-1 text-white">Add image<input aria-label="Add slide image" type="file" accept="image/*" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => addElement({ id: `image-${Date.now()}`, kind: 'image', src: String(reader.result), alt: file.name, revealStep: nextStep }); reader.readAsDataURL(file); }} /></label></div>
+    <div className="flex flex-wrap gap-1"><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `heading-${Date.now()}`, kind: 'heading', text: 'New heading', revealStep: nextStep })}>Add heading</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `paragraph-${Date.now()}`, kind: 'paragraph', text: 'New paragraph', revealStep: nextStep })}>Add paragraph</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `point-${Date.now()}`, kind: 'bullet', text: 'New point', revealStep: nextStep })}>Add reveal point</button><button type="button" className="rounded bg-indigo-700 px-2 py-1 text-white" onClick={() => addElement({ id: `code-${Date.now()}`, kind: 'code', code: '// code', language: 'javascript', revealStep: nextStep })}>Add code</button><label className="cursor-pointer rounded bg-indigo-700 px-2 py-1 text-white">Add image<input aria-label="Add slide image" type="file" accept="image/*" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (!file) {return;} const reader = new FileReader(); reader.onload = () => addElement({ id: `image-${Date.now()}`, kind: 'image', src: String(reader.result), alt: file.name, revealStep: nextStep }); reader.readAsDataURL(file); }} /></label></div>
     {slide.elements.map((element, index) => <div key={element.id} className="rounded border border-slate-200 p-2"><div className="mb-1 flex items-center gap-1"><strong className="mr-auto">{element.kind} {index + 1}</strong><label>Reveal <input aria-label={`Reveal step for element ${index + 1}`} type="number" min="0" className="w-14 rounded border border-slate-300 px-1" value={element.revealStep} onChange={(event) => updateElement(element.id, (item) => ({ ...item, revealStep: Number(event.target.value) }))} /></label><button type="button" onClick={() => moveElement(index, -1)}>↑</button><button type="button" onClick={() => moveElement(index, 1)}>↓</button><button type="button" className="text-red-700" onClick={() => updateSlide({ ...slide, elements: slide.elements.filter((item) => item.id !== element.id) })}>Delete</button></div><textarea aria-label={`Slide element ${index + 1}`} className="w-full rounded border border-slate-300 px-2 py-1" value={'text' in element ? element.text : element.kind === 'code' ? element.code : element.caption ?? ''} onChange={(event) => updateElement(element.id, (item) => 'text' in item ? { ...item, text: event.target.value } : item.kind === 'code' ? { ...item, code: event.target.value } : { ...item, caption: event.target.value })} />{'src' in element ? <label>Alternative text<input aria-label={`Image alternative text ${index + 1}`} className="ml-1 rounded border border-slate-300 px-1" value={element.alt} onChange={(event) => updateElement(element.id, (item) => 'src' in item ? { ...item, alt: event.target.value } : item)} /></label> : null}</div>)}
   </div></details>;
 }
 
 function LegacySlideContent({ resource, compact = false }: { resource: SlidePresentationResource; compact?: boolean }) { return <div className={`flex h-full flex-col justify-center bg-gradient-to-br from-indigo-100 to-violet-200 text-slate-950 ${compact ? 'p-4' : 'p-12 md:p-16'}`}>{resource.eyebrow ? <p className="font-800 uppercase tracking-[0.18em] text-indigo-700">{resource.eyebrow}</p> : null}<h2 className={`${compact ? 'text-lg' : 'text-5xl'} mt-2 font-800`}>{resource.title}</h2><p className={`${compact ? 'text-xs' : 'text-2xl'} mt-4 text-slate-700`}>{resource.body}</p></div>; }
 function ExplanationContent({ html, compact = false }: { html: string; compact?: boolean }) { return html ? <div className={`markdown-content text-tk-elements-content-textColor ${compact ? 'line-clamp-5 p-4 text-xs' : 'p-8 md:p-12'}`} dangerouslySetInnerHTML={{ __html: html }} /> : <p className="p-6 text-sm text-tk-text-secondary">No lesson explanation is available.</p>; }
-function resourceIcon(resource: PresentationResource): string { if (resource.kind === 'preview') return 'i-ph-browser'; if (resource.kind === 'camera') return 'i-ph-video-camera'; if (resource.kind === 'whiteboard') return 'i-ph-chalkboard-teacher'; if (resource.kind === 'slide' || resource.kind === 'deck') return 'i-ph-presentation-chart'; return 'i-ph-book-open-text'; }
-function previewContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[6%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 right-4 h-60 w-[min(34rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
-function whiteboardContainerClass(mode: PresentationMode, frontmost: boolean, cameraOffset: boolean): string { const base = 'pointer-events-auto absolute flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-white shadow-2xl'; if (mode === 'focused') return `${base} z-40 inset-[5%] rounded-xl`; if (mode === 'minimized') return `${base} ${frontmost ? 'z-20' : 'z-10'} ${cameraOffset ? 'bottom-60' : 'bottom-4'} left-4 h-64 w-[min(26rem,42vw)] rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
-function cameraContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') return `${base} inset-[8%] rounded-xl`; if (mode === 'minimized') return `${base} bottom-4 left-4 h-52 w-72 rounded-lg`; return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
+function resourceIcon(resource: PresentationResource): string { if (resource.kind === 'preview') {return 'i-ph-browser';} if (resource.kind === 'camera') {return 'i-ph-video-camera';} if (resource.kind === 'whiteboard') {return 'i-ph-chalkboard-teacher';} if (resource.kind === 'slide' || resource.kind === 'deck') {return 'i-ph-presentation-chart';} return 'i-ph-book-open-text'; }
+function previewContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') {return `${base} inset-[6%] rounded-xl`;} if (mode === 'minimized') {return `${base} bottom-4 right-4 h-60 w-[min(34rem,42vw)] rounded-lg`;} return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
+function whiteboardContainerClass(mode: PresentationMode, frontmost: boolean, cameraOffset: boolean): string { const base = 'pointer-events-auto absolute flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-white shadow-2xl'; if (mode === 'focused') {return `${base} z-40 inset-[5%] rounded-xl`;} if (mode === 'minimized') {return `${base} ${frontmost ? 'z-20' : 'z-10'} ${cameraOffset ? 'bottom-60' : 'bottom-4'} left-4 h-64 w-[min(26rem,42vw)] rounded-lg`;} return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }
+function cameraContainerClass(mode: PresentationMode): string { const base = 'pointer-events-auto absolute z-40 flex flex-col overflow-hidden border border-tk-elements-app-borderColor bg-tk-background-primary shadow-2xl'; if (mode === 'focused') {return `${base} inset-[8%] rounded-xl`;} if (mode === 'minimized') {return `${base} bottom-4 left-4 h-52 w-72 rounded-lg`;} return `${base} -left-[10000px] top-0 h-px w-px opacity-0`; }

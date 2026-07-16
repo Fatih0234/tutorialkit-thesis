@@ -12,9 +12,9 @@ export function InteractiveWhiteboard(props: Props) {
   const [Canvas, setCanvas] = useState<ComponentType<Props> | null>(null);
   useEffect(() => {
     let active = true;
-    void import('./ExcalidrawCanvas.js').then((module) => { if (active) setCanvas(() => module.ExcalidrawCanvas); });
+    void import('./ExcalidrawCanvas.js').then((module) => { if (active) {setCanvas(() => module.ExcalidrawCanvas);} });
     return () => { active = false; };
   }, []);
-  if (!Canvas) return <div role="status" className="grid h-full place-items-center bg-white text-sm text-slate-600">Loading whiteboard…</div>;
+  if (!Canvas) {return <div role="status" className="grid h-full place-items-center bg-white text-sm text-slate-600">Loading whiteboard…</div>;}
   return <Canvas {...props} />;
 }

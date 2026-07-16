@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import type { ExecutionEnvironment, RuntimeCapabilities, RuntimeProvider } from '@tutorialkit/runtime';
 import type { RuntimeConfig } from '@tutorialkit/types';
 import { PyodideEnvironment } from './python/PyodideEnvironment.js';

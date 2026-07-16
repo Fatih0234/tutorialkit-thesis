@@ -29,7 +29,7 @@ export function useTeacherPointerCapture({ enabled, rootRef, onPointerChange, on
 
   useEffect(() => {
     const root = rootRef.current;
-    if (!root || !enabled) return undefined;
+    if (!root || !enabled) {return undefined;}
 
     const getPointerPosition = (event: PointerEvent) => {
       const workspace = root.querySelector<HTMLElement>('[aria-label="Interactive workspace"]');
@@ -37,18 +37,18 @@ export function useTeacherPointerCapture({ enabled, rootRef, onPointerChange, on
       const insideWorkspace = Boolean(workspaceBounds && event.clientX >= workspaceBounds.left && event.clientX <= workspaceBounds.right && event.clientY >= workspaceBounds.top && event.clientY <= workspaceBounds.bottom);
       const surface = insideWorkspace ? 'workspace' as const : 'experience' as const;
       const bounds = insideWorkspace ? workspaceBounds! : root.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) return null;
+      if (!bounds.width || !bounds.height) {return null;}
       let anchor: TeacherPointerAnchor | undefined;
       const target = event.target instanceof Element ? event.target : null;
       const anchoredElement = target?.closest<HTMLElement>('[data-pointer-anchor]');
       if (anchoredElement?.dataset.pointerAnchor) {
         const anchorBounds = anchoredElement.getBoundingClientRect();
-        if (anchorBounds.width && anchorBounds.height) anchor = {
+        if (anchorBounds.width && anchorBounds.height) {anchor = {
           kind: 'element',
           id: anchoredElement.dataset.pointerAnchor,
           xWithinElement: Math.max(0, Math.min(1, (event.clientX - anchorBounds.left) / anchorBounds.width)),
           yWithinElement: Math.max(0, Math.min(1, (event.clientY - anchorBounds.top) / anchorBounds.height)),
-        };
+        };}
       } else {
         const editorElement = [...root.querySelectorAll<HTMLElement>('.cm-editor')].find((element) => {
           const editorBounds = element.getBoundingClientRect();
@@ -56,7 +56,7 @@ export function useTeacherPointerCapture({ enabled, rootRef, onPointerChange, on
         }) as (HTMLElement & { __tutorialKitPointerCoordinateApi?: { positionAtCoordinates(x: number, y: number): Omit<EditorPointerAnchor, 'kind'> | null } }) | undefined;
         const directEditorPosition = editorElement?.__tutorialKitPointerCoordinateApi?.positionAtCoordinates(event.clientX, event.clientY);
         const editorAnchor = directEditorPosition ? { kind: 'editor' as const, ...directEditorPosition } : getEditorPointerAnchor(event.clientX, event.clientY);
-        if (editorAnchor) anchor = editorAnchor;
+        if (editorAnchor) {anchor = editorAnchor;}
       }
       return {
         surface,
@@ -67,25 +67,25 @@ export function useTeacherPointerCapture({ enabled, rootRef, onPointerChange, on
       };
     };
     const emitWorkspacePointer = (event: PointerEvent) => {
-      if (event.pointerType && event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+      if (event.pointerType && event.pointerType !== 'mouse' && event.pointerType !== 'pen') {return;}
       const position = getPointerPosition(event);
-      if (!position) return;
+      if (!position) {return;}
       const now = performance.now();
-      if (lastSurfaceRef.current === position.surface && now - lastSampleAtRef.current < SAMPLE_INTERVAL_MS) return;
+      if (lastSurfaceRef.current === position.surface && now - lastSampleAtRef.current < SAMPLE_INTERVAL_MS) {return;}
       lastSampleAtRef.current = now;
       lastSurfaceRef.current = position.surface;
       onPointerChange({ ...position, visible: true });
     };
     const emitWorkspaceClick = (event: PointerEvent) => {
-      if (event.button !== 0 && event.button !== 2) return;
+      if (event.button !== 0 && event.button !== 2) {return;}
       const position = getPointerPosition(event);
-      if (!position) return;
+      if (!position) {return;}
       onPointerClick({ ...position, button: event.button === 2 ? 'right' : 'left' });
     };
     const hidePointer = () => onPointerChange({ ...HIDDEN_TEACHER_POINTER });
     const activeIframe = () => root.querySelector<HTMLIFrameElement>('[data-presentation-preview-host] iframe');
     const initializeBridge = (iframe: HTMLIFrameElement, origin: string) => {
-      if (!/^https?:\/\//.test(origin)) return;
+      if (!/^https?:\/\//.test(origin)) {return;}
       previewOriginRef.current = origin;
       nonceRef.current = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
       iframe.contentWindow?.postMessage({
@@ -97,27 +97,27 @@ export function useTeacherPointerCapture({ enabled, rootRef, onPointerChange, on
     };
     const onMessage = (event: MessageEvent) => {
       const iframe = activeIframe();
-      if (!iframe?.contentWindow || event.source !== iframe.contentWindow) return;
+      if (!iframe?.contentWindow || event.source !== iframe.contentWindow) {return;}
       const message = event.data as Record<string, unknown> | null;
-      if (!message || message.channel !== TEACHER_POINTER_BRIDGE_CHANNEL || message.version !== TEACHER_POINTER_BRIDGE_VERSION) return;
+      if (!message || message.channel !== TEACHER_POINTER_BRIDGE_CHANNEL || message.version !== TEACHER_POINTER_BRIDGE_VERSION) {return;}
       if (message.action === 'ready') {
         initializeBridge(iframe, event.origin);
         return;
       }
-      if (event.origin !== previewOriginRef.current || message.nonce !== nonceRef.current) return;
+      if (event.origin !== previewOriginRef.current || message.nonce !== nonceRef.current) {return;}
       if (message.action === 'leave') {
         onPointerChange({ surface: 'preview', x: 0, y: 0, visible: false, coordinateSpaceVersion: 2 });
         return;
       }
       const hasValidPosition = typeof message.x === 'number' && typeof message.y === 'number' && Number.isFinite(message.x) && Number.isFinite(message.y) && message.x >= 0 && message.x <= 1 && message.y >= 0 && message.y <= 1;
       if (message.action === 'click') {
-        if (!hasValidPosition || (message.button !== 'left' && message.button !== 'right')) return;
+        if (!hasValidPosition || (message.button !== 'left' && message.button !== 'right')) {return;}
         onPointerClick({ surface: 'preview', x: message.x as number, y: message.y as number, button: message.button, coordinateSpaceVersion: 2 });
         return;
       }
-      if (message.action !== 'move' || !hasValidPosition) return;
+      if (message.action !== 'move' || !hasValidPosition) {return;}
       const now = performance.now();
-      if (lastSurfaceRef.current === 'preview' && now - lastSampleAtRef.current < SAMPLE_INTERVAL_MS) return;
+      if (lastSurfaceRef.current === 'preview' && now - lastSampleAtRef.current < SAMPLE_INTERVAL_MS) {return;}
       lastSampleAtRef.current = now;
       lastSurfaceRef.current = 'preview';
       onPointerChange({ surface: 'preview', x: message.x as number, y: message.y as number, visible: true, coordinateSpaceVersion: 2 });
@@ -212,7 +212,7 @@ export function InteractiveTeacherPointer({ pointer, clickButton, clickSequence,
     let frame = 0;
     const trackPreview = () => {
       update();
-      if ((pointer.surface === 'preview' || Boolean(pointer.anchor) || (pointer.surface === 'workspace' && pointer.coordinateSpaceVersion !== undefined)) && visible && pointer.visible) frame = requestAnimationFrame(trackPreview);
+      if ((pointer.surface === 'preview' || Boolean(pointer.anchor) || (pointer.surface === 'workspace' && pointer.coordinateSpaceVersion !== undefined)) && visible && pointer.visible) {frame = requestAnimationFrame(trackPreview);}
     };
     trackPreview();
     window.addEventListener('resize', update);
