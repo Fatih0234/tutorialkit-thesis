@@ -44,11 +44,17 @@ function getSupportedMimeType(kind: RecordingMediaKind): string {
 }
 
 function getMediaConstraints(kind: RecordingMediaKind): MediaStreamConstraints {
+  const audio: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
   if (kind === 'audio') {
-    return { audio: true };
+    return { audio };
   }
 
-  return { audio: true, video: true };
+  return { audio, video: true };
 }
 
 function writeAscii(view: DataView, offset: number, value: string): void {
