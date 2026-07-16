@@ -14,7 +14,7 @@ The primary learner flow is:
 6. Review, fork, restore, and synchronize learner work.
 7. Resume teacher playback without losing learner history.
 
-Keep changes focused. Avoid unrelated TutorialKit refactors.
+Keep changes focused. Avoid unrelated TutorialKit refactors. This is a thesis prototype: prioritize reliable core behavior and iteration speed over upstream-level platform, extension, CLI, and release coverage.
 
 ## Architectural invariants
 
@@ -94,13 +94,15 @@ Prefer pure runtime functions for materialization, branching, diffing, and persi
 
 ## Development commands
 
-Run from the repository root:
+Run the default prototype validation from the repository root:
 
 ```bash
+pnpm lint
 pnpm build
-pnpm --filter @tutorialkit/react exec vitest --run
-pnpm --filter @tutorialkit/runtime exec vitest --run
+pnpm test:prototype
 ```
+
+`pnpm test:prototype` runs the React and runtime unit suites that protect the interactive learner experience.
 
 Start the local application:
 
@@ -124,7 +126,9 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome \
 pnpm exec playwright test interactive-poc.spec.ts --project Default
 ```
 
-Run `pnpm lint` when working on CI cleanup. Until the existing lint baseline is repaired, clearly distinguish pre-existing errors from errors introduced by the current change.
+Run targeted Playwright scenarios when UI behavior changes; the complete E2E suite is not part of every pull request. CLI integration validation is available as a manually dispatched GitHub workflow for milestone work.
+
+See [`docs/prototype-development-workflow.md`](docs/prototype-development-workflow.md) for the validation scope, exceptions, and pull-request workflow.
 
 ## Definition of done
 
@@ -132,7 +136,7 @@ Do not claim completion unless:
 
 1. Relevant unit tests pass.
 2. The workspace builds.
-3. Relevant Playwright coverage passes or has a documented blocker.
+3. UI behavior changes have relevant targeted Playwright coverage, or a documented blocker.
 4. `git diff --check` passes.
 5. Persistence and teacher-immutability guarantees remain intact.
 6. The diff is focused and explainable.
@@ -153,7 +157,7 @@ push
   ↓
 pull request
   ↓
-required CI checks
+single Ubuntu Prototype CI check
   ↓
 merge
   ↓
@@ -162,7 +166,9 @@ automatic remote branch deletion
 
 Do not develop directly on `main`.
 
-Do not force-push, rewrite shared history, bypass failing required checks, or merge an unstable PR without explicit approval and a documented reason.
+Do not force-push or rewrite shared history. Do not bypass a product-relevant Prototype CI failure. An unrelated inherited-tooling or runner failure may be accepted only with an explicit, documented reason.
+
+Do not expand routine PR validation into OS/Node matrices, full CLI generation, VS Code extension builds, docs/demo builds, or the complete Playwright suite unless the project moves beyond prototyping or a change directly affects that surface.
 
 Keep tests with the feature they validate. Use separate documentation or behavior-neutral cleanup commits when appropriate.
 

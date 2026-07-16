@@ -29,6 +29,7 @@ The current lifecycle is:
 
 ## Operation and evidence
 
+- [`prototype-development-workflow.md`](./prototype-development-workflow.md) — routine local validation, Prototype CI, targeted tests, and Git workflow.
 - [`thesis-demo-script.md`](./thesis-demo-script.md)
 - [`interactive-counter-demo.md`](./interactive-counter-demo.md) — ready-to-record counter lecture, learner challenge, and shot sequence.
 - [`evaluation-checklist.md`](./evaluation-checklist.md)
