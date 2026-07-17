@@ -1,6 +1,9 @@
 import {
+  IndexedDBExerciseStorage,
   IndexedDBInteractiveTimelineStorage,
   InteractiveMediaRecorder,
+  RemoteExerciseDeliveryClient,
+  RemoteExerciseStorage,
   RemoteInteractiveTimelineStorage,
   TimelinePlaybackClock,
   TimelineRecorder,
@@ -11,10 +14,18 @@ import {
   canPublishInteractiveRecording,
   canSaveInteractiveLearnerWork,
   clonePresentationLayout,
+  createExerciseAttempt,
+  createExerciseCatalogEntry,
+  createExerciseId,
+  createExerciseVersion,
   createPresentationLayout,
   devLogin as devLoginUser,
   downloadRecordingPackage,
   exportRecordingPackage,
+  getExerciseContentHash,
+  getExercisePublishability,
+  getNextExercisePoint,
+  isEventThroughExercisePoint,
   getRecordingMediaAssetMetadata,
   importRecordingPackage,
   listDevUsers,
@@ -28,6 +39,10 @@ import {
   normalizeTeacherPointerPayload,
   normalizeFiles,
   normalizePath,
+  parseExerciseValidationExecution,
+  prepareExerciseValidationRun,
+  sanitizeExerciseValidationResult,
+  updateExerciseAttempt,
   normalizePresentationLayout,
   parseRecordingPackage,
   saveTeacherRecording,
@@ -39,6 +54,14 @@ import {
   type DeckPresentationResource,
   type EditorScrolledPayload,
   type EditorSelectionChangedPayload,
+  type ExerciseAttempt,
+  type ExerciseCatalogEntry,
+  type ExerciseContent,
+  type ExercisePoint,
+  type ExerciseValidationResult,
+  type LearnerExerciseContent,
+  type LearnerExerciseDelivery,
+  type ExerciseVersion,
   type FileChangedPayload,
   type FilesSnapshot,
   type InteractiveTimelineStorage,
@@ -67,7 +90,7 @@ import {
   type WhiteboardScene,
   type WhiteboardSceneChangedPayload,
 } from '@tutorialkit/runtime';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type {
   EditorTransactionOrigin,
   EditorUserMutationContext,
@@ -79,6 +102,10 @@ import type {
   LearnerTimelineCommitSummary,
 } from './interactive/history/learner-history-graph.js';
 import { logLearnerHistoryEvent } from './interactive/history/observability.js';
+import {
+  exerciseTransitionReducer,
+  type ExerciseTransitionPhase,
+} from './interactive/exercises/exercise-transition.js';
 import { useLearnerHistory } from './interactive/history/useLearnerHistory.js';
 import { useInteractiveWhiteboard } from './interactive/whiteboard/useInteractiveWhiteboard.js';
 
@@ -92,6 +119,14 @@ export type RecordingStorageSource = 'local-draft' | 'published' | 'none';
 export type MediaStatus = 'unavailable' | 'permission-needed' | 'recording' | 'saved' | 'loaded' | 'error';
 export type MediaKindStatus = 'none' | RecordingMediaKind;
 export type RecordingLibrarySource = 'draft' | 'published';
+type ExerciseCoveredAction =
+  | 'enter'
+  | 'restart'
+  | 'skip-introduction'
+  | 'continue'
+  | 'skip-active'
+  | 'exit'
+  | 'switch-attempt';
 
 export interface InteractiveRecordingLibraryItem extends TeacherRecordingDraftSummary {
   source: RecordingLibrarySource;
@@ -101,6 +136,21 @@ export interface InteractiveRecordingLibraryItem extends TeacherRecordingDraftSu
 interface EditorScrollPosition {
   top: number;
   left: number;
+}
+
+interface PausedExercisePosition {
+  teacherTimestampMs: number;
+  lastAppliedTeacherEventSeq: number;
+}
+
+interface PausedExerciseTeacherSnapshot {
+  files: FilesSnapshot;
+  selectedFile?: string;
+  scroll: EditorScrollPosition;
+  presentationResources: PresentationResource[];
+  presentationLayout: PresentationLayout;
+  whiteboardScene: WhiteboardScene;
+  executionState: ReturnType<typeof materializeExecutionState>;
 }
 
 export interface LearnerBranchTimelineSummary {
@@ -115,6 +165,11 @@ export interface LearnerBranchTimelineSummary {
   headUpdatedAt: string;
   createdAt: string;
   fileChanges: LearnerFileChangeSummary[];
+}
+
+export interface ExerciseWorkspaceContext {
+  teacherFiles: FilesSnapshot;
+  selectedFile?: string;
 }
 
 export interface LearnerCheckpointView {
@@ -132,6 +187,7 @@ export type DeckAction = 'next-reveal' | 'previous-reveal' | 'next-slide' | 'pre
 
 export interface InteractivePocControlsModel {
   isRecording: boolean;
+  isRecordingPausedForExercise: boolean;
   presentationResources: PresentationResource[];
   whiteboardScene: WhiteboardScene;
   whiteboardError: string;
@@ -144,6 +200,17 @@ export interface InteractivePocControlsModel {
   playbackStatus: PlaybackStatus;
   eventCount: number;
   teacherTimelineEvents: TimelineEvent[];
+  exercisePoints: ExercisePoint[];
+  isExerciseMode: boolean;
+  exerciseTransitionPhase: ExerciseTransitionPhase;
+  activeExercise: LearnerExerciseContent | null;
+  activeExerciseAttempt: ExerciseAttempt | null;
+  exerciseAttempts: ExerciseAttempt[];
+  exercisePointStatuses: Record<string, ExerciseAttempt['status'] | 'not-started'>;
+  exerciseCheckStatus: 'idle' | 'checking' | 'passed' | 'failed' | 'broken' | 'error';
+  exerciseCheckResult: ExerciseValidationResult | null;
+  exerciseStatusMessage: string;
+  exerciseWorkspaceChangedAfterPass: boolean;
   playheadMs: number;
   pausedTeacherTimestampMs: number;
   pausedTeacherEventSeq: number;
@@ -241,6 +308,22 @@ export interface InteractivePocControlsModel {
   onStartMicRecording: () => Promise<boolean>;
   onStartCameraRecording: () => Promise<boolean>;
   onStopRecording: () => Promise<void>;
+  onPauseRecordingForExercise: () => boolean;
+  onAttachExerciseAtPausedPosition: (exerciseId: string) => ExercisePoint | undefined;
+  onCancelExerciseInsertion: () => void;
+  onRemoveExercisePoint: (pointId: string) => void;
+  onOpenExercisePoint: (pointId: string) => void;
+  onBeginExercise: (startOver: boolean) => void;
+  onSkipPendingExercise: () => void;
+  onRetryExerciseIntroduction: () => void;
+  onExerciseTransitionCovered: () => void;
+  onExerciseTransitionRevealed: () => void;
+  onCheckExerciseSolution: () => void;
+  onSkipExercise: () => void;
+  onContinueAfterExercise: () => void;
+  onExitExerciseMode: () => Promise<void>;
+  onStartExerciseOver: () => void;
+  onSelectExerciseAttempt: (attemptId: string) => void;
   onSaveDraft: () => void;
   onLoadDraft: (recordingId?: string) => void;
   onPreviewDraft: (recordingId?: string) => void;
@@ -304,6 +387,9 @@ const PLAYBACK_GUARD_RELEASE_DELAY_MS = 250;
 const FAKE_MEDIA_RECORDER_KEY = 'interactive-poc.fakeMediaRecorder';
 const DEMO_RECORDING_ID_PREFIX = 'demo-';
 const localTimelineStorage: InteractiveTimelineStorage = new IndexedDBInteractiveTimelineStorage();
+const localExerciseStorage = new IndexedDBExerciseStorage();
+const remoteExerciseStorage = new RemoteExerciseStorage();
+const remoteExerciseDelivery = new RemoteExerciseDeliveryClient();
 const remoteTimelineStorage = new RemoteInteractiveTimelineStorage();
 const CAMERA_PRESENTATION_RESOURCE: PresentationResource = {
   id: 'instructor-camera',
@@ -403,6 +489,18 @@ function getInitialMediaStatus(): MediaStatus {
   return canUseMediaRecorder() ? 'permission-needed' : 'unavailable';
 }
 
+function resolveExercisePointStatuses(recording: TeacherRecording, attempts: ExerciseAttempt[]) {
+  return Object.fromEntries(
+    (recording.exercisePoints ?? []).map((point) => {
+      const pointAttempts = attempts.filter((attempt) => attempt.exercisePointId === point.id);
+      const status = pointAttempts.some((attempt) => attempt.status === 'passed')
+        ? 'passed'
+        : pointAttempts.find((attempt) => attempt.status !== 'passed')?.status ?? 'not-started';
+      return [point.id, status];
+    }),
+  ) as Record<string, ExerciseAttempt['status'] | 'not-started'>;
+}
+
 export function useInteractivePoc({
   tutorialStore,
   lessonId,
@@ -412,6 +510,7 @@ export function useInteractivePoc({
   storeRef,
 }: UseInteractivePocOptions): UseInteractivePocResult {
   const recorderRef = useRef<TimelineRecorder | null>(null);
+  const pausedExerciseTeacherSnapshotRef = useRef<PausedExerciseTeacherSnapshot | null>(null);
   const mediaRecorderRef = useRef<InteractiveMediaRecorder | null>(null);
   const currentDraftRecordingRef = useRef<TeacherRecording | null>(null);
   const currentMediaAssetsRef = useRef<RecordingMediaAsset[]>([]);
@@ -421,6 +520,16 @@ export function useInteractivePoc({
   const playbackEventsRef = useRef<TimelineEvent[]>([]);
   const playbackMediaAssetRef = useRef<RecordingMediaAsset | null>(null);
   const nextPlaybackEventIndexRef = useRef(0);
+  const nextExercisePointRef = useRef<ExercisePoint>();
+  const ignoredExercisePointIdsRef = useRef(new Set<string>());
+  const activeExercisePointRef = useRef<ExercisePoint>();
+  const activeExerciseRef = useRef<LearnerExerciseContent>();
+  const activeExerciseAttemptRef = useRef<ExerciseAttempt>();
+  const exerciseDeliveryCacheRef = useRef(new Map<string, Promise<LearnerExerciseDelivery>>());
+  const exerciseCoveredActionRef = useRef<ExerciseCoveredAction>();
+  const pendingExerciseAttemptIdRef = useRef<string>();
+  const exerciseIntroductionRequestRef = useRef(0);
+  const exerciseExitResolverRef = useRef<() => void>();
   const isApplyingPlaybackRef = useRef(false);
   const playbackGuardTokenRef = useRef(0);
   const learnerHistorySelectionTokenRef = useRef(0);
@@ -473,7 +582,21 @@ export function useInteractivePoc({
   const [authStatus, setAuthStatus] = useState('loading');
   const [authError, setAuthError] = useState('none');
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPausedForExercise, setIsRecordingPausedForExercise] = useState(false);
+  const [pausedExercisePosition, setPausedExercisePosition] = useState<PausedExercisePosition | null>(null);
   const [eventCount, setEventCount] = useState(0);
+  const [, setExercisePointRevision] = useState(0);
+  const [isExerciseMode, setIsExerciseMode] = useState(false);
+  const [exerciseTransitionPhase, dispatchExerciseTransition] = useReducer(exerciseTransitionReducer, 'idle');
+  const [activeExercise, setActiveExercise] = useState<LearnerExerciseContent | null>(null);
+  const [activeExerciseAttempt, setActiveExerciseAttempt] = useState<ExerciseAttempt | null>(null);
+  const [exerciseAttempts, setExerciseAttempts] = useState<ExerciseAttempt[]>([]);
+  const [exercisePointStatuses, setExercisePointStatuses] =
+    useState<Record<string, ExerciseAttempt['status'] | 'not-started'>>({});
+  const [exerciseCheckStatus, setExerciseCheckStatus] =
+    useState<'idle' | 'checking' | 'passed' | 'failed' | 'broken' | 'error'>('idle');
+  const [exerciseCheckResult, setExerciseCheckResult] = useState<ExerciseValidationResult | null>(null);
+  const [exerciseStatusMessage, setExerciseStatusMessage] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [mode, setMode] = useState<InteractiveMode>('idle');
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
@@ -1349,11 +1472,16 @@ export function useInteractivePoc({
     setPlaybackTimestampMs(currentTimeMs);
 
     const events = playbackEventsRef.current;
+    const point = nextExercisePointRef.current;
+    const crossingPoint =
+      point && currentRecordingSourceRef.current === 'published' && point.teacherTimestampMs <= currentTimeMs
+        ? point
+        : undefined;
 
     while (nextPlaybackEventIndexRef.current < events.length) {
       const event = events[nextPlaybackEventIndexRef.current];
 
-      if (!event || event.tMs > currentTimeMs) {
+      if (!event || event.tMs > currentTimeMs || (crossingPoint && !isEventThroughExercisePoint(event, crossingPoint))) {
         break;
       }
 
@@ -1364,6 +1492,21 @@ export function useInteractivePoc({
       isApplyingPlaybackRef.current = true;
       applyPlaybackEvent(event);
       nextPlaybackEventIndexRef.current += 1;
+    }
+
+    if (crossingPoint && modeRef.current === 'teacher-playback') {
+      nextExercisePointRef.current = undefined;
+      pausePlaybackDriversPreservingCursor();
+      restoreTeacherWorkspaceAt(
+        crossingPoint.teacherTimestampMs,
+        playbackRecordingRef.current,
+        crossingPoint.lastAppliedTeacherEventSeq,
+      );
+      setIsPlaying(false);
+      setPlaybackStatus('paused');
+      setInteractiveMode('idle');
+      void interceptExercisePoint(crossingPoint, true);
+      return;
     }
 
     setPlaybackTimestampMs(currentTimeMs);
@@ -1540,6 +1683,11 @@ export function useInteractivePoc({
 
     playbackRecordingRef.current = recording;
     playbackEventsRef.current = getSortedPlaybackEvents(recording);
+    nextExercisePointRef.current = getNextExercisePoint(
+      recording.exercisePoints ?? [],
+      { timestampMs: startMs, eventSeq: startAfterEventSeq },
+      ignoredExercisePointIdsRef.current,
+    );
     nextPlaybackEventIndexRef.current = playbackEventsRef.current.findIndex(
       (event) => event.tMs > startMs || (event.tMs === startMs && event.seq > startAfterEventSeq),
     );
@@ -1586,7 +1734,10 @@ export function useInteractivePoc({
       return;
     }
 
-    if (nextPlaybackEventIndexRef.current >= playbackEventsRef.current.length || startMs >= playbackEndMs) {
+    if (
+      (nextPlaybackEventIndexRef.current >= playbackEventsRef.current.length && !nextExercisePointRef.current) ||
+      startMs >= playbackEndMs
+    ) {
       stopPlayback('finished');
       return;
     }
@@ -1613,6 +1764,7 @@ export function useInteractivePoc({
       lessonId: recording.lessonId || lessonId,
       teacherRecordingId: recording.id,
       teacherRecordingVersion: recording.version,
+      contextKind: 'lecture',
     });
 
     if (!restored?.tree.dirty) {
@@ -1661,6 +1813,36 @@ export function useInteractivePoc({
     return true;
   }
 
+  async function refreshPassedExercisePoints(recording: TeacherRecording) {
+    if (currentRecordingSourceRef.current !== 'published' || !currentUserRef.current) {
+      ignoredExercisePointIdsRef.current = new Set();
+      return;
+    }
+
+    try {
+      const attempts = await remoteExerciseStorage.listAttempts({
+        userId: currentUserRef.current.id,
+        teacherRecordingId: recording.id,
+      });
+      for (const attempt of attempts) {
+        await localExerciseStorage.saveAttempt(attempt);
+      }
+      ignoredExercisePointIdsRef.current = new Set(
+        attempts.filter((attempt) => attempt.status === 'passed').map((attempt) => attempt.exercisePointId),
+      );
+      setExercisePointStatuses(resolveExercisePointStatuses(recording, attempts));
+    } catch {
+      const attempts = await localExerciseStorage.listAttempts({
+        userId: currentUserRef.current.id,
+        teacherRecordingId: recording.id,
+      });
+      ignoredExercisePointIdsRef.current = new Set(
+        attempts.filter((attempt) => attempt.status === 'passed').map((attempt) => attempt.exercisePointId),
+      );
+      setExercisePointStatuses(resolveExercisePointStatuses(recording, attempts));
+    }
+  }
+
   async function onPlayRecording() {
     const storage = getActiveLearnerStorage();
     const existingPublishedRecording =
@@ -1676,6 +1858,11 @@ export function useInteractivePoc({
     }
 
     await syncLearnerDeltaState(recording ?? undefined, storage);
+
+    if (recording) {
+      await refreshPassedExercisePoints(recording);
+      prefetchExerciseIntroductions(recording);
+    }
 
     if (recording && (await restoreDirtyLearnerHistory(recording))) {
       return;
@@ -1734,13 +1921,29 @@ export function useInteractivePoc({
   function onBeforeUserProjectMutation(): boolean {
     if (modeRef.current === 'learner-editing') {
       if (learnerHistory.viewMode === 'historical') {
-        if (!learnerHistory.forkFromSelectedHistory()) {
+        const fork = learnerHistory.forkFromSelectedHistory();
+        if (!fork) {
           return false;
+        }
+        const attempt = activeExerciseAttemptRef.current;
+        if (isExerciseMode && attempt) {
+          const updated = updateExerciseAttempt(attempt, { activeBranchId: fork.id });
+          activeExerciseAttemptRef.current = updated;
+          setActiveExerciseAttempt(updated);
+          void saveExerciseAttempt(updated);
         }
       }
 
       if (!learnerHistory.hasActiveBranch() && activeLegacyDeltaRef.current && activeLegacyOriginFilesRef.current) {
         learnerHistory.importLegacyDelta(activeLegacyDeltaRef.current, activeLegacyOriginFilesRef.current);
+      }
+
+      const exerciseAttempt = activeExerciseAttemptRef.current;
+      if (isExerciseMode && exerciseAttempt?.status === 'skipped') {
+        const updated = updateExerciseAttempt(exerciseAttempt, { status: 'active' });
+        activeExerciseAttemptRef.current = updated;
+        setActiveExerciseAttempt(updated);
+        void saveExerciseAttempt(updated);
       }
 
       return true;
@@ -2039,12 +2242,665 @@ export function useInteractivePoc({
     return startRecording('webcam');
   }
 
+  function onPauseRecordingForExercise(): boolean {
+    const recorder = recorderRef.current;
+
+    if (!recorder?.isRecording() || recorder.isPaused()) {
+      return false;
+    }
+
+    const now = Date.now();
+    const mediaRecorder = mediaRecorderRef.current;
+
+    try {
+      if (mediaRecorder && !mediaRecorder.pause(now)) {
+        return false;
+      }
+    } catch (error) {
+      setMediaStatus('error');
+      setMediaError(error instanceof Error ? error.message : 'Unable to pause media for exercise insertion.');
+      return false;
+    }
+
+    const position = recorder.pause(now);
+
+    if (!position) {
+      mediaRecorder?.resume(now);
+      return false;
+    }
+
+    const files = getCurrentLearnerFiles();
+    const selectedFilePath = getCurrentFilePath();
+    pausedExerciseTeacherSnapshotRef.current = {
+      files,
+      selectedFile: selectedFilePath,
+      scroll: tutorialStore.currentDocument.get()?.scroll ?? { top: 0, left: 0 },
+      presentationResources: clonePresentationResources(presentationResourcesRef.current),
+      presentationLayout: clonePresentationLayout(teacherPresentationLayoutRef.current),
+      whiteboardScene: structuredClone(whiteboard.scene),
+      executionState: materializeExecutionState(recorder.getRecording()!, position.timestampMs),
+    };
+    setPausedExercisePosition({
+      teacherTimestampMs: position.timestampMs,
+      lastAppliedTeacherEventSeq: position.lastAppliedEventSeq,
+    });
+    setIsRecordingPausedForExercise(true);
+    return true;
+  }
+
+  function resumeRecordingAfterExerciseInsertion() {
+    const snapshot = pausedExerciseTeacherSnapshotRef.current;
+    const recorder = recorderRef.current;
+
+    if (!snapshot || !recorder?.isPaused()) {
+      return;
+    }
+
+    startPlaybackGuard();
+    isApplyingPlaybackRef.current = true;
+    replaceWorkspaceFiles(snapshot.files);
+    setPresentationResourcesAndLayout(snapshot.presentationResources, snapshot.presentationLayout);
+    whiteboard.applyScene(snapshot.whiteboardScene, 'initialization');
+    tutorialStore.clearOutput();
+
+    for (const chunk of snapshot.executionState.output) {
+      tutorialStore.writeOutput(chunk.stream === 'stderr' ? `\x1b[31m${chunk.value}\x1b[0m` : chunk.value);
+    }
+
+    if (snapshot.executionState.traceback) {
+      tutorialStore.writeOutput(`\x1b[31m${snapshot.executionState.traceback}\n\x1b[0m`);
+    }
+
+    if (snapshot.selectedFile && snapshot.files[normalizePath(snapshot.selectedFile)] !== undefined) {
+      tutorialStore.setSelectedFile(normalizePath(snapshot.selectedFile));
+      tutorialStore.setCurrentDocumentScrollPosition(snapshot.scroll);
+    }
+
+    const now = Date.now();
+    const mediaRecorder = mediaRecorderRef.current;
+
+    try {
+      if (mediaRecorder && !mediaRecorder.resume(now)) {
+        setMediaStatus('error');
+        setMediaError('Unable to resume media after exercise insertion.');
+        return;
+      }
+    } catch (error) {
+      setMediaStatus('error');
+      setMediaError(error instanceof Error ? error.message : 'Unable to resume media after exercise insertion.');
+      return;
+    }
+
+    if (!recorder.resume(now)) {
+      mediaRecorder?.pause(now);
+      return;
+    }
+
+    pausedExerciseTeacherSnapshotRef.current = null;
+    setIsRecordingPausedForExercise(false);
+    setPausedExercisePosition(null);
+    releaseRecordingTransitionGuard();
+  }
+
+  function onAttachExerciseAtPausedPosition(exerciseId: string): ExercisePoint | undefined {
+    const recorder = recorderRef.current;
+    const position = pausedExercisePosition;
+
+    if (!recorder?.isPaused() || !position || !exerciseId) {
+      return undefined;
+    }
+
+    const point = recorder.addExercisePoint({
+      schemaVersion: 1,
+      id: createExerciseId('exercise-point'),
+      exerciseId,
+      teacherTimestampMs: position.teacherTimestampMs,
+      lastAppliedTeacherEventSeq: position.lastAppliedTeacherEventSeq,
+      createdAt: new Date().toISOString(),
+    });
+
+    if (point) {
+      syncEventCount();
+      resumeRecordingAfterExerciseInsertion();
+    }
+
+    return point;
+  }
+
+  function onCancelExerciseInsertion() {
+    resumeRecordingAfterExerciseInsertion();
+  }
+
+  function onRemoveExercisePoint(pointId: string) {
+    const recording = currentDraftRecordingRef.current;
+
+    if (!recording || isRecording || currentRecordingSourceRef.current === 'published') {
+      return;
+    }
+
+    const exercisePoints = (recording.exercisePoints ?? []).filter((point) => point.id !== pointId);
+
+    if (exercisePoints.length === (recording.exercisePoints ?? []).length) {
+      return;
+    }
+
+    const next = { ...recording, exercisePoints };
+    currentDraftRecordingRef.current = next;
+
+    if (playbackRecordingRef.current?.id === next.id) {
+      playbackRecordingRef.current = next;
+    }
+
+    setDraftStatus('unsaved');
+    setExercisePointRevision((revision) => revision + 1);
+  }
+
+  async function saveExerciseAttempt(attempt: ExerciseAttempt) {
+    await localExerciseStorage.saveAttempt(attempt);
+    setExerciseAttempts((current) => [attempt, ...current.filter((item) => item.id !== attempt.id)]);
+    setExercisePointStatuses((current) => ({
+      ...current,
+      [attempt.exercisePointId]: current[attempt.exercisePointId] === 'passed' ? 'passed' : attempt.status,
+    }));
+
+    try {
+      await remoteExerciseStorage.saveAttempt(attempt);
+    } catch {
+      setExerciseStatusMessage('Saved locally; remote exercise sync will retry when this exercise is reopened.');
+    }
+  }
+
+  async function loadExerciseAttempts(recordingId: string, pointId: string) {
+    const query = {
+      userId: currentUserRef.current?.id,
+      teacherRecordingId: recordingId,
+      exercisePointId: pointId,
+    };
+    let attempts = await localExerciseStorage.listAttempts(query);
+
+    try {
+      const remoteAttempts = await remoteExerciseStorage.listAttempts(query);
+      for (const attempt of remoteAttempts) {
+        await localExerciseStorage.saveAttempt(attempt);
+      }
+      attempts = [...remoteAttempts, ...attempts.filter((local) => !remoteAttempts.some((item) => item.id === local.id))];
+    } catch {
+      // IndexedDB remains authoritative while offline.
+    }
+
+    attempts.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    setExerciseAttempts(attempts);
+    setExercisePointStatuses((current) => ({
+      ...current,
+      [pointId]: attempts.some((attempt) => attempt.status === 'passed')
+        ? 'passed'
+        : attempts.find((attempt) => attempt.status !== 'passed')?.status ?? 'not-started',
+    }));
+    return attempts;
+  }
+
+  function loadLearnerExerciseDelivery(recordingId: string, pointId: string, version?: number) {
+    const key = `${recordingId}:${pointId}:${version ?? 'active'}`;
+    const cached = exerciseDeliveryCacheRef.current.get(key);
+    if (cached) {return cached;}
+
+    const request = (version
+      ? remoteExerciseDelivery.loadVersion(recordingId, pointId, version)
+      : remoteExerciseDelivery.load(recordingId, pointId)
+    ).catch((error) => {
+      exerciseDeliveryCacheRef.current.delete(key);
+      throw error;
+    });
+    exerciseDeliveryCacheRef.current.set(key, request);
+    return request;
+  }
+
+  function prefetchExerciseIntroductions(recording: TeacherRecording) {
+    for (const point of recording.exercisePoints ?? []) {
+      if (!ignoredExercisePointIdsRef.current.has(point.id)) {
+        void loadLearnerExerciseDelivery(recording.id, point.id).catch(() => undefined);
+      }
+    }
+  }
+
+  async function interceptExercisePoint(point: ExercisePoint, crossedDuringPlayback = false) {
+    const recording = playbackRecordingRef.current;
+    const user = currentUserRef.current;
+    const requestId = ++exerciseIntroductionRequestRef.current;
+
+    if (!recording || !user || !canSaveInteractiveLearnerWork(user)) {
+      setExerciseStatusMessage('Sign in as a learner to open this exercise.');
+      return;
+    }
+
+    activeExercisePointRef.current = point;
+    setPausedTimestampMs(point.teacherTimestampMs);
+    setPausedEventSeq(point.lastAppliedTeacherEventSeq);
+    setHasPausedTeacherTimestamp(true);
+    setPlaybackTimestampMs(point.teacherTimestampMs);
+    setExerciseStatusMessage('Preparing exercise checkpoint…');
+    dispatchExerciseTransition({ type: 'INTERCEPT' });
+
+    try {
+      const attempts = await loadExerciseAttempts(recording.id, point.id);
+      if (requestId !== exerciseIntroductionRequestRef.current) {return;}
+      const passedAttempt = attempts.find((attempt) => attempt.status === 'passed');
+
+      if (crossedDuringPlayback && passedAttempt) {
+        ignoredExercisePointIdsRef.current.add(point.id);
+        dispatchExerciseTransition({ type: 'RESET' });
+        playRecordingFrom(
+          point.teacherTimestampMs,
+          { resetToBase: false, startAfterEventSeq: point.lastAppliedTeacherEventSeq },
+          recording,
+        );
+        return;
+      }
+
+      const attempt = attempts.find((item) => item.status !== 'passed') ?? attempts[0];
+      const delivery = await loadLearnerExerciseDelivery(
+        recording.id,
+        point.id,
+        attempt?.exerciseVersion,
+      );
+      if (requestId !== exerciseIntroductionRequestRef.current) {return;}
+
+      activeExerciseRef.current = delivery.exercise;
+      activeExerciseAttemptRef.current = attempt;
+      setActiveExercise(delivery.exercise);
+      setActiveExerciseAttempt(attempt ?? null);
+      setExerciseCheckResult(null);
+      setExerciseCheckStatus('idle');
+      setExerciseStatusMessage('The lecture is paused at this exercise checkpoint.');
+      dispatchExerciseTransition({ type: 'INTRODUCTION_READY' });
+      releasePlaybackGuardSoon();
+    } catch (error) {
+      if (requestId !== exerciseIntroductionRequestRef.current) {return;}
+      setExerciseStatusMessage(error instanceof Error ? error.message : 'Unable to prepare exercise.');
+      dispatchExerciseTransition({ type: 'INTRODUCTION_FAILED' });
+      releasePlaybackGuardSoon();
+    }
+  }
+
+  async function materializeExerciseWorkspace(forceNewAttempt: boolean) {
+    const recording = playbackRecordingRef.current;
+    const point = activeExercisePointRef.current;
+    const user = currentUserRef.current;
+    let exercise = activeExerciseRef.current;
+    let attempt = forceNewAttempt ? undefined : activeExerciseAttemptRef.current;
+
+    if (!recording || !point || !user || !exercise) {
+      throw new Error('Exercise checkpoint is unavailable.');
+    }
+
+    if (forceNewAttempt) {
+      const delivery = await remoteExerciseDelivery.load(recording.id, point.id);
+      exercise = delivery.exercise;
+      activeExerciseRef.current = exercise;
+      setActiveExercise(exercise);
+    }
+
+    const teacherFiles = normalizeFiles(
+      materializeTeacherStateAtPosition(recording, {
+        timestampMs: point.teacherTimestampMs,
+        lastAppliedEventSeq: point.lastAppliedTeacherEventSeq,
+      }),
+    );
+    let restoredWorkspace: { filesSnapshot: FilesSnapshot; dirty: boolean } | undefined;
+
+    if (attempt) {
+      const restored = await learnerHistory.restoreLatest({
+        userId: user.id,
+        lessonId: recording.lessonId || lessonId,
+        teacherRecordingId: recording.id,
+        teacherRecordingVersion: recording.version,
+        contextKind: 'exercise',
+        exercisePointId: point.id,
+        attemptId: attempt.id,
+      });
+
+      if (restored && restored.branch.context?.attemptId === attempt.id) {
+        await learnerHistory.resolveActiveBranchBase(exercise.starterFiles);
+        restoredWorkspace = { filesSnapshot: restored.tree.filesSnapshot, dirty: restored.tree.dirty };
+        replaceWorkspaceFiles(restored.tree.filesSnapshot);
+        if (restored.tree.selectedFile && restored.tree.filesSnapshot[restored.tree.selectedFile] !== undefined) {
+          tutorialStore.setSelectedFile(restored.tree.selectedFile);
+        }
+      } else {
+        attempt = undefined;
+      }
+    }
+
+    if (!attempt) {
+      const attemptId = createExerciseId('exercise-attempt');
+      const branchId = createExerciseId('learner-branch');
+      const branch = learnerHistory.createBranch({
+        id: branchId,
+        userId: user.id,
+        lessonId: recording.lessonId || lessonId,
+        origin: {
+          teacherRecordingId: recording.id,
+          teacherRecordingVersion: recording.version,
+          teacherTimestampMs: point.teacherTimestampMs,
+          lastAppliedTeacherEventSeq: point.lastAppliedTeacherEventSeq,
+          baseTeacherFilesHash: simpleHashFiles(teacherFiles),
+        },
+        initialFiles: exercise.starterFiles,
+        selectedFile: Object.keys(exercise.starterFiles)[0],
+        context: {
+          kind: 'exercise',
+          attemptId,
+          exercisePointId: point.id,
+          exerciseId: exercise.exerciseId,
+          exerciseVersion: exercise.version,
+          starterFilesHash: simpleHashFiles(exercise.starterFiles),
+        },
+      });
+      attempt = createExerciseAttempt({
+        id: attemptId,
+        userId: user.id,
+        lessonId: recording.lessonId || lessonId,
+        teacherRecordingId: recording.id,
+        teacherRecordingVersion: recording.version,
+        exercisePointId: point.id,
+        exerciseId: exercise.exerciseId,
+        exerciseVersion: exercise.version,
+        rootBranchId: branch.id,
+      });
+      replaceWorkspaceFiles(exercise.starterFiles);
+      await saveExerciseAttempt(attempt);
+    }
+
+    activeExerciseAttemptRef.current = attempt;
+    setActiveExerciseAttempt(attempt);
+    setExerciseCheckStatus(attempt.status === 'passed' ? 'passed' : 'idle');
+    setExerciseStatusMessage(
+      attempt.status === 'passed'
+        ? 'This attempt has passed. You can review it or start over.'
+        : attempt.status === 'skipped'
+          ? 'Your skipped attempt was restored. Work continues to autosave locally.'
+          : 'Work autosaves locally.',
+    );
+    learnerOriginFilesRef.current = exercise.starterFiles;
+    learnerWorkspaceSavedHashRef.current = simpleHashFiles(restoredWorkspace?.filesSnapshot ?? exercise.starterFiles);
+    setLearnerWorkspaceDirty(restoredWorkspace?.dirty ?? false);
+    setIsExerciseMode(true);
+    setInteractiveMode('learner-editing');
+    releasePlaybackGuardSoon();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return attempt;
+  }
+
+  function onBeginExercise(startOver: boolean) {
+    exerciseCoveredActionRef.current = startOver ? 'restart' : 'enter';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  function onSkipPendingExercise() {
+    exerciseCoveredActionRef.current = 'skip-introduction';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  function onRetryExerciseIntroduction() {
+    const point = activeExercisePointRef.current;
+    if (point) {void interceptExercisePoint(point, false);}
+  }
+
+  async function onCheckExerciseSolution() {
+    const recording = playbackRecordingRef.current;
+    const point = activeExercisePointRef.current;
+    const exercise = activeExerciseRef.current;
+    let attempt = activeExerciseAttemptRef.current;
+
+    if (!recording || !point || !exercise || !attempt) {
+      return;
+    }
+
+    setExerciseCheckStatus('checking');
+    setExerciseStatusMessage('Checking your current workspace…');
+
+    try {
+      if (attempt.status === 'skipped') {
+        attempt = updateExerciseAttempt(attempt, { status: 'active' });
+        activeExerciseAttemptRef.current = attempt;
+        setActiveExerciseAttempt(attempt);
+        await saveExerciseAttempt(attempt);
+      }
+
+      await learnerHistory.flushLocal();
+      const submittedFiles = getCurrentLearnerFiles();
+      setExerciseStatusMessage('Loading exercise checks…');
+      const bundle = await remoteExerciseDelivery.loadValidationBundle(
+        recording.id,
+        point.id,
+        attempt.exerciseVersion,
+      );
+      const content: ExerciseContent = {
+        title: exercise.title,
+        instructions: exercise.instructions,
+        hints: exercise.hints,
+        successFeedback: exercise.successFeedback,
+        failureFeedback: exercise.failureFeedback,
+        starterFiles: exercise.starterFiles,
+        fileRoles: exercise.fileRoles,
+        allowCreatePatterns: exercise.allowCreatePatterns,
+        privateValidationFiles: bundle.privateValidationFiles,
+        validation: bundle.validation,
+      };
+      if (
+        Object.values(bundle.privateValidationFiles).some((source) =>
+          source.includes('Configure this validation check.'),
+        )
+      ) {
+        setExerciseCheckStatus('broken');
+        setExerciseCheckResult({ outcome: 'broken', checks: [] });
+        setExerciseStatusMessage(
+          'This exercise still uses the generated placeholder check. The teacher must configure and publish an exercise update.',
+        );
+        return;
+      }
+
+      const prepared = prepareExerciseValidationRun(content, submittedFiles);
+      setExerciseStatusMessage('Running exercise checks…');
+      const execution = await tutorialStore.runExerciseValidation(prepared);
+      const teacherResult = parseExerciseValidationExecution(content, execution);
+      const result = sanitizeExerciseValidationResult(content, teacherResult);
+      setExerciseCheckResult(result);
+      setExerciseCheckStatus(result.outcome);
+
+      if (result.outcome === 'passed') {
+        const updated = updateExerciseAttempt(attempt, {
+          status: 'passed',
+          passedFilesHash: simpleHashFiles(submittedFiles),
+        });
+        activeExerciseAttemptRef.current = updated;
+        setActiveExerciseAttempt(updated);
+        ignoredExercisePointIdsRef.current.add(point.id);
+        await saveExerciseAttempt(updated);
+        setExerciseStatusMessage(exercise.successFeedback || 'All checks passed. You can continue the lecture.');
+      } else if (result.outcome === 'failed') {
+        setExerciseStatusMessage(exercise.failureFeedback || 'Some checks still need work.');
+      } else {
+        setExerciseStatusMessage('The exercise checks could not run correctly. Your work is still saved.');
+      }
+    } catch (error) {
+      setExerciseCheckStatus('error');
+      setExerciseStatusMessage(error instanceof Error ? error.message : 'Unable to check this exercise.');
+    }
+  }
+
+  async function leaveExerciseModeCore(resumePlayback: boolean) {
+    const recording = playbackRecordingRef.current;
+    const point = activeExercisePointRef.current;
+
+    if (!recording || !point) {
+      return;
+    }
+
+    await learnerHistory.flush();
+    setIsExerciseMode(false);
+    setActiveExercise(null);
+    setActiveExerciseAttempt(null);
+    activeExerciseRef.current = undefined;
+    activeExerciseAttemptRef.current = undefined;
+    learnerHistory.clearActiveBranch();
+    restoreTeacherWorkspaceAt(point.teacherTimestampMs, recording, point.lastAppliedTeacherEventSeq);
+    setInteractiveMode('idle');
+
+    if (resumePlayback) {
+      playRecordingFrom(
+        point.teacherTimestampMs,
+        { resetToBase: false, startAfterEventSeq: point.lastAppliedTeacherEventSeq },
+        recording,
+      );
+    } else {
+      setIsPlaying(false);
+      setPlaybackStatus('paused');
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  }
+
+  function onContinueAfterExercise() {
+    exerciseCoveredActionRef.current = 'continue';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  function onSkipExercise() {
+    exerciseCoveredActionRef.current = 'skip-active';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  function onExitExerciseMode() {
+    exerciseCoveredActionRef.current = 'exit';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+    return new Promise<void>((resolve) => {
+      exerciseExitResolverRef.current = resolve;
+    });
+  }
+
+  function onStartExerciseOver() {
+    exerciseCoveredActionRef.current = 'restart';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  function onSelectExerciseAttempt(attemptId: string) {
+    pendingExerciseAttemptIdRef.current = attemptId;
+    exerciseCoveredActionRef.current = 'switch-attempt';
+    dispatchExerciseTransition({ type: 'BEGIN_COVER' });
+  }
+
+  async function onExerciseTransitionCovered() {
+    const action = exerciseCoveredActionRef.current;
+
+    try {
+      if (action === 'enter' || action === 'restart') {
+        if (action === 'restart') {
+          learnerHistory.clearActiveBranch();
+          activeExerciseAttemptRef.current = undefined;
+          setActiveExerciseAttempt(null);
+        }
+        await materializeExerciseWorkspace(action === 'restart');
+        dispatchExerciseTransition({ type: 'REVEAL_EXERCISE' });
+        return;
+      }
+
+      if (action === 'switch-attempt') {
+        const point = activeExercisePointRef.current;
+        const recording = playbackRecordingRef.current;
+        const attempt = exerciseAttempts.find((item) => item.id === pendingExerciseAttemptIdRef.current);
+        if (!point || !recording || !attempt) {throw new Error('Exercise attempt is unavailable.');}
+        const delivery = await loadLearnerExerciseDelivery(recording.id, point.id, attempt.exerciseVersion);
+        activeExerciseRef.current = delivery.exercise;
+        activeExerciseAttemptRef.current = attempt;
+        setActiveExercise(delivery.exercise);
+        setActiveExerciseAttempt(attempt);
+        const selected = await learnerHistory.switchBranch(attempt.activeBranchId, delivery.exercise.starterFiles);
+        if (!selected) {throw new Error('Exercise attempt workspace is unavailable.');}
+        replaceWorkspaceFiles(selected.tree.filesSnapshot);
+        if (selected.tree.selectedFile && selected.tree.filesSnapshot[selected.tree.selectedFile] !== undefined) {
+          tutorialStore.setSelectedFile(selected.tree.selectedFile);
+        }
+        learnerOriginFilesRef.current = delivery.exercise.starterFiles;
+        learnerWorkspaceSavedHashRef.current = simpleHashFiles(selected.tree.filesSnapshot);
+        setLearnerWorkspaceDirty(selected.tree.dirty);
+        setExerciseCheckStatus(attempt.status === 'passed' ? 'passed' : 'idle');
+        setInteractiveMode('learner-editing');
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        dispatchExerciseTransition({ type: 'REVEAL_EXERCISE' });
+        return;
+      }
+
+      if (action === 'skip-introduction') {
+        if (activeExerciseRef.current) {
+          const attempt = await materializeExerciseWorkspace(false);
+          if (attempt.status !== 'passed') {
+            const updated = updateExerciseAttempt(attempt, { status: 'skipped' });
+            activeExerciseAttemptRef.current = updated;
+            setActiveExerciseAttempt(updated);
+            await saveExerciseAttempt(updated);
+          }
+        } else if (activeExercisePointRef.current) {
+          ignoredExercisePointIdsRef.current.add(activeExercisePointRef.current.id);
+        }
+        await leaveExerciseModeCore(true);
+        dispatchExerciseTransition({ type: 'REVEAL_LESSON' });
+        return;
+      }
+
+      if (action === 'skip-active') {
+        const attempt = activeExerciseAttemptRef.current;
+        if (attempt && attempt.status !== 'passed') {
+          const updated = updateExerciseAttempt(attempt, { status: 'skipped' });
+          activeExerciseAttemptRef.current = updated;
+          setActiveExerciseAttempt(updated);
+          await saveExerciseAttempt(updated);
+        }
+      }
+
+      await leaveExerciseModeCore(action !== 'exit');
+      dispatchExerciseTransition({ type: 'REVEAL_LESSON' });
+    } catch (error) {
+      setExerciseStatusMessage(error instanceof Error ? error.message : 'Unable to switch exercise workspace.');
+      await leaveExerciseModeCore(false);
+      dispatchExerciseTransition({ type: 'REVEAL_LESSON' });
+    }
+  }
+
+  function onExerciseTransitionRevealed() {
+    if (exerciseTransitionPhase === 'revealing-exercise') {
+      dispatchExerciseTransition({ type: 'EXERCISE_REVEALED' });
+    } else if (exerciseTransitionPhase === 'revealing-lesson') {
+      exerciseCoveredActionRef.current = undefined;
+      pendingExerciseAttemptIdRef.current = undefined;
+      dispatchExerciseTransition({ type: 'LESSON_REVEALED' });
+      exerciseExitResolverRef.current?.();
+      exerciseExitResolverRef.current = undefined;
+    }
+  }
+
+  function onOpenExercisePoint(pointId: string) {
+    const recording = playbackRecordingRef.current;
+    const point = recording?.exercisePoints?.find((item) => item.id === pointId);
+    if (!recording || !point || currentRecordingSourceRef.current !== 'published') {
+      return;
+    }
+    pausePlaybackDriversPreservingCursor();
+    restoreTeacherWorkspaceAt(point.teacherTimestampMs, recording, point.lastAppliedTeacherEventSeq);
+    setIsPlaying(false);
+    setPlaybackStatus('paused');
+    setInteractiveMode('idle');
+    void interceptExercisePoint(point, false);
+  }
+
   async function onStopRecording() {
     const stopped = recorderRef.current?.stop();
     const mediaRecorder = mediaRecorderRef.current;
 
     recorderRef.current = null;
     mediaRecorderRef.current = null;
+    pausedExerciseTeacherSnapshotRef.current = null;
+    setIsRecordingPausedForExercise(false);
+    setPausedExercisePosition(null);
     setLiveMediaStream(null);
 
     if (!stopped) {
@@ -2186,26 +3042,77 @@ export function useInteractivePoc({
     if (!canPublishInteractiveRecording(currentUserRef.current)) {
       setPublishedStatus('error');
       setPublishedError('Sign in as a teacher to publish recordings.');
-
       return;
     }
 
     if (!recording || isRecording) {
       setPublishedStatus('missing');
       setPublishedError('No stopped draft is available to publish.');
-
       return;
     }
 
-    const assets = currentMediaAssetsRef.current.map(getMediaAssetWithOwner);
-    const recordingWithMedia = getRecordingWithMediaMetadata(recording, assets);
-
-    currentMediaAssetsRef.current = assets;
     setPublishedStatus('publishing');
     setPublishedError('none');
 
     try {
+      const versionByExerciseId = new Map<string, number>();
+      const versionsToSave: ExerciseVersion[] = [];
+      const catalogsToSave: ExerciseCatalogEntry[] = [];
+
+      for (const point of recording.exercisePoints ?? []) {
+        if (versionByExerciseId.has(point.exerciseId)) {
+          continue;
+        }
+
+        const draft = await localExerciseStorage.loadDraft(point.exerciseId);
+        const publishability = draft ? getExercisePublishability(draft) : undefined;
+
+        if (!draft || !publishability?.complete) {
+          throw new Error(
+            publishability?.reasons.join(' ') || `Exercise ${point.exerciseId} is unavailable or unfinished.`,
+          );
+        }
+
+        const [existingVersions, existingCatalog] = await Promise.all([
+          remoteExerciseStorage.listVersions(point.exerciseId),
+          remoteExerciseStorage.loadCatalogEntry(point.exerciseId),
+        ]);
+        const contentHash = getExerciseContentHash(draft.content);
+        const matchingVersion = existingVersions.find((version) => version.contentHash === contentHash);
+        const version = matchingVersion ?? createExerciseVersion(draft, (existingVersions.at(-1)?.version ?? 0) + 1);
+        const catalog = {
+          ...createExerciseCatalogEntry(draft, existingCatalog),
+          activeVersion: version.version,
+          updatedAt: new Date().toISOString(),
+        };
+
+        versionByExerciseId.set(point.exerciseId, version.version);
+        if (!matchingVersion) {
+          versionsToSave.push(version);
+        }
+        catalogsToSave.push(catalog);
+      }
+
+      for (const version of versionsToSave) {
+        await remoteExerciseStorage.saveVersion(version);
+      }
+
+      const recordingWithVersions: TeacherRecording = {
+        ...recording,
+        exercisePoints: recording.exercisePoints?.map((point) => ({
+          ...point,
+          exerciseVersionAtPublication: versionByExerciseId.get(point.exerciseId),
+        })),
+      };
+      const assets = currentMediaAssetsRef.current.map(getMediaAssetWithOwner);
+      const recordingWithMedia = getRecordingWithMediaMetadata(recordingWithVersions, assets);
+
+      currentMediaAssetsRef.current = assets;
       await remoteTimelineStorage.saveTeacherRecording(recordingWithMedia);
+
+      for (const catalog of catalogsToSave) {
+        await remoteExerciseStorage.saveCatalogEntry(catalog);
+      }
 
       for (const asset of assets) {
         await remoteTimelineStorage.saveMediaAsset(asset);
@@ -3149,6 +4056,10 @@ export function useInteractivePoc({
       return null;
     }
 
+    if (branch.context?.kind === 'exercise' && activeExercise?.exerciseId === branch.context.exerciseId) {
+      return normalizeFiles(activeExercise.starterFiles);
+    }
+
     const cacheKey = `${recording.id}:${recording.version}:${branch.origin.teacherTimestampMs}:${branch.origin.lastAppliedTeacherEventSeq}:${branch.origin.baseTeacherFilesHash}`;
     const cachedFiles = learnerComparisonBaseCacheRef.current.get(cacheKey);
 
@@ -3246,12 +4157,15 @@ export function useInteractivePoc({
       return [];
     }
 
-    const teacherFiles = normalizeFiles(
-      materializeTeacherStateAtPosition(recording, {
-        timestampMs: branch.origin.teacherTimestampMs,
-        lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
-      }),
-    );
+    const teacherFiles =
+      branch.context?.kind === 'exercise' && activeExercise?.exerciseId === branch.context.exerciseId
+        ? normalizeFiles(activeExercise.starterFiles)
+        : normalizeFiles(
+            materializeTeacherStateAtPosition(recording, {
+              timestampMs: branch.origin.teacherTimestampMs,
+              lastAppliedEventSeq: branch.origin.lastAppliedTeacherEventSeq,
+            }),
+          );
     const learnerFiles = normalizeFiles(filesSnapshot);
 
     return [...new Set([...Object.keys(teacherFiles), ...Object.keys(learnerFiles)])]
@@ -3277,6 +4191,7 @@ export function useInteractivePoc({
     instructorPresenceByFile,
     controls: {
       isRecording,
+      isRecordingPausedForExercise,
       presentationResources,
       whiteboardScene: whiteboard.scene,
       whiteboardError: whiteboard.error,
@@ -3289,6 +4204,25 @@ export function useInteractivePoc({
       playbackStatus,
       eventCount,
       teacherTimelineEvents: playbackEventsRef.current,
+      exercisePoints:
+        recorderRef.current?.getRecording()?.exercisePoints ??
+        playbackRecordingRef.current?.exercisePoints ??
+        currentDraftRecordingRef.current?.exercisePoints ??
+        [],
+      isExerciseMode,
+      exerciseTransitionPhase,
+      activeExercise,
+      activeExerciseAttempt,
+      exerciseAttempts,
+      exercisePointStatuses,
+      exerciseCheckStatus,
+      exerciseCheckResult,
+      exerciseStatusMessage,
+      exerciseWorkspaceChangedAfterPass: Boolean(
+        activeExerciseAttempt?.lastPassedFilesHash &&
+          learnerHistory.workingTree &&
+          activeExerciseAttempt.lastPassedFilesHash !== simpleHashFiles(learnerHistory.workingTree.filesSnapshot),
+      ),
       playheadMs,
       pausedTeacherTimestampMs,
       pausedTeacherEventSeq,
@@ -3299,7 +4233,9 @@ export function useInteractivePoc({
       learnerRemoteSyncStatus: learnerHistory.remoteStatus,
       lastLearnerCommitName: learnerHistory.lastCommitName,
       learnerBranches: learnerHistory.branches,
-      learnerBranchTimelineSummaries: learnerHistory.branchHistorySummaries.map((summary) => ({
+      learnerBranchTimelineSummaries: learnerHistory.branchHistorySummaries
+        .filter((summary) => (isExerciseMode ? summary.branch.context?.kind === 'exercise' : !summary.branch.context))
+        .map((summary) => ({
         branchId: summary.branch.id,
         teacherTimestampMs: summary.branch.origin.teacherTimestampMs,
         lastAppliedTeacherEventSeq: summary.branch.origin.lastAppliedTeacherEventSeq,
@@ -3395,9 +4331,14 @@ export function useInteractivePoc({
       canSeedDemoData: !isRecording && mode === 'idle' && canPublishAsTeacher && demoDataStatus !== 'seeding',
       canResetDemoData:
         !isRecording && mode !== 'teacher-playback' && canPublishAsTeacher && demoDataStatus !== 'resetting',
-      canPlayRecording: !isRecording && (mode === 'idle' || mode === 'learner-editing'),
-      canPausePlayback: isPlaying,
-      canSeekPlayback: Boolean(playbackRecordingRef.current) && !isRecording && mode !== 'learner-editing',
+      canPlayRecording:
+        !isRecording && exerciseTransitionPhase === 'idle' && (mode === 'idle' || mode === 'learner-editing'),
+      canPausePlayback: isPlaying && exerciseTransitionPhase === 'idle',
+      canSeekPlayback:
+        Boolean(playbackRecordingRef.current) &&
+        !isRecording &&
+        exerciseTransitionPhase === 'idle' &&
+        mode !== 'learner-editing',
       onDevLogin,
       onLogout,
       onRefreshRecordingLibrary,
@@ -3414,6 +4355,22 @@ export function useInteractivePoc({
       onStartMicRecording,
       onStartCameraRecording,
       onStopRecording,
+      onPauseRecordingForExercise,
+      onAttachExerciseAtPausedPosition,
+      onCancelExerciseInsertion,
+      onRemoveExercisePoint,
+      onOpenExercisePoint,
+      onBeginExercise,
+      onSkipPendingExercise,
+      onRetryExerciseIntroduction,
+      onExerciseTransitionCovered: () => void onExerciseTransitionCovered(),
+      onExerciseTransitionRevealed,
+      onCheckExerciseSolution: () => void onCheckExerciseSolution(),
+      onSkipExercise: () => void onSkipExercise(),
+      onContinueAfterExercise,
+      onExitExerciseMode,
+      onStartExerciseOver: () => void onStartExerciseOver(),
+      onSelectExerciseAttempt: (attemptId) => void onSelectExerciseAttempt(attemptId),
       onSaveDraft,
       onLoadDraft,
       onPreviewDraft,

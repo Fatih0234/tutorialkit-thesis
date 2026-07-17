@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { InteractiveButton, InteractiveCard, interactiveSelectClassName } from './InteractivePocUi.js';
+import {
+  InteractiveButton,
+  InteractiveCard,
+  InteractiveStatusBadge,
+  interactiveSelectClassName,
+} from './InteractivePocUi.js';
 import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
@@ -17,6 +22,17 @@ interface InteractiveTeacherDashboardProps extends InteractivePocControlsModel {
   onStartConfiguredRecording: () => void;
   onPreviewSelectedDraft: (recordingId: string) => void;
   onPreviewSelectedPublished: (recordingId: string) => void;
+  exerciseDrafts: Array<{
+    exerciseId: string;
+    title: string;
+    complete: boolean;
+    publishable: boolean;
+    publicationReasons: string[];
+  }>;
+  exerciseAuthoringStatus: string;
+  onCreatePreparedExercise: () => void;
+  onOpenPreparedExercise: (exerciseId: string) => void;
+  onPublishPreparedExercise: (exerciseId: string) => void;
 }
 
 export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardProps) {
@@ -132,6 +148,73 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
             {props.isStartingRecording ? 'Preparing Recording Studio' : 'Start Recording'}
           </InteractiveButton>
         </div>
+      </InteractiveCard>
+
+      <InteractiveCard className="grid gap-3 p-4" aria-label="Exercise library">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="m-0 text-sm font-600 text-tk-text-primary">Exercise Library</h3>
+            <p className="mb-0 mt-1 text-xs text-tk-text-secondary">
+              Prepare reusable exercises before recording or finish captured drafts.
+            </p>
+          </div>
+          <InteractiveButton icon="i-ph-plus" onClick={props.onCreatePreparedExercise}>
+            New Prepared Exercise
+          </InteractiveButton>
+        </div>
+        {props.exerciseDrafts.length ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {props.exerciseDrafts.map((exercise) => (
+              <div
+                key={exercise.exerciseId}
+                className="grid gap-2 rounded-md border border-tk-border-primary bg-tk-background-secondary p-3"
+              >
+                <button
+                  type="button"
+                  onClick={() => props.onOpenPreparedExercise(exercise.exerciseId)}
+                  className="text-left hover:text-tk-text-primary"
+                >
+                  <strong className="block text-sm text-tk-text-primary">{exercise.title || 'Untitled exercise'}</strong>
+                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <InteractiveStatusBadge
+                    tone={exercise.publishable ? 'positive' : exercise.complete ? 'warning' : 'neutral'}
+                    icon={exercise.publishable ? 'i-ph-check-circle' : exercise.complete ? 'i-ph-warning-circle' : 'i-ph-pencil'}
+                  >
+                    {exercise.publishable
+                      ? 'Verification current'
+                      : exercise.complete
+                        ? 'Verification required or outdated'
+                        : 'Draft needs work'}
+                  </InteractiveStatusBadge>
+                </div>
+                {!exercise.publishable && exercise.publicationReasons.length ? (
+                  <details className="text-xs text-tk-text-secondary">
+                    <summary className="cursor-pointer font-500 text-tk-text-primary">Why this exercise cannot be published</summary>
+                    <ul className="mb-0 mt-1 grid gap-1 pl-5">
+                      {exercise.publicationReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  </details>
+                ) : null}
+                {exercise.publishable ? (
+                  <InteractiveButton
+                    icon="i-ph-upload-simple"
+                    onClick={() => props.onPublishPreparedExercise(exercise.exerciseId)}
+                  >
+                    Publish Exercise Update
+                  </InteractiveButton>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="m-0 rounded border border-dashed border-tk-border-primary p-3 text-xs text-tk-text-secondary">
+            No prepared exercises yet.
+          </p>
+        )}
+        {props.exerciseAuthoringStatus !== 'idle' ? (
+          <p role="status" className="m-0 text-xs text-tk-text-secondary">{props.exerciseAuthoringStatus}</p>
+        ) : null}
       </InteractiveCard>
 
       <InteractiveCard className="grid gap-5 p-4" aria-label="Your recordings">

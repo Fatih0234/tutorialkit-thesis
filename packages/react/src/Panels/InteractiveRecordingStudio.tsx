@@ -97,6 +97,13 @@ export function InteractiveRecordingStudio({ model, lessonId, initialFile, onSto
         <div className="flex items-center gap-3">
           {model.mediaKind === 'webcam' && model.liveMediaStream ? <LiveCameraPreview stream={model.liveMediaStream} /> : null}
           <InteractiveButton
+            icon="i-ph-student"
+            onClick={model.onPauseRecordingForExercise}
+            disabled={!model.isRecording || model.isRecordingPausedForExercise}
+          >
+            Pause for Exercise
+          </InteractiveButton>
+          <InteractiveButton
             variant="danger"
             icon="i-ph-stop-fill"
             onClick={onStop}

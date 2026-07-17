@@ -42,6 +42,8 @@ interface Props {
   helpAction?: 'solve' | 'reset';
   editorDocument?: EditorDocument;
   selectedFile?: string | undefined;
+  readOnly?: boolean;
+  documentSyncOrigin?: ComponentProps<typeof CodeMirrorEditor>['documentSyncOrigin'];
   allowEditPatterns?: ComponentProps<typeof FileTree>['allowEditPatterns'];
 
   /** @deprecated Use the immediate and settled callbacks. */
@@ -74,6 +76,8 @@ export function EditorPanel({
   helpAction,
   editorDocument,
   selectedFile,
+  readOnly,
+  documentSyncOrigin,
   allowEditPatterns,
   onEditorChange,
   onBeforeUserDocumentChange,
@@ -205,6 +209,8 @@ export function EditorPanel({
             id={id}
             doc={editorDocument}
             autoFocusOnDocumentChange={!isMobile()}
+            readOnly={readOnly}
+            documentSyncOrigin={documentSyncOrigin}
             onScroll={onEditorScroll}
             onChange={onEditorChange}
             onBeforeUserDocumentChange={onBeforeUserDocumentChange}

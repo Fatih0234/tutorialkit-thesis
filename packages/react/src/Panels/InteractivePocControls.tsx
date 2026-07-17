@@ -33,6 +33,17 @@ export interface InteractivePocControlsProps extends InteractivePocControlsModel
   onPreviewCurrentDraft: () => void;
   onPreviewSelectedDraft: (recordingId: string) => void;
   onPreviewSelectedPublished: (recordingId: string) => void;
+  exerciseDrafts: Array<{
+    exerciseId: string;
+    title: string;
+    complete: boolean;
+    publishable: boolean;
+    publicationReasons: string[];
+  }>;
+  exerciseAuthoringStatus: string;
+  onCreatePreparedExercise: () => void;
+  onOpenPreparedExercise: (exerciseId: string) => void;
+  onPublishPreparedExercise: (exerciseId: string) => void;
   onOpenLearnerLesson: (recordingId: string) => void;
 }
 

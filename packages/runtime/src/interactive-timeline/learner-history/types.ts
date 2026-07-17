@@ -1,3 +1,4 @@
+import type { ExerciseBranchContext } from '../exercises/types.js';
 import type { FilesSnapshot } from '../types.js';
 
 export interface LearnerOrigin {
@@ -20,6 +21,7 @@ export interface LearnerBranch {
   userId: string;
   lessonId: string;
   origin: LearnerOrigin;
+  context?: ExerciseBranchContext;
   parent?: LearnerBranchParent;
   headEventSeq: number;
   createdAt: string;
@@ -95,4 +97,7 @@ export interface LearnerBranchQuery {
   lessonId?: string;
   teacherRecordingId?: string;
   teacherRecordingVersion?: number;
+  contextKind?: 'lecture' | 'exercise';
+  exercisePointId?: string;
+  attemptId?: string;
 }

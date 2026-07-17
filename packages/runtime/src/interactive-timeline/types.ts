@@ -1,3 +1,4 @@
+import type { ExercisePoint } from './exercises/types.js';
 import type { RecordingMediaAssetMetadata } from './media.js';
 import type { PresentationLayout, PresentationResource } from './presentation.js';
 
@@ -143,6 +144,7 @@ export interface TeacherRecording {
   mediaAssets?: RecordingMediaAssetMetadata[];
   presentationResources?: PresentationResource[];
   initialPresentationLayout?: PresentationLayout;
+  exercisePoints?: ExercisePoint[];
   createdByUserId?: string;
   ownerUserId?: string;
   publishedByUserId?: string;

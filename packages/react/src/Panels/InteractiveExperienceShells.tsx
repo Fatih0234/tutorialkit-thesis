@@ -62,7 +62,7 @@ export function InteractiveWorkspaceShell({ active, children }: { active: boolea
     <section
       data-interactive-workspace-shell
       aria-hidden={!active}
-      className={active ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
+      className={active ? 'relative flex min-h-0 flex-1 flex-col' : 'hidden'}
     >
       {children}
     </section>

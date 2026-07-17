@@ -1,3 +1,4 @@
+import type { ExercisePoint } from './exercises/types.js';
 import type {
   FileChangedPayload,
   FileCreatedPayload,
@@ -26,6 +27,8 @@ export class TimelineRecorder {
   private recording: TeacherRecording | undefined;
   private startTime = 0;
   private seq = 0;
+  private pausedAtMs: number | undefined;
+  private totalPausedMs = 0;
 
   start({
     lessonId,
@@ -37,6 +40,8 @@ export class TimelineRecorder {
   }: StartRecordingOptions): TeacherRecording {
     this.startTime = startedAtMs;
     this.seq = 0;
+    this.pausedAtMs = undefined;
+    this.totalPausedMs = 0;
 
     this.recording = {
       id: createId('teacher-recording'),
@@ -61,6 +66,51 @@ export class TimelineRecorder {
     return Boolean(this.recording);
   }
 
+  isPaused(): boolean {
+    return this.pausedAtMs !== undefined;
+  }
+
+  getCurrentPosition(nowMs = Date.now()) {
+    return {
+      timestampMs: this.getElapsedMs(nowMs),
+      lastAppliedEventSeq: this.recording?.events.at(-1)?.seq ?? -1,
+    };
+  }
+
+  pause(nowMs = Date.now()) {
+    if (!this.recording || this.pausedAtMs !== undefined) {
+      return undefined;
+    }
+
+    this.pausedAtMs = nowMs;
+    return this.getCurrentPosition(nowMs);
+  }
+
+  resume(nowMs = Date.now()): boolean {
+    if (!this.recording || this.pausedAtMs === undefined) {
+      return false;
+    }
+
+    this.totalPausedMs += Math.max(0, nowMs - this.pausedAtMs);
+    this.pausedAtMs = undefined;
+    return true;
+  }
+
+  addExercisePoint(point: ExercisePoint): ExercisePoint | undefined {
+    if (!this.recording || !this.isPaused()) {
+      return undefined;
+    }
+
+    const position = this.getCurrentPosition();
+    const normalized: ExercisePoint = {
+      ...point,
+      teacherTimestampMs: position.timestampMs,
+      lastAppliedTeacherEventSeq: position.lastAppliedEventSeq,
+    };
+    this.recording.exercisePoints = [...(this.recording.exercisePoints ?? []), normalized];
+    return normalized;
+  }
+
   getRecording(): TeacherRecording | undefined {
     return this.recording;
   }
@@ -74,14 +124,14 @@ export class TimelineRecorder {
       tMs?: number;
     } = {},
   ): TimelineEvent<TPayload> | undefined {
-    if (!this.recording) {
+    if (!this.recording || this.isPaused()) {
       return undefined;
     }
 
     const event: TimelineEvent<TPayload> = {
       id: createId('event'),
       seq: this.seq++,
-      tMs: options.tMs ?? Date.now() - this.startTime,
+      tMs: options.tMs ?? this.getElapsedMs(Date.now()),
       type,
       filePath: options.filePath ? normalizePath(options.filePath) : undefined,
       payload: options.payload,
@@ -119,11 +169,22 @@ export class TimelineRecorder {
       return undefined;
     }
 
-    this.recording.durationMs = Date.now() - this.startTime;
+    this.recording.durationMs = this.getElapsedMs(Date.now());
 
     const stopped = this.recording;
     this.recording = undefined;
+    this.pausedAtMs = undefined;
+    this.totalPausedMs = 0;
 
     return stopped;
+  }
+
+  private getElapsedMs(nowMs: number): number {
+    if (!this.recording) {
+      return 0;
+    }
+
+    const effectiveNow = this.pausedAtMs ?? nowMs;
+    return Math.max(0, effectiveNow - this.startTime - this.totalPausedMs);
   }
 }

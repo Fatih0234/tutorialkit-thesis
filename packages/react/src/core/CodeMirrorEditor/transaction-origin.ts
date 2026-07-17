@@ -6,6 +6,7 @@ export type EditorTransactionOrigin =
   | 'learner-history-restore'
   | 'lesson-reset'
   | 'runtime-sync'
+  | 'exercise-workspace-sync'
   | 'external-document-sync';
 
 /** Annotates document changes dispatched by application code. Unannotated edits are user edits. */

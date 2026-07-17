@@ -24,6 +24,15 @@ describe('interactive experience session', () => {
     expect(active.activeRecordingId).toBe('recording-1');
   });
 
+  it('keeps prepared exercise authoring separate from recording', () => {
+    const recording = interactiveExperienceReducer(initialInteractiveExperienceState, { type: 'START_RECORDING' });
+    const authoring = interactiveExperienceReducer(initialInteractiveExperienceState, { type: 'AUTHOR_EXERCISE' });
+
+    expect(recording.screen).toBe('teacher-recording');
+    expect(authoring.screen).toBe('teacher-exercise-authoring');
+    expect(isImmersiveInteractiveScreen(authoring.screen)).toBe(true);
+  });
+
   it('returns from immersive screens to isolated management screens', () => {
     const review = interactiveExperienceReducer(initialInteractiveExperienceState, { type: 'REVIEW_RECORDING' });
     const dashboard = interactiveExperienceReducer(review, { type: 'SHOW_TEACHER_DASHBOARD' });

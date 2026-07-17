@@ -1,6 +1,7 @@
 import type { FileDescriptor, Files, FilesystemError, Lesson } from '@tutorialkit/types';
 import type { WebContainer } from '@webcontainer/api';
 import { atom, type ReadableAtom } from 'nanostores';
+import type { ExerciseValidationExecution } from '../interactive-timeline/exercises/types.js';
 import { normalizePath } from '../interactive-timeline/path.js';
 import { LessonFilesFetcher } from '../lesson-files.js';
 import { newTask, type Task } from '../tasks.js';
@@ -489,6 +490,18 @@ export class TutorialStore {
   /** Write to the configured read-only output panel. */
   writeOutput(value: string) {
     this._terminalStore.getOutputPanel()?.write(value);
+  }
+
+  runExerciseValidation(options: {
+    files: Record<string, string>;
+    runnerFile: string;
+    timeoutMs: number;
+  }): Promise<ExerciseValidationExecution> {
+    if (!this._usesWebContainer()) {
+      throw new Error('Exercise validation currently requires WebContainer.');
+    }
+
+    return this._runner.runExerciseValidation(options);
   }
 
   clearOutput() {

@@ -32,6 +32,18 @@ export class RemoteLearnerHistoryStorage implements LearnerHistoryRemoteStorage 
       params.set('teacherRecordingVersion', String(query.teacherRecordingVersion));
     }
 
+    if (query.contextKind) {
+      params.set('contextKind', query.contextKind);
+    }
+
+    if (query.exercisePointId) {
+      params.set('exercisePointId', query.exercisePointId);
+    }
+
+    if (query.attemptId) {
+      params.set('attemptId', query.attemptId);
+    }
+
     const response = await this._request<{ learnerBranches: LearnerBranchAggregate[] }>(
       params.size ? `?${params}` : '',
     );

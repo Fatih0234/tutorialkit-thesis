@@ -12,6 +12,7 @@ import {
   normalizeFiles,
   normalizePath,
   simpleHashFiles,
+  type ExerciseBranchContext,
   type FilesSnapshot,
   type LearnerBranch,
   type LearnerBranchAggregate,
@@ -32,11 +33,13 @@ const storage = new IndexedDBLearnerHistoryStorage();
 const remoteStorage = new RemoteLearnerHistoryStorage();
 
 interface CreateBranchOptions {
+  id?: string;
   userId: string;
   lessonId: string;
   origin: LearnerOrigin;
   initialFiles: FilesSnapshot;
   selectedFile?: string;
+  context?: ExerciseBranchContext;
 }
 
 interface FileChangeOptions {
@@ -859,6 +862,11 @@ export function useLearnerHistory(
     forkFromSelectedHistory,
     switchBranch,
     resolveActiveBranchBase,
+    flushLocal: () => persistenceQueueRef.current,
+    flush: async () => {
+      await persistenceQueueRef.current;
+      await syncActiveBranchRemote();
+    },
     hasActiveBranch: () => Boolean(branchRef.current),
     clearActiveBranch,
   };

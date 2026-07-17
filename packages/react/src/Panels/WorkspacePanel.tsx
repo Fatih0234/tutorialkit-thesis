@@ -1,5 +1,13 @@
 import { useStore } from '@nanostores/react';
-import { normalizeFiles, normalizePath, type TutorialStore } from '@tutorialkit/runtime';
+import {
+  getExerciseCompleteness,
+  getExercisePublishability,
+  normalizeFiles,
+  normalizePath,
+  setPresentationMode,
+  type PresentationLayout,
+  type TutorialStore,
+} from '@tutorialkit/runtime';
 import { resolveRuntimeConfig, type I18n } from '@tutorialkit/types';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
@@ -35,9 +43,20 @@ import { InteractiveWorkspaceSurface } from './InteractiveWorkspaceSurface.js';
 import { PreviewPanel, type ImperativePreviewHandle } from './PreviewPanel.js';
 import { TerminalPanel } from './TerminalPanel.js';
 import { AiHelperWindow } from './interactive/ai/AiHelperWindow.js';
+import { ExerciseAuthoring } from './interactive/exercises/ExerciseAuthoring.js';
+import { ExerciseInsertionPicker } from './interactive/exercises/ExerciseInsertionPicker.js';
+import { ExerciseWorkspaceTransition } from './interactive/exercises/ExerciseWorkspaceTransition.js';
+import { LearnerExerciseInterstitial } from './interactive/exercises/LearnerExerciseInterstitial.js';
+import { LearnerExerciseMode } from './interactive/exercises/LearnerExerciseMode.js';
+import { isExerciseIntroductionVisible } from './interactive/exercises/exercise-transition.js';
+import {
+  createExercisePresentationLayout,
+  getExercisePresentationResources,
+} from './interactive/exercises/exercise-workspace-resources.js';
+import { useExerciseAuthoring } from './interactive/exercises/useExerciseAuthoring.js';
 import { makeAiContext, useAiTutor } from './interactive/ai/useAiTutor.js';
 import { isImmersiveInteractiveScreen } from './interactive-session.js';
-import { useInteractivePoc } from './useInteractivePoc.js';
+import { useInteractivePoc, type ExerciseWorkspaceContext } from './useInteractivePoc.js';
 
 const DEFAULT_TERMINAL_SIZE = 25;
 const INTERACTIVE_WORKSPACE_LAYOUT_KEY = 'interactive-poc.workspaceLayout';
@@ -147,6 +166,7 @@ function EditorSection({
   theme,
   tutorialStore,
   hasEditor,
+  hasPreviews,
   hideTerminalPanel,
   onImmersiveTerminalHostChange,
   onImmersivePreviewHostChange,
@@ -160,9 +180,16 @@ function EditorSection({
   const [explanationSize, setExplanationSize] = useState(28);
   const [terminalSize, setTerminalSize] = useState(30);
   const [explanationHtml, setExplanationHtml] = useState('');
+  const [exercisePresentationLayout, setExercisePresentationLayout] = useState<PresentationLayout>(() =>
+    createExercisePresentationLayout([]),
+  );
+  const wasExerciseModeRef = useRef(false);
+  const lessonExplanationOpenRef = useRef(false);
   const [isClientReady, setIsClientReady] = useState(false);
   const [experienceMount, setExperienceMount] = useState<HTMLElement | null>(null);
   const [editorSelection, setEditorSelection] = useState<EditorTextSelection | null>(null);
+  const [preparedExerciseContext, setPreparedExerciseContext] = useState<ExerciseWorkspaceContext | null>(null);
+  const [pendingPreparedExerciseId, setPendingPreparedExerciseId] = useState<'new' | string>();
   const editorPanelRef = useRef<ImperativePanelHandle>(null);
   const editorPointerApiRef = useRef<EditorPointerCoordinateApi | null>(null);
   const selectedFile = useStore(tutorialStore.selectedFile);
@@ -180,7 +207,21 @@ function EditorSection({
     learnerTakeoverEnabled: experience.screen === 'learner-player',
     storeRef,
   });
+  const isExerciseWorkspace = experience.screen === 'learner-player' && interactivePoc.controls.isExerciseMode;
+  const exercisePresentationResources = useMemo(
+    () =>
+      isExerciseWorkspace
+        ? getExercisePresentationResources(interactivePoc.controls.presentationResources, hasPreviews)
+        : [],
+    [hasPreviews, interactivePoc.controls.presentationResources, isExerciseWorkspace],
+  );
   const lessonRuntime = useLessonRuntime(tutorialStore, interactivePoc.onRuntimeEvent, interactivePoc.controls.mode);
+  const exerciseAuthoring = useExerciseAuthoring({
+    tutorialStore,
+    lessonId: lesson.id,
+    ownerUserId: interactivePoc.controls.currentUser?.id,
+    context: preparedExerciseContext,
+  });
   const aiRecordingId = interactivePoc.controls.publishedRecordingId || interactivePoc.controls.currentDraftId;
   const aiContext = useMemo(() => {
     if (
@@ -324,6 +365,43 @@ function EditorSection({
     void interactivePoc.controls.onPreviewPublishedRecording(recordingId);
   }
 
+  function createPreparedExerciseContext(): ExerciseWorkspaceContext {
+    const workspaceFiles: Record<string, string> = {};
+
+    for (const document of Object.values(tutorialStore.documents.get())) {
+      if (document && !document.loading && document.type === 'file' && typeof document.value === 'string') {
+        workspaceFiles[normalizePath(document.filePath)] = document.value;
+      }
+    }
+
+    return {
+      teacherFiles: workspaceFiles,
+      selectedFile: selectedFile ? normalizePath(selectedFile) : undefined,
+    };
+  }
+
+  function restorePreparedExerciseWorkspace() {
+    if (!preparedExerciseContext) {return;}
+    const files = normalizeFiles(preparedExerciseContext.teacherFiles);
+    for (const file of tutorialStore.files.get()) {
+      if (file.type === 'file' && !(normalizePath(file.path) in files)) {tutorialStore.removeFile(file.path);}
+    }
+    for (const [path, content] of Object.entries(files)) {tutorialStore.restoreFile(path, content);}
+    if (preparedExerciseContext.selectedFile) {tutorialStore.setSelectedFile(preparedExerciseContext.selectedFile);}
+    setPreparedExerciseContext(null);
+  }
+
+  function openPreparedExercise(exerciseId: 'new' | string) {
+    setPreparedExerciseContext(createPreparedExerciseContext());
+    setPendingPreparedExerciseId(exerciseId);
+    exerciseAuthoring.reset();
+    dispatchExperience({ type: 'AUTHOR_EXERCISE' });
+  }
+
+  function openReviewExercise(exerciseId: string) {
+    openPreparedExercise(exerciseId);
+  }
+
   function changeInteractiveTab(tab: InteractiveProductTab) {
     dispatchExperience({ type: tab === 'teacher' ? 'SHOW_TEACHER_DASHBOARD' : 'SHOW_LEARNER_LIBRARY' });
   }
@@ -338,7 +416,9 @@ function EditorSection({
   }
 
   async function exitLearnerPlayer() {
-    if (interactivePoc.controls.workspaceOwner === 'learner') {
+    if (interactivePoc.controls.exerciseTransitionPhase !== 'idle') {
+      await interactivePoc.controls.onExitExerciseMode();
+    } else if (interactivePoc.controls.workspaceOwner === 'learner') {
       await resumeTeacherPlayback();
 
       if (interactivePoc.controls.isLearnerWorkspaceDirty) {
@@ -414,6 +494,17 @@ function EditorSection({
   }, [lesson.id, hideTerminalPanel]);
 
   useEffect(() => {
+    if (isExerciseWorkspace && !wasExerciseModeRef.current) {
+      lessonExplanationOpenRef.current = explanationOpen;
+      setExplanationOpen(true);
+      setExercisePresentationLayout(createExercisePresentationLayout(exercisePresentationResources));
+    } else if (!isExerciseWorkspace && wasExerciseModeRef.current) {
+      setExplanationOpen(lessonExplanationOpenRef.current);
+    }
+    wasExerciseModeRef.current = isExerciseWorkspace;
+  }, [exercisePresentationResources, explanationOpen, isExerciseWorkspace]);
+
+  useEffect(() => {
     localStorage.setItem(
       INTERACTIVE_WORKSPACE_LAYOUT_KEY,
       JSON.stringify({
@@ -436,6 +527,23 @@ function EditorSection({
   useEffect(() => {
     setEditorSelection(null);
   }, [selectedFile, experience.screen]);
+
+  useEffect(() => {
+    if (interactivePoc.controls.isRecordingPausedForExercise && experience.screen === 'teacher-recording') {
+      void exerciseAuthoring.refreshLibrary();
+    }
+  }, [interactivePoc.controls.isRecordingPausedForExercise, experience.screen]);
+
+  useEffect(() => {
+    if (experience.screen !== 'teacher-exercise-authoring' || !preparedExerciseContext || !pendingPreparedExerciseId) {
+      return;
+    }
+
+    const pending = pendingPreparedExerciseId;
+    setPendingPreparedExerciseId(undefined);
+    if (pending === 'new') {exerciseAuthoring.beginNew();}
+    else {void exerciseAuthoring.openDraft(pending);}
+  }, [experience.screen, preparedExerciseContext, pendingPreparedExerciseId]);
 
   useEffect(() => {
     if (!selectedFile && filePaths[0]) {
@@ -523,6 +631,22 @@ function EditorSection({
       onPreviewCurrentDraft={previewCurrentDraft}
       onPreviewSelectedDraft={previewSelectedDraft}
       onPreviewSelectedPublished={previewSelectedPublished}
+      exerciseDrafts={exerciseAuthoring.drafts.map((exercise) => {
+        const completeness = getExerciseCompleteness(exercise.content);
+        const publishability = getExercisePublishability(exercise);
+
+        return {
+          exerciseId: exercise.exerciseId,
+          title: exercise.content.title,
+          complete: completeness.complete,
+          publishable: publishability.complete,
+          publicationReasons: publishability.reasons,
+        };
+      })}
+      exerciseAuthoringStatus={exerciseAuthoring.status}
+      onCreatePreparedExercise={() => openPreparedExercise('new')}
+      onOpenPreparedExercise={openPreparedExercise}
+      onPublishPreparedExercise={(exerciseId) => void exerciseAuthoring.publishDraft(exerciseId)}
       onOpenLearnerLesson={openLearnerLesson}
       onResumeTeacher={() => void resumeTeacherPlayback()}
     />
@@ -555,8 +679,32 @@ function EditorSection({
           onHelpClick={lessonFullyLoaded ? onHelpClick : undefined}
           onFileSelect={interactivePoc.onFileSelect}
           onFileTreeChange={onFileTreeChange}
-          allowEditPatterns={editorConfig.fileTree.allowEdits || undefined}
+          allowEditPatterns={
+            experience.screen === 'teacher-exercise-authoring'
+              ? ['/**']
+              : interactivePoc.controls.isExerciseMode
+                ? interactivePoc.controls.activeExercise?.allowCreatePatterns
+                : editorConfig.fileTree.allowEdits || undefined
+          }
           selectedFile={selectedFile}
+          documentSyncOrigin={
+            experience.screen === 'teacher-exercise-authoring' || interactivePoc.controls.isExerciseMode
+              ? 'exercise-workspace-sync'
+              : undefined
+          }
+          readOnly={
+            (experience.screen === 'teacher-exercise-authoring' &&
+              (exerciseAuthoring.workspace === 'starter' || exerciseAuthoring.previewingAsStudent) &&
+              Boolean(
+                selectedFile &&
+                  exerciseAuthoring.draft?.content.fileRoles[normalizePath(selectedFile)] === 'read-only',
+              )) ||
+            (interactivePoc.controls.isExerciseMode &&
+              Boolean(
+                selectedFile &&
+                  interactivePoc.controls.activeExercise?.fileRoles[normalizePath(selectedFile)] === 'read-only',
+              ))
+          }
           onEditorScroll={interactivePoc.onEditorScroll}
           onBeforeUserDocumentChange={interactivePoc.onBeforeUserProjectMutation}
           onEditorSaveShortcut={interactivePoc.onEditorSaveShortcut}
@@ -598,11 +746,29 @@ function EditorSection({
   );
 
   const presentationAudience = experience.screen === 'learner-player' ? 'learner' : 'teacher';
-  const onPresentationModeChange =
+  const lessonPresentationModeChange =
     experience.screen === 'teacher-materials' || experience.screen === 'teacher-recording'
       ? interactivePoc.controls.onTeacherPresentationModeChange
       : interactivePoc.controls.onLearnerPresentationModeChange;
-  const cameraMediaUrl = interactivePoc.controls.mediaKind === 'webcam' ? interactivePoc.controls.mediaPreviewUrl : '';
+  const visiblePresentationResources = isExerciseWorkspace
+    ? exercisePresentationResources
+    : interactivePoc.controls.presentationResources;
+  const visiblePresentationLayout = isExerciseWorkspace
+    ? exercisePresentationLayout
+    : interactivePoc.controls.presentationLayout;
+  const onPresentationModeChange = (resourceId: string, mode: Parameters<typeof setPresentationMode>[3]) => {
+    if (isExerciseWorkspace) {
+      setExercisePresentationLayout((layout) =>
+        setPresentationMode(exercisePresentationResources, layout, resourceId, mode),
+      );
+      return;
+    }
+    lessonPresentationModeChange(resourceId, mode);
+  };
+  const cameraMediaUrl =
+    !isExerciseWorkspace && interactivePoc.controls.mediaKind === 'webcam'
+      ? interactivePoc.controls.mediaPreviewUrl
+      : '';
 
   const editorSurface = (
     <InteractiveWorkspaceSurface
@@ -612,17 +778,21 @@ function EditorSection({
         ) : null
       }
       presentationToolbar={
-        <InteractivePresentationToolbar
-          audience={presentationAudience}
-          resources={interactivePoc.controls.presentationResources}
-          layout={interactivePoc.controls.presentationLayout}
-          hasLearnerOverride={interactivePoc.controls.hasLearnerPresentationOverride}
-          cameraMediaUrl={cameraMediaUrl}
-          onModeChange={onPresentationModeChange}
-          onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
-        />
+        !isExerciseWorkspace || visiblePresentationResources.length ? (
+          <InteractivePresentationToolbar
+            audience={presentationAudience}
+            resources={visiblePresentationResources}
+            layout={visiblePresentationLayout}
+            hasLearnerOverride={!isExerciseWorkspace && interactivePoc.controls.hasLearnerPresentationOverride}
+            cameraMediaUrl={cameraMediaUrl}
+            onModeChange={onPresentationModeChange}
+            onFollowTeacher={interactivePoc.controls.onFollowTeacherPresentation}
+          />
+        ) : null
       }
       explanationHtml={explanationHtml}
+      explanationText={isExerciseWorkspace ? (interactivePoc.controls.activeExercise?.explanation ?? '') : undefined}
+      explanationTitle={isExerciseWorkspace ? 'Exercise Explanation' : 'Explanation'}
       explanationOpen={explanationOpen}
       terminalOpen={terminalOpen}
       terminalAvailable={!hideTerminalPanel}
@@ -635,8 +805,8 @@ function EditorSection({
       onTerminalHostChange={onImmersiveTerminalHostChange}
       presentationLayer={
         <InteractivePresentationLayer
-          resources={interactivePoc.controls.presentationResources}
-          layout={interactivePoc.controls.presentationLayout}
+          resources={visiblePresentationResources}
+          layout={visiblePresentationLayout}
           explanationHtml={explanationHtml}
           canEditDeck={experience.screen === 'teacher-materials'}
           onModeChange={onPresentationModeChange}
@@ -692,11 +862,37 @@ function EditorSection({
           />
         ) : null}
         {experience.screen === 'teacher-recording' ? (
-          <InteractiveRecordingStudio
-            model={interactivePoc.controls}
-            lessonId={lesson.id}
-            initialFile={initialFile}
-            onStop={() => void stopConfiguredRecording()}
+          interactivePoc.controls.isRecordingPausedForExercise ? (
+            <ExerciseInsertionPicker
+              exercises={exerciseAuthoring.attachableDrafts}
+              libraryStatus={exerciseAuthoring.libraryStatus}
+              onAttach={(exerciseId) => Boolean(interactivePoc.controls.onAttachExerciseAtPausedPosition(exerciseId))}
+              onCancel={interactivePoc.controls.onCancelExerciseInsertion}
+              onRetry={() => void exerciseAuthoring.refreshLibrary()}
+            />
+          ) : (
+            <InteractiveRecordingStudio
+              model={interactivePoc.controls}
+              lessonId={lesson.id}
+              initialFile={initialFile}
+              onStop={() => void stopConfiguredRecording()}
+            />
+          )
+        ) : null}
+        {experience.screen === 'teacher-exercise-authoring' ? (
+          <ExerciseAuthoring
+            authoring={exerciseAuthoring}
+            selectedFile={selectedFile ? normalizePath(selectedFile) : undefined}
+            onDone={() => {
+              restorePreparedExerciseWorkspace();
+              dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' });
+              exerciseAuthoring.reset();
+            }}
+            onCancel={() => {
+              restorePreparedExerciseWorkspace();
+              dispatchExperience({ type: 'SHOW_TEACHER_DASHBOARD' });
+              exerciseAuthoring.reset();
+            }}
           />
         ) : null}
         {experience.screen === 'teacher-review' ? (
@@ -731,18 +927,82 @@ function EditorSection({
             }
           />
         ) : null}
+        {experience.screen === 'teacher-review' && interactivePoc.controls.exercisePoints.length > 0 ? (
+          <section aria-label="Recording exercises" className="shrink-0 border-b border-tk-border-primary bg-tk-background-secondary px-4 py-2">
+            <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-2">
+              <strong className="mr-2 text-xs text-tk-text-primary">Exercises</strong>
+              {interactivePoc.controls.exercisePoints.map((point) => {
+                const draft = exerciseAuthoring.drafts.find((item) => item.exerciseId === point.exerciseId);
+                return (
+                  <span key={point.id} className="inline-flex items-center gap-1 rounded border border-tk-border-primary p-1">
+                    <InteractiveButton
+                      variant="ghost"
+                      icon="i-ph-pencil"
+                      onClick={() => openReviewExercise(point.exerciseId)}
+                    >
+                      {draft?.content.title || 'Unfinished exercise'}
+                    </InteractiveButton>
+                    {interactivePoc.controls.recordingStorageSource !== 'published' ? (
+                      <InteractiveButton
+                        variant="ghost"
+                        icon="i-ph-trash"
+                        onClick={() => interactivePoc.controls.onRemoveExercisePoint(point.id)}
+                      >
+                        Remove
+                      </InteractiveButton>
+                    ) : null}
+                  </span>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+        {experience.screen === 'teacher-review' && interactivePoc.controls.publishedError !== 'none' ? (
+          <p role="alert" className="m-0 shrink-0 border-b border-red-500/40 bg-red-950/40 px-4 py-2 text-xs text-red-200">
+            {interactivePoc.controls.publishedError}
+          </p>
+        ) : null}
         {experience.screen === 'learner-player' ? (
           <InteractiveImmersiveHeader
             eyebrow="Interactive lesson"
             title={lesson.id}
-            status={interactivePoc.controls.workspaceOwner === 'learner' ? 'My Workspace' : 'Following Teacher'}
-            statusTone={interactivePoc.controls.workspaceOwner === 'learner' ? 'warning' : 'positive'}
+            status={
+              interactivePoc.controls.isExerciseMode
+                ? 'Exercise Mode'
+                : interactivePoc.controls.exerciseTransitionPhase !== 'idle'
+                  ? 'Exercise checkpoint'
+                  : interactivePoc.controls.workspaceOwner === 'learner'
+                  ? 'My Workspace'
+                  : 'Following Teacher'
+            }
+            statusTone={
+              interactivePoc.controls.isExerciseMode ||
+              interactivePoc.controls.exerciseTransitionPhase !== 'idle' ||
+              interactivePoc.controls.workspaceOwner === 'learner'
+                ? 'warning'
+                : 'positive'
+            }
             currentTimeMs={interactivePoc.controls.playheadMs}
             onExit={() => void exitLearnerPlayer()}
             exitLabel="Lessons"
           />
         ) : null}
+        {experience.screen === 'learner-player' && interactivePoc.controls.isExerciseMode ? (
+          <LearnerExerciseMode model={interactivePoc.controls} />
+        ) : null}
         {editorSurface}
+        {experience.screen === 'learner-player' &&
+        (isExerciseIntroductionVisible(interactivePoc.controls.exerciseTransitionPhase) ||
+          (interactivePoc.controls.exerciseTransitionPhase === 'covering' && !interactivePoc.controls.isExerciseMode)) ? (
+          <LearnerExerciseInterstitial model={interactivePoc.controls} />
+        ) : null}
+        {experience.screen === 'learner-player' ? (
+          <ExerciseWorkspaceTransition
+            phase={interactivePoc.controls.exerciseTransitionPhase}
+            onCovered={interactivePoc.controls.onExerciseTransitionCovered}
+            onRevealed={interactivePoc.controls.onExerciseTransitionRevealed}
+          />
+        ) : null}
         {experience.screen === 'teacher-review' ? (
           <InteractiveVideoControls
             audience="teacher"
@@ -755,7 +1015,7 @@ function EditorSection({
             onPause={interactivePoc.controls.onPausePreviewPlayback}
           />
         ) : null}
-        {experience.screen === 'learner-player' ? (
+        {experience.screen === 'learner-player' && !interactivePoc.controls.isExerciseMode ? (
           <InteractiveVideoControls
             audience="learner"
             model={{ ...interactivePoc.controls, onResumeTeacher: () => void resumeTeacherPlayback() }}

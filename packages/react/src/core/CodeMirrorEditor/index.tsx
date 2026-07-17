@@ -109,6 +109,8 @@ export interface Props {
   debounceChange?: number;
   debounceScroll?: number;
   autoFocusOnDocumentChange?: boolean;
+  readOnly?: boolean;
+  documentSyncOrigin?: EditorTransactionOrigin;
 
   /** @deprecated Use onDocumentChangeSettled. */
   onChange?: OnChangeCallback;
@@ -138,6 +140,8 @@ export function CodeMirrorEditor({
   debounceScroll = 100,
   debounceChange = 150,
   autoFocusOnDocumentChange = false,
+  readOnly: forceReadOnly = false,
+  documentSyncOrigin = 'external-document-sync',
   onScroll,
   onChange,
   onBeforeUserDocumentChange,
@@ -368,7 +372,7 @@ export function CodeMirrorEditor({
         debounceScroll,
         [
           language.of([]),
-          readOnly.of([EditorState.readOnly.of(doc.loading)]),
+          readOnly.of([EditorState.readOnly.of(doc.loading || forceReadOnly)]),
           instructorPresenceExtension,
           learnerPresenceExtension,
           learnerChangeHighlightExtension,
@@ -380,8 +384,24 @@ export function CodeMirrorEditor({
 
     view.setState(state);
 
-    setEditorDocument(view, theme, language, readOnly, autoFocusOnDocumentChange, doc as TextEditorDocument);
-  }, [doc?.value, doc?.filePath, doc?.loading, autoFocusOnDocumentChange]);
+    setEditorDocument(
+      view,
+      theme,
+      language,
+      readOnly,
+      autoFocusOnDocumentChange,
+      forceReadOnly,
+      documentSyncOrigin,
+      doc as TextEditorDocument,
+    );
+  }, [
+    doc?.value,
+    doc?.filePath,
+    doc?.loading,
+    autoFocusOnDocumentChange,
+    forceReadOnly,
+    documentSyncOrigin,
+  ]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -600,6 +620,8 @@ function setEditorDocument(
   language: Compartment,
   readOnly: Compartment,
   autoFocus: boolean,
+  forceReadOnly: boolean,
+  documentSyncOrigin: EditorTransactionOrigin,
   doc: TextEditorDocument,
 ) {
   if (doc.value !== view.state.doc.toString()) {
@@ -610,13 +632,13 @@ function setEditorDocument(
         to: view.state.doc.length,
         insert: doc.value,
       },
-      annotations: editorTransactionOrigin.of('external-document-sync'),
+      annotations: editorTransactionOrigin.of(documentSyncOrigin),
     });
   }
 
   view.dispatch({
-    effects: [readOnly.reconfigure([EditorState.readOnly.of(doc.loading)])],
-    annotations: editorTransactionOrigin.of('external-document-sync'),
+    effects: [readOnly.reconfigure([EditorState.readOnly.of(doc.loading || forceReadOnly)])],
+    annotations: editorTransactionOrigin.of(documentSyncOrigin),
   });
 
   getLanguage(doc.filePath).then((languageSupport) => {

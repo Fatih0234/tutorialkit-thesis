@@ -1,4 +1,5 @@
 import type { CommandsSchema, Files } from '@tutorialkit/types';
+import type { ExerciseValidationExecution } from '../interactive-timeline/exercises/types.js';
 import type { IFSWatcher, WebContainer, WebContainerProcess } from '@webcontainer/api';
 import picomatch from 'picomatch/posix.js';
 import { newTask, type Task, type TaskCancelled } from '../tasks.js';
@@ -39,6 +40,12 @@ interface LoadFilesOptions {
    * A signal to abort this operation.
    */
   signal?: AbortSignal;
+}
+
+interface RunExerciseValidationOptions {
+  files: Record<string, string>;
+  runnerFile: string;
+  timeoutMs: number;
 }
 
 interface RunCommandsOptions {
@@ -217,6 +224,71 @@ export class TutorialRunner {
 
   async folderExists(folderPath: string) {
     return this._fsExists(folderPath, 'folder');
+  }
+
+  async runExerciseValidation({
+    files,
+    runnerFile,
+    timeoutMs,
+  }: RunExerciseValidationOptions): Promise<ExerciseValidationExecution> {
+    const webcontainer = await this._webcontainer;
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const root = `/.tutorialkit-exercise-runs/${runId}`;
+    let output = '';
+    let timedOut = false;
+
+    await webcontainer.fs.mkdir(root, { recursive: true });
+    await webcontainer.mount(toFileTree(files), { mountPoint: root });
+
+    let process: WebContainerProcess | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      const execution = (async () => {
+        const runnerSource = files[runnerFile] ?? files[`/${runnerFile.replace(/^\//, '')}`];
+        if (!runnerSource) {
+          throw new Error('Exercise validation runner source is missing.');
+        }
+        process = await webcontainer.spawn('node', ['--input-type=module', '--eval', runnerSource], {
+          cwd: root,
+          output: true,
+        });
+        const outputTask = process.output.pipeTo(
+          new WritableStream({
+            write(value) {
+              output += value;
+            },
+          }),
+        );
+        const exitCode = await process.exit;
+        await Promise.race([
+          outputTask.catch(() => undefined),
+          new Promise<void>((resolve) => setTimeout(resolve, 500)),
+        ]);
+        return exitCode;
+      })();
+      const timeout = new Promise<number>((resolve) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          process?.kill();
+          resolve(124);
+        }, timeoutMs);
+      });
+      const exitCode = await Promise.race([execution, timeout]);
+      void execution.catch(() => undefined);
+      return { exitCode, stdout: output, stderr: '', timedOut };
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (timedOut) {
+        process?.kill();
+      }
+      await Promise.race([
+        webcontainer.fs.rm(root, { recursive: true, force: true }).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
+      ]);
+    }
   }
 
   private async _fsExists(filepath: string, type: 'file' | 'folder') {
@@ -670,6 +742,10 @@ export class TutorialRunner {
 
     this._watcher = webcontainer.fs.watch('.', { recursive: true }, (eventType, filename) => {
       const filePath = `/${filename}`;
+
+      if (filePath.startsWith('/.tutorialkit-exercise-runs/')) {
+        return;
+      }
 
       // events we should ignore because we caused them in the TutorialRunner
       if (!this._ignoreFileEvents.decrement(filePath)) {

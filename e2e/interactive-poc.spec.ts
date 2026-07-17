@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -21,6 +21,68 @@ function getPocUrl(baseURL?: string) {
 
 function getPublishedRecordingFile(recordingId: string) {
   return new URL(`../.interactive-data/teacher-recordings/${recordingId}.json`, import.meta.url);
+}
+
+function seedPublishedExerciseVersion(
+  exerciseId: string,
+  version = 1,
+  starterSource = 'export const answer = 0;\n',
+) {
+  const now = new Date().toISOString();
+  const content = {
+    title: 'Set the answer to 42',
+    instructions: 'Change the exported answer in example.js to 42.',
+    explanation:
+      'The exported name is part of the module contract. Keep it named answer, then assign the numeric value 42.',
+    hints: ['Export the number 42 from example.js.'],
+    successFeedback: 'The answer is correct.',
+    failureFeedback: 'The answer is not 42 yet.',
+    starterFiles: { '/example.js': starterSource },
+    fileRoles: { '/example.js': 'editable', '/__exercise_tests__/exercise.test.mjs': 'private-validation' },
+    allowCreatePatterns: ['/**'],
+    privateValidationFiles: {
+      '/__exercise_tests__/exercise.test.mjs':
+        "let learnerModule;\nasync function loadLearnerModule() { learnerModule ??= import('../example.js'); return learnerModule; }\nexport const checks = [{ id: 'exports-answer', async run() { const module = await loadLearnerModule(); if (!Object.hasOwn(module, 'answer')) throw new Error('Expected a named export called answer.'); } }, { id: 'answer-42', async run() { const module = await loadLearnerModule(); if (module.answer !== 42) throw new Error('Expected answer to equal 42.'); } }];\n",
+    },
+    validation: {
+      protocol: 'tutorialkit-exercise-v1',
+      entrypoint: '/__exercise_tests__/exercise.test.mjs',
+      timeoutMs: 10000,
+      checks: [
+        { id: 'exports-answer', title: 'Exports a value named answer', failureFeedback: 'Keep the exported variable named answer.' },
+        { id: 'answer-42', title: 'The exported answer is 42', failureFeedback: 'Change answer to 42.' },
+      ],
+    },
+  };
+  const catalogDir = new URL('../.interactive-data/exercise-catalog/', import.meta.url);
+  const versionsDir = new URL('../.interactive-data/exercise-versions/', import.meta.url);
+  mkdirSync(catalogDir, { recursive: true });
+  mkdirSync(versionsDir, { recursive: true });
+  writeFileSync(
+    new URL(`${exerciseId}.json`, catalogDir),
+    JSON.stringify({
+      schemaVersion: 1,
+      exerciseId,
+      ownerUserId: DEV_TEACHER_USER_ID,
+      title: content.title,
+      activeVersion: version,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
+  writeFileSync(
+    new URL(`${exerciseId}-v${version}.json`, versionsDir),
+    JSON.stringify({
+      schemaVersion: 1,
+      exerciseId,
+      version,
+      ownerUserId: DEV_TEACHER_USER_ID,
+      content,
+      contentHash: `e2e-seeded-content-v${version}`,
+      createdAt: now,
+      publishedAt: now,
+    }),
+  );
 }
 
 async function seedIndexedDbMediaDraft(
@@ -120,7 +182,7 @@ async function seedIndexedDbMediaDraft(
       localStorage.setItem('interactive-poc.teacherRecording', JSON.stringify(recording));
 
       await new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('interactive-timeline-poc', 3);
+        const request = indexedDB.open('interactive-timeline-poc', 4);
 
         request.onupgradeneeded = () => {
           const db = request.result;
@@ -1256,6 +1318,255 @@ test.describe('interactive timeline POC', () => {
     expect(recording.events.some((event: any) => event.type === 'file.changed')).toBeTruthy();
   });
 
+  test('pauses recording only to choose a prepared exercise and cancels without changing the workspace', async ({ page }) => {
+    await signInAsTeacher(page);
+    await startTeacherRecording(page);
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    const teacherSource = await editor.textContent();
+
+    await page.getByRole('button', { name: /pause for exercise/i }).click();
+
+    await expect(page.getByRole('heading', { name: /choose a prepared exercise/i })).toBeVisible();
+    await expect(page.getByText(/no verified exercises are available for this lesson/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /capture draft/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /author complete exercise/i })).toHaveCount(0);
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+
+    await expect(page.getByLabel(/recording studio controls/i)).toBeVisible();
+    await expect(editor).toHaveText(teacherSource ?? '');
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /save draft/i }).click();
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    expect(recording.exercisePoints ?? []).toHaveLength(0);
+  });
+
+  test('publishes a prepared exercise as an immutable version pinned by the recording', async ({ page }) => {
+    await signInAsTeacher(page);
+    await page.getByRole('button', { name: /new prepared exercise/i }).click();
+
+    await page.getByLabel(/^title$/i).fill('Counter validation exercise');
+    await page.getByLabel(/learner instructions/i).fill('Complete the counter behavior.');
+    await page.getByLabel(/exercise explanation/i).fill(
+      'A counter keeps state and updates that state in response to an action.',
+    );
+    await expect(page.getByText(/private validation files are hidden/i)).toBeVisible();
+    await page.getByRole('button', { name: /private validation/i }).click();
+    const validationEditor = page.getByRole('textbox', { name: 'Editor' }).first();
+    await validationEditor.fill(
+      "import { readFile } from 'node:fs/promises';\nexport const checks = [{ id: 'exercise-complete', async run() { const source = await readFile(new URL('../example.js', import.meta.url), 'utf8'); if (!source.includes('EXERCISE_DONE')) throw new Error('Missing marker'); } }];\n",
+    );
+    await page.getByRole('button', { name: /starter workspace/i }).click();
+
+    await page.getByRole('button', { name: /test starter/i }).click();
+    await expect(page.getByText(/starter:\s*failed/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/reference:\s*not checked/i)).toBeVisible();
+    await page.getByRole('button', { name: /save exercise/i }).click();
+    await expect(page.getByText('Counter validation exercise', { exact: true })).toBeVisible();
+    await expect(page.getByText(/verification current/i)).toBeVisible();
+
+    await startTeacherRecording(page);
+    await page.getByRole('button', { name: /pause for exercise/i }).click();
+    await expect(page.getByRole('heading', { name: /choose a prepared exercise/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /capture draft/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /author complete exercise/i })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Counter validation exercise', exact: true }).click();
+    await expect(page.getByLabel(/recording studio controls/i)).toBeVisible();
+    await page.getByRole('button', { name: /stop recording/i }).click();
+    await page.getByRole('button', { name: /^publish$/i }).click();
+    await expect(page.getByText(/published status:\s*published/i)).toBeAttached({ timeout: 15000 });
+
+    const recording = await page.evaluate(() => JSON.parse(localStorage.getItem('interactive-poc.teacherRecording') || 'null'));
+    expect(recording.exercisePoints).toHaveLength(1);
+    expect(recording.exercisePoints[0].exerciseVersionAtPublication).toBe(1);
+
+    const versionsResponse = await page.request.get(
+      `/api/interactive/exercises/${recording.exercisePoints[0].exerciseId}/versions`,
+    );
+    expect(versionsResponse.ok()).toBe(true);
+    const versions = (await versionsResponse.json()).exerciseVersions;
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({
+      version: 1,
+      exerciseId: recording.exercisePoints[0].exerciseId,
+      content: { explanation: 'A counter keeps state and updates that state in response to an action.' },
+    });
+
+    await page.getByRole('button', { name: /^dashboard$/i }).click();
+    await page.getByRole('button', { name: /publish exercise update/i }).click();
+    await expect(page.getByText(/published exercise version 1/i)).toBeVisible();
+
+    await page.evaluate(async () => {
+      const request = indexedDB.open('interactive-timeline-poc', 4);
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const transaction = db.transaction(['exerciseDrafts', 'exerciseCatalog'], 'readwrite');
+      transaction.objectStore('exerciseDrafts').clear();
+      transaction.objectStore('exerciseCatalog').clear();
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      db.close();
+    });
+    await page.reload();
+    await signInAsTeacher(page);
+    await expect(page.getByText('Counter validation exercise', { exact: true })).toBeVisible();
+    await expect(page.getByText(/verification current/i)).toBeVisible();
+  });
+
+  test('learner is intercepted by an exercise, autosaves, checks, and resumes the lecture', async ({ page }) => {
+    const exerciseId = 'exercise-e2e-learner-flow';
+    const pointId = 'exercise-point-e2e-learner-flow';
+    const recording = {
+      ...createPublishedRecording(
+        'teacher-recording-exercise-learner-flow',
+        'console.log("teacher lecture resumed");\n',
+        1200,
+      ),
+      exercisePoints: [
+        {
+          schemaVersion: 1,
+          id: pointId,
+          exerciseId,
+          teacherTimestampMs: 300,
+          lastAppliedTeacherEventSeq: 1,
+          exerciseVersionAtPublication: 1,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    seedPublishedExerciseVersion(exerciseId);
+    await publishAndOpenRecordingAsLearner(page, recording);
+    const editor = page.getByRole('textbox', { name: 'Editor' }).first();
+    const exerciseMarker = page.getByRole('button', { name: /open exercise at 300 milliseconds/i });
+    await expect(exerciseMarker.locator('.i-ph-student-fill')).toHaveCSS('background-color', 'rgb(5, 150, 105)');
+    await page.getByRole('button', { name: /^play$/i }).click();
+
+    await expect(page.getByRole('dialog', { name: /set the answer to 42/i })).toBeVisible({ timeout: 10000 });
+    await expect(editor).toContainText('remote learner base');
+    await expect(editor).not.toContainText('answer = 0');
+    await expect(page.getByLabel(/exercise mode/i)).toHaveCount(0);
+    const attemptsBeforeStart = await page.evaluate(async () =>
+      (await (await fetch('/api/interactive/exercise-attempts')).json()).exerciseAttempts,
+    );
+    expect(attemptsBeforeStart).toHaveLength(0);
+    await expect(page.getByRole('button', { name: /exercise\.test\.mjs/i })).toHaveCount(0);
+
+    await page.getByRole('button', { name: /skip for now/i }).click();
+    await expect(page.getByLabel(/exercise mode/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /open exercise at 300 milliseconds/i })).toHaveAttribute(
+      'title',
+      /skipped/i,
+    );
+    await page.getByRole('button', { name: /^restart$/i }).click();
+    await expect(page.getByRole('dialog', { name: /set the answer to 42/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/saved work for this exercise/i)).toBeVisible();
+    await page.getByRole('button', { name: /resume exercise/i }).click();
+    await expect(page.getByLabel(/exercise mode/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/skipped attempt was restored/i)).toBeVisible();
+    await expect(page.getByLabel('Exercise Explanation')).toBeVisible();
+    await expect(page.getByLabel('Exercise Explanation')).toContainText('The exported name is part of the module contract.');
+    await expect(page.getByRole('button', { name: 'Terminal' })).toBeVisible();
+    const exerciseResources = page.getByRole('navigation', { name: 'Presentation resources' });
+    await expect(exerciseResources.getByRole('button')).toHaveCount(1);
+    const exercisePreviewButton = exerciseResources.getByRole('button');
+    await expect(exercisePreviewButton).toContainText('Website Preview');
+    await exercisePreviewButton.click();
+    await expect(page.getByLabel('Website preview presentation')).toHaveAttribute('data-presentation-mode', 'minimized');
+    await exercisePreviewButton.click();
+    await expect(page.getByLabel('Website preview presentation')).toHaveAttribute('data-presentation-mode', 'hidden');
+
+    await page.getByRole('button', { name: /check solution/i }).click();
+    await expect(page.getByText(/answer is not 42 yet/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByLabel(/test results/i)).toContainText(/PASS\s+Exports a value named answer/);
+    await expect(page.getByLabel(/test results/i)).toContainText(/FAIL\s+The exported answer is 42/);
+    await expect(page.getByLabel(/test results/i)).toContainText('1 of 2 checks passed');
+
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('export const answerr = 41;');
+    await page.getByRole('button', { name: /check solution/i }).click();
+    await expect(page.getByLabel(/test results/i)).toContainText(/FAIL\s+Exports a value named answer/, { timeout: 15000 });
+    await expect(page.getByLabel(/test results/i)).toContainText('Keep the exported variable named answer.');
+    await expect(page.getByLabel(/test results/i)).toContainText('0 of 2 checks passed');
+    await expect(page.getByLabel(/test results/i)).not.toContainText('Solution checks could not run');
+
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('export const answer = 42;');
+    await page.keyboard.press('ControlOrMeta+S');
+    await expect(page.getByLabel(/exercise checkpoints/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /check solution/i }).click();
+    await expect(page.getByText(/answer is correct/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/the exported answer is 42/i)).toBeVisible();
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type('\n// changed after passing');
+    await expect(page.getByText(/workspace has changed since the successful check/i)).toBeVisible();
+    await page.getByRole('button', { name: /check solution/i }).click();
+    await expect(page.getByText(/answer is correct/i)).toBeVisible({ timeout: 15000 });
+
+    seedPublishedExerciseVersion(exerciseId, 2, 'export const answer = 1;\n');
+    await page.getByRole('button', { name: /start over/i }).click();
+    await expect(editor).toContainText('answer = 1');
+    await expect(page.locator('[data-exercise-workspace-transition]')).toHaveCount(0);
+    const passedAttemptId = await page.getByLabel(/exercise attempt/i).locator('option', { hasText: 'passed' }).getAttribute('value');
+    await page.getByLabel(/exercise attempt/i).selectOption(passedAttemptId!);
+    await expect(page.locator('[data-exercise-workspace-transition]')).toHaveCount(0);
+    await expect(editor).toContainText('answer = 42');
+
+    await page.getByRole('button', { name: /continue lecture/i }).click();
+    await expect(page.getByLabel(/exercise mode/i)).toHaveCount(0);
+    await expect(editor).toContainText('teacher lecture resumed', { timeout: 10000 });
+    await expect(page.getByLabel('Exercise Explanation')).toHaveCount(0);
+    await expect(page.locator('aside[aria-label="Explanation"]')).toBeHidden();
+    await expect(page.getByRole('navigation', { name: 'Presentation resources' }).getByRole('button')).toHaveCount(4);
+    await expect(page.getByRole('button', { name: /open exercise at 300 milliseconds/i })).toHaveAttribute(
+      'title',
+      /passed/i,
+    );
+  });
+
+  test('uses an immediate covered exercise transition when reduced motion is requested', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const exerciseId = 'exercise-e2e-reduced-motion';
+    const pointId = 'exercise-point-e2e-reduced-motion';
+    const recording = {
+      ...createPublishedRecording(
+        'teacher-recording-exercise-reduced-motion',
+        'console.log("teacher restored after reduced motion");\n',
+        800,
+      ),
+      exercisePoints: [
+        {
+          schemaVersion: 1,
+          id: pointId,
+          exerciseId,
+          teacherTimestampMs: 250,
+          lastAppliedTeacherEventSeq: 1,
+          exerciseVersionAtPublication: 1,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    seedPublishedExerciseVersion(exerciseId);
+    await publishAndOpenRecordingAsLearner(page, recording);
+    await page.getByRole('button', { name: /^play$/i }).click();
+    await expect(page.getByRole('dialog', { name: /set the answer to 42/i })).toBeVisible();
+    await page.getByRole('button', { name: /start exercise/i }).click();
+    await expect(page.getByLabel(/exercise mode/i)).toBeVisible();
+    await expect(page.locator('[data-exercise-workspace-transition]')).toHaveCount(0);
+    await page.getByRole('button', { name: /skip for now/i }).click();
+    await expect(page.getByLabel(/exercise mode/i)).toHaveCount(0);
+    await expect(page.locator('[data-exercise-workspace-transition]')).toHaveCount(0);
+  });
+
   test('editor recording replays progressively and seeks deterministically', async ({ page }) => {
     await startTeacherRecording(page);
     await page.getByRole('button', { name: 'example.js' }).click();
@@ -1746,7 +2057,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/learner commit count:\s*2/i)).toBeAttached();
     await expect(page.getByRole('button', { name: /open my work at .*2 checkpoints$/i })).toBeVisible();
     await expect.poll(() => page.evaluate(async () => {
-      const request = indexedDB.open('interactive-timeline-poc', 3);
+      const request = indexedDB.open('interactive-timeline-poc', 4);
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -1759,7 +2070,7 @@ test.describe('interactive timeline POC', () => {
     })).toBe(2);
 
     const historyData = await page.evaluate(async () => {
-      const request = indexedDB.open('interactive-timeline-poc', 3);
+      const request = indexedDB.open('interactive-timeline-poc', 4);
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -1991,7 +2302,7 @@ test.describe('interactive timeline POC', () => {
 
     await page.evaluate(async () => {
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('interactive-timeline-poc', 3);
+        const request = indexedDB.open('interactive-timeline-poc', 4);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

@@ -5,6 +5,7 @@ export type InteractiveMediaRecorderStatus =
   | 'permission-needed'
   | 'ready'
   | 'recording'
+  | 'paused'
   | 'stopped'
   | 'unavailable'
   | 'error';
@@ -98,6 +99,8 @@ export class InteractiveMediaRecorder {
   private stream: MediaStream | undefined;
   private recordingId: string | undefined;
   private startedAtMs = 0;
+  private pausedAtMs = 0;
+  private totalPausedMs = 0;
   private statusValue: InteractiveMediaRecorderStatus = 'permission-needed';
   private errorValue: string | undefined;
 
@@ -167,6 +170,8 @@ export class InteractiveMediaRecorder {
 
     this.recordingId = recordingId;
     this.startedAtMs = startedAtMs;
+    this.pausedAtMs = 0;
+    this.totalPausedMs = 0;
     this.chunks = [];
 
     if (this.fake) {
@@ -193,14 +198,44 @@ export class InteractiveMediaRecorder {
     this.statusValue = 'recording';
   }
 
+  pause(nowMs = Date.now()): boolean {
+    if (this.statusValue !== 'recording') {
+      return false;
+    }
+
+    if (!this.fake && this.mediaRecorder?.state === 'recording') {
+      this.mediaRecorder.pause();
+    }
+
+    this.pausedAtMs = nowMs;
+    this.statusValue = 'paused';
+    return true;
+  }
+
+  resume(nowMs = Date.now()): boolean {
+    if (this.statusValue !== 'paused') {
+      return false;
+    }
+
+    this.totalPausedMs += Math.max(0, nowMs - this.pausedAtMs);
+    this.pausedAtMs = 0;
+
+    if (!this.fake && this.mediaRecorder?.state === 'paused') {
+      this.mediaRecorder.resume();
+    }
+
+    this.statusValue = 'recording';
+    return true;
+  }
+
   async stop(): Promise<RecordingMediaAsset | undefined> {
-    if (!this.kindValue || !this.recordingId || this.statusValue !== 'recording') {
+    if (!this.kindValue || !this.recordingId || !['recording', 'paused'].includes(this.statusValue)) {
       this.stopTracks();
       return undefined;
     }
 
     if (this.fake) {
-      const durationMs = Math.max(1000, Date.now() - this.startedAtMs);
+      const durationMs = Math.max(1000, this.getElapsedMs(Date.now()));
       const asset: RecordingMediaAsset = {
         id: createId('media-asset'),
         recordingId: this.recordingId,
@@ -235,12 +270,12 @@ export class InteractiveMediaRecorder {
     }
 
     await stopped;
+    const durationMs = Math.max(0, this.getElapsedMs(Date.now()));
     this.stopTracks();
     this.statusValue = 'stopped';
 
     const fallbackMimeType = this.kindValue === 'audio' ? 'audio/webm' : 'video/webm';
     const mimeType = recorder.mimeType || this.chunks[0]?.type || fallbackMimeType;
-    const durationMs = Math.max(0, Date.now() - this.startedAtMs);
 
     return {
       id: createId('media-asset'),
@@ -264,6 +299,13 @@ export class InteractiveMediaRecorder {
 
     this.stopTracks();
     this.statusValue = 'idle';
+    this.pausedAtMs = 0;
+    this.totalPausedMs = 0;
+  }
+
+  private getElapsedMs(nowMs: number): number {
+    const effectiveNow = this.statusValue === 'paused' ? this.pausedAtMs : nowMs;
+    return Math.max(0, effectiveNow - this.startedAtMs - this.totalPausedMs);
   }
 
   private stopTracks(): void {
