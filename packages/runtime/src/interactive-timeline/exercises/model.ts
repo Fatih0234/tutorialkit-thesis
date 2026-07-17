@@ -16,7 +16,7 @@ import {
 const SAFE_EXERCISE_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/;
 const SAFE_CHECK_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/;
 const DEFAULT_VALIDATION_TIMEOUT_MS = 10_000;
-const STATIC_PARENT_IMPORT = /^\s*import\s+(?:[^'"\n]+\s+from\s+)?['"]\.\.\//m;
+const STATIC_RELATIVE_IMPORT = /^\s*import\s+(?:[^'"\n]+\s+from\s+)?['"](\.[^'"]+)['"]/gm;
 
 export function createExerciseId(prefix = 'exercise'): string {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -138,7 +138,7 @@ export function getExerciseCompleteness(content: ExerciseContent): ExerciseCompl
     if (validationEntrypointSource.includes('Configure this validation check.')) {
       reasons.push('Replace the placeholder validation check with an exercise-specific check.');
     }
-    if (STATIC_PARENT_IMPORT.test(validationEntrypointSource)) {
+    if (hasStaticLearnerImport(normalized.privateValidationFiles)) {
       reasons.push(
         'Import learner files dynamically inside check.run() so invalid learner exports are reported as failed checks.',
       );
@@ -293,6 +293,51 @@ export function toLearnerExerciseContent(version: ExerciseVersion): LearnerExerc
     allowCreatePatterns: content.allowCreatePatterns,
     checks: content.validation.checks,
   };
+}
+
+function hasStaticLearnerImport(privateFiles: Record<string, string>): boolean {
+  const privatePaths = new Set(Object.keys(privateFiles).map(normalizePath));
+
+  for (const [importer, source] of Object.entries(privateFiles)) {
+    STATIC_RELATIVE_IMPORT.lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = STATIC_RELATIVE_IMPORT.exec(source))) {
+      const resolved = resolveRelativeModulePath(importer, match[1]!);
+      const privateCandidates = [
+        resolved,
+        `${resolved}.js`,
+        `${resolved}.mjs`,
+        `${resolved}.cjs`,
+        `${resolved}/index.js`,
+        `${resolved}/index.mjs`,
+        `${resolved}/index.cjs`,
+      ];
+
+      if (!privateCandidates.some((candidate) => privatePaths.has(candidate))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function resolveRelativeModulePath(importer: string, specifier: string): string {
+  const segments = normalizePath(importer).split('/').slice(0, -1);
+
+  for (const segment of specifier.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+
+  return `/${segments.filter(Boolean).join('/')}`;
 }
 
 function normalizeCreatePattern(pattern: string): string {

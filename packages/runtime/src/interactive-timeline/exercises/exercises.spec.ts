@@ -59,6 +59,37 @@ describe('exercise model', () => {
     expect(getExercisePublishability(draft)).toMatchObject({ complete: false });
   });
 
+  it('reports actionable publication blockers', () => {
+    const content = completeContent();
+    content.validation.checks.push({ id: 'increments', title: 'Duplicate check' });
+    let draft = createExerciseDraft({ ownerUserId: 'teacher', content });
+    expect(getExercisePublishability(draft).reasons).toContain('Validation check id is duplicated: increments.');
+
+    content.validation.checks = content.validation.checks.slice(0, 1);
+    content.referenceSolutionFiles = { ...content.starterFiles };
+    draft = createExerciseDraft({ ownerUserId: 'teacher', content });
+    const contentHash = getExerciseContentHash(content);
+    draft.verification.starter = {
+      contentHash,
+      checkedAt: new Date(0).toISOString(),
+      result: { outcome: 'passed', checks: [{ id: 'increments', passed: true }] },
+    };
+    draft.verification.reference = {
+      contentHash,
+      checkedAt: new Date(0).toISOString(),
+      result: { outcome: 'failed', checks: [{ id: 'increments', passed: false }] },
+    };
+    expect(getExercisePublishability(draft).reasons).toEqual(
+      expect.arrayContaining([
+        'Starter workspace must not pass every automated check.',
+        'Reference solution must pass every automated check.',
+      ]),
+    );
+
+    draft.verification.starter.result = { outcome: 'broken', checks: [] };
+    expect(getExercisePublishability(draft).reasons).toContain('Starter validation is broken.');
+  });
+
   it('keeps legacy exercise content without an explanation readable', () => {
     const content = completeContent();
     delete content.explanation;
@@ -114,8 +145,16 @@ describe('exercise model', () => {
     );
 
     content.privateValidationFiles[content.validation.entrypoint] =
-      "export const checks = [{ id: 'increments', async run() { const module = await import('../src/counter.js'); module.increment(1); } }];";
+      "import { loadCounter } from './helpers/load-counter.mjs';\nexport const checks = [{ id: 'increments', async run() { const module = await loadCounter(); module.increment(1); } }];";
+    content.privateValidationFiles['/__exercise_tests__/helpers/load-counter.mjs'] =
+      "export const loadCounter = () => import('../../src/counter.js');";
     expect(getExercisePublishability(createExerciseDraft({ ownerUserId: 'teacher', content })).reasons).not.toContain(
+      'Import learner files dynamically inside check.run() so invalid learner exports are reported as failed checks.',
+    );
+
+    content.privateValidationFiles['/__exercise_tests__/helpers/load-counter.mjs'] =
+      "import { increment } from '../../src/counter.js';\nexport const loadCounter = async () => ({ increment });";
+    expect(getExercisePublishability(createExerciseDraft({ ownerUserId: 'teacher', content })).reasons).toContain(
       'Import learner files dynamically inside check.run() so invalid learner exports are reported as failed checks.',
     );
   });
