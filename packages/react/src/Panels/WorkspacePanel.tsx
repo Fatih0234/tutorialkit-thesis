@@ -631,12 +631,18 @@ function EditorSection({
       onPreviewCurrentDraft={previewCurrentDraft}
       onPreviewSelectedDraft={previewSelectedDraft}
       onPreviewSelectedPublished={previewSelectedPublished}
-      exerciseDrafts={exerciseAuthoring.drafts.map((exercise) => ({
-        exerciseId: exercise.exerciseId,
-        title: exercise.content.title,
-        complete: getExerciseCompleteness(exercise.content).complete,
-        publishable: getExercisePublishability(exercise).complete,
-      }))}
+      exerciseDrafts={exerciseAuthoring.drafts.map((exercise) => {
+        const completeness = getExerciseCompleteness(exercise.content);
+        const publishability = getExercisePublishability(exercise);
+
+        return {
+          exerciseId: exercise.exerciseId,
+          title: exercise.content.title,
+          complete: completeness.complete,
+          publishable: publishability.complete,
+          publicationReasons: publishability.reasons,
+        };
+      })}
       exerciseAuthoringStatus={exerciseAuthoring.status}
       onCreatePreparedExercise={() => openPreparedExercise('new')}
       onOpenPreparedExercise={openPreparedExercise}

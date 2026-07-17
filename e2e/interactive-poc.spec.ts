@@ -1347,6 +1347,9 @@ test.describe('interactive timeline POC', () => {
 
     await page.getByLabel(/^title$/i).fill('Counter validation exercise');
     await page.getByLabel(/learner instructions/i).fill('Complete the counter behavior.');
+    await page.getByLabel(/exercise explanation/i).fill(
+      'A counter keeps state and updates that state in response to an action.',
+    );
     await expect(page.getByText(/private validation files are hidden/i)).toBeVisible();
     await page.getByRole('button', { name: /private validation/i }).click();
     const validationEditor = page.getByRole('textbox', { name: 'Editor' }).first();
@@ -1360,7 +1363,7 @@ test.describe('interactive timeline POC', () => {
     await expect(page.getByText(/reference:\s*not checked/i)).toBeVisible();
     await page.getByRole('button', { name: /save exercise/i }).click();
     await expect(page.getByText('Counter validation exercise', { exact: true })).toBeVisible();
-    await expect(page.getByText(/verified and ready to publish/i)).toBeVisible();
+    await expect(page.getByText(/verification current/i)).toBeVisible();
 
     await startTeacherRecording(page);
     await page.getByRole('button', { name: /pause for exercise/i }).click();
@@ -1383,7 +1386,11 @@ test.describe('interactive timeline POC', () => {
     expect(versionsResponse.ok()).toBe(true);
     const versions = (await versionsResponse.json()).exerciseVersions;
     expect(versions).toHaveLength(1);
-    expect(versions[0]).toMatchObject({ version: 1, exerciseId: recording.exercisePoints[0].exerciseId });
+    expect(versions[0]).toMatchObject({
+      version: 1,
+      exerciseId: recording.exercisePoints[0].exerciseId,
+      content: { explanation: 'A counter keeps state and updates that state in response to an action.' },
+    });
 
     await page.getByRole('button', { name: /^dashboard$/i }).click();
     await page.getByRole('button', { name: /publish exercise update/i }).click();
@@ -1407,7 +1414,7 @@ test.describe('interactive timeline POC', () => {
     await page.reload();
     await signInAsTeacher(page);
     await expect(page.getByText('Counter validation exercise', { exact: true })).toBeVisible();
-    await expect(page.getByText(/verified and ready to publish/i)).toBeVisible();
+    await expect(page.getByText(/verification current/i)).toBeVisible();
   });
 
   test('learner is intercepted by an exercise, autosaves, checks, and resumes the lecture', async ({ page }) => {

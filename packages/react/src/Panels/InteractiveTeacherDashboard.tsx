@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { InteractiveButton, InteractiveCard, interactiveSelectClassName } from './InteractivePocUi.js';
+import {
+  InteractiveButton,
+  InteractiveCard,
+  InteractiveStatusBadge,
+  interactiveSelectClassName,
+} from './InteractivePocUi.js';
 import { InteractiveRecordingLibrary } from './InteractiveRecordingLibrary.js';
 import type { InteractivePocControlsModel } from './useInteractivePoc.js';
 
@@ -17,7 +22,13 @@ interface InteractiveTeacherDashboardProps extends InteractivePocControlsModel {
   onStartConfiguredRecording: () => void;
   onPreviewSelectedDraft: (recordingId: string) => void;
   onPreviewSelectedPublished: (recordingId: string) => void;
-  exerciseDrafts: Array<{ exerciseId: string; title: string; complete: boolean; publishable: boolean }>;
+  exerciseDrafts: Array<{
+    exerciseId: string;
+    title: string;
+    complete: boolean;
+    publishable: boolean;
+    publicationReasons: string[];
+  }>;
   exerciseAuthoringStatus: string;
   onCreatePreparedExercise: () => void;
   onOpenPreparedExercise: (exerciseId: string) => void;
@@ -164,10 +175,27 @@ export function InteractiveTeacherDashboard(props: InteractiveTeacherDashboardPr
                   className="text-left hover:text-tk-text-primary"
                 >
                   <strong className="block text-sm text-tk-text-primary">{exercise.title || 'Untitled exercise'}</strong>
-                  <span className="text-xs text-tk-text-secondary">
-                    {exercise.publishable ? 'Verified and ready to publish' : exercise.complete ? 'Content complete; verification required' : 'Draft needs work'}
-                  </span>
                 </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <InteractiveStatusBadge
+                    tone={exercise.publishable ? 'positive' : exercise.complete ? 'warning' : 'neutral'}
+                    icon={exercise.publishable ? 'i-ph-check-circle' : exercise.complete ? 'i-ph-warning-circle' : 'i-ph-pencil'}
+                  >
+                    {exercise.publishable
+                      ? 'Verification current'
+                      : exercise.complete
+                        ? 'Verification required or outdated'
+                        : 'Draft needs work'}
+                  </InteractiveStatusBadge>
+                </div>
+                {!exercise.publishable && exercise.publicationReasons.length ? (
+                  <details className="text-xs text-tk-text-secondary">
+                    <summary className="cursor-pointer font-500 text-tk-text-primary">Why this exercise cannot be published</summary>
+                    <ul className="mb-0 mt-1 grid gap-1 pl-5">
+                      {exercise.publicationReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  </details>
+                ) : null}
                 {exercise.publishable ? (
                   <InteractiveButton
                     icon="i-ph-upload-simple"

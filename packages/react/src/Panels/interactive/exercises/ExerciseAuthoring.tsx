@@ -61,6 +61,7 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
   }
 
   const selectedRole = selectedFile ? draft.content.fileRoles[selectedFile] : undefined;
+  const publishability = authoring.publishability();
 
   return (
     <section aria-label="Exercise authoring" className="shrink-0 border-b border-amber-500/40 bg-tk-background-primary p-3">
@@ -68,6 +69,12 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-sm text-tk-text-primary">Exercise Authoring</strong>
           <InteractiveStatusBadge tone="warning">Prepared exercise</InteractiveStatusBadge>
+          <InteractiveStatusBadge
+            tone={publishability.complete ? 'positive' : 'warning'}
+            icon={publishability.complete ? 'i-ph-check-circle' : 'i-ph-warning-circle'}
+          >
+            {publishability.complete ? 'Verification current' : 'Verification required or outdated'}
+          </InteractiveStatusBadge>
           <InteractiveStatusBadge>{authoring.status}</InteractiveStatusBadge>
           <div className="ml-auto flex flex-wrap gap-2">
             <InteractiveButton variant="ghost" onClick={authoring.previewAsStudent} icon="i-ph-eye">
@@ -81,6 +88,11 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
           </div>
         </div>
 
+        <div>
+          <h3 className="m-0 text-xs font-600 uppercase tracking-wide text-tk-text-secondary">
+            Exercise details and learner guidance
+          </h3>
+        </div>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <label className="grid gap-1 text-xs text-tk-text-secondary">
             Title
@@ -99,7 +111,7 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
             />
           </label>
           <label className="grid gap-1 text-xs text-tk-text-secondary md:col-span-2">
-            Exercise explanation
+            Exercise explanation (optional)
             <textarea
               value={draft.content.explanation ?? ''}
               onChange={(event) => authoring.updateContent({ explanation: event.currentTarget.value })}
@@ -118,6 +130,11 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
           </label>
         </div>
 
+        <div>
+          <h3 className="m-0 text-xs font-600 uppercase tracking-wide text-tk-text-secondary">
+            Hints and feedback
+          </h3>
+        </div>
         <div className="grid gap-2 md:grid-cols-3">
           <label className="grid gap-1 text-xs text-tk-text-secondary">
             Hints — one per line
@@ -209,6 +226,11 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
           </InteractiveButton>
         </fieldset>
 
+        <div>
+          <h3 className="m-0 text-xs font-600 uppercase tracking-wide text-tk-text-secondary">
+            Workspace and verification
+          </h3>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           {(['starter', 'reference', 'validation'] as const).map((value) => (
             <InteractiveButton
@@ -249,6 +271,14 @@ export function ExerciseAuthoring({ authoring, selectedFile, onDone, onCancel }:
           <span>Private validation files are hidden from the normal learner workspace.</span>
           <span>Import learner modules dynamically inside check.run() so learner syntax and export mistakes remain normal failed checks.</span>
         </div>
+        {!publishability.complete ? (
+          <details className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-tk-text-secondary">
+            <summary className="cursor-pointer font-600 text-tk-text-primary">Publication requirements</summary>
+            <ul className="mb-0 mt-2 grid gap-1 pl-5">
+              {publishability.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+          </details>
+        ) : null}
         {authoring.starterValidation?.diagnostics || authoring.referenceValidation?.diagnostics ? (
           <details className="rounded border border-tk-border-primary bg-tk-background-secondary p-2 text-xs">
             <summary className="cursor-pointer font-600 text-tk-text-primary">Validation diagnostics</summary>

@@ -272,7 +272,7 @@ Teacher actions are:
 - **Test Reference** when a reference exists;
 - visible validation freshness and configuration errors.
 
-Any relevant content change marks prior verification stale. A complete exercise cannot be published until the current starter verification executes successfully without passing all checks and the current reference verification passes when applicable.
+Any relevant content change marks prior verification stale. A complete exercise cannot be published until the current starter verification executes successfully without passing all checks and the current reference verification passes when applicable. Teacher Studio labels verification as current or outdated and exposes an accessible list of every blocking publication requirement.
 
 **Phase outcome:** teachers can prove that an exercise is runnable, initially incomplete, and solvable before publication.
 

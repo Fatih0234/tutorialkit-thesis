@@ -545,5 +545,5 @@ export function useExerciseAuthoring(options: {
 }
 
 function defaultValidationSource() {
-  return `// Import learner code with a relative path, then replace this example check.\nexport const checks = [\n  {\n    id: 'exercise-complete',\n    async run() {\n      throw new Error('Configure this validation check.');\n    },\n  },\n];\n`;
+  return `// Dynamically import learner modules inside check.run(), then replace this example check.\nexport const checks = [\n  {\n    id: 'exercise-complete',\n    async run() {\n      throw new Error('Configure this validation check.');\n    },\n  },\n];\n`;
 }
