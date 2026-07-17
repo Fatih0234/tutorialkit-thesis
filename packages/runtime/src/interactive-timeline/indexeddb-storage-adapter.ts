@@ -1,4 +1,12 @@
-import { upgradeLearnerHistoryStores } from './learner-history/indexeddb-storage.js';
+import {
+  LEARNER_DELTAS_STORE,
+  MEDIA_ASSETS_STORE,
+  TEACHER_RECORDINGS_STORE,
+  openInteractiveTimelineDatabase,
+  requestToPromise,
+  waitForIndexedDBTransaction,
+  type InteractiveTimelineStoreName,
+} from './indexeddb-schema.js';
 import type { RecordingMediaAsset } from './media.js';
 import {
   LocalStorageInteractiveTimelineStorage,
@@ -10,33 +18,17 @@ import {
 import { saveLearnerDeltas } from './storage.js';
 import type { LearnerDelta, TeacherRecording } from './types.js';
 
-const DB_NAME = 'interactive-timeline-poc';
-const DB_VERSION = 3;
-const TEACHER_RECORDINGS_STORE = 'teacherRecordings';
-const LEARNER_DELTAS_STORE = 'learnerDeltas';
-const MEDIA_ASSETS_STORE = 'mediaAssets';
 const LOCAL_STORAGE_MIGRATION_KEY = 'interactive-poc.indexeddbMigrationComplete';
 
-type StoreName = typeof TEACHER_RECORDINGS_STORE | typeof LEARNER_DELTAS_STORE | typeof MEDIA_ASSETS_STORE;
+type StoreName = Extract<
+  InteractiveTimelineStoreName,
+  typeof TEACHER_RECORDINGS_STORE | typeof LEARNER_DELTAS_STORE | typeof MEDIA_ASSETS_STORE
+>;
 
 function canUseIndexedDB(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
 }
 
-function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-  });
-}
-
-function waitForTransaction(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
-  });
-}
 
 function sortTeacherRecordingsNewestFirst(recordings: TeacherRecording[]): TeacherRecording[] {
   return [...recordings].sort((a, b) => {
@@ -72,7 +64,6 @@ function sortLearnerDeltasOldestFirst(deltas: LearnerDelta[]): LearnerDelta[] {
 }
 
 export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineStorage {
-  private dbPromise: Promise<IDBDatabase | undefined> | undefined;
   private migrationPromise: Promise<void> | undefined;
   private readonly fallbackStorage: InteractiveTimelineStorage;
 
@@ -286,52 +277,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
   }
 
   private async openDatabase(): Promise<IDBDatabase | undefined> {
-    if (!canUseIndexedDB()) {
-      return undefined;
-    }
-
-    this.dbPromise ??= new Promise((resolve) => {
-      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onerror = () => resolve(undefined);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-
-        if (!db.objectStoreNames.contains(TEACHER_RECORDINGS_STORE)) {
-          const teacherRecordings = db.createObjectStore(TEACHER_RECORDINGS_STORE, { keyPath: 'id' });
-
-          teacherRecordings.createIndex('lessonId', 'lessonId', { unique: false });
-          teacherRecordings.createIndex('startedAt', 'startedAt', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(LEARNER_DELTAS_STORE)) {
-          const learnerDeltas = db.createObjectStore(LEARNER_DELTAS_STORE, { keyPath: 'id' });
-
-          learnerDeltas.createIndex('lessonId', 'lessonId', { unique: false });
-          learnerDeltas.createIndex('teacherRecordingId', 'teacherRecordingId', { unique: false });
-          learnerDeltas.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(MEDIA_ASSETS_STORE)) {
-          const mediaAssets = db.createObjectStore(MEDIA_ASSETS_STORE, { keyPath: 'id' });
-
-          mediaAssets.createIndex('recordingId', 'recordingId', { unique: false });
-          mediaAssets.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-
-        upgradeLearnerHistoryStores(db);
-      };
-
-      request.onsuccess = () => {
-        const db = request.result;
-
-        db.onversionchange = () => db.close();
-        resolve(db);
-      };
-    });
-
-    return this.dbPromise;
+    return openInteractiveTimelineDatabase();
   }
 
   private async getStore(storeName: StoreName, mode: IDBTransactionMode): Promise<IDBObjectStore | undefined> {
@@ -383,7 +329,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const transaction = db.transaction(TEACHER_RECORDINGS_STORE, 'readwrite');
 
       transaction.objectStore(TEACHER_RECORDINGS_STORE).put(recording);
-      await waitForTransaction(transaction);
+      await waitForIndexedDBTransaction(transaction);
 
       return true;
     } catch {
@@ -402,7 +348,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const transaction = db.transaction(TEACHER_RECORDINGS_STORE, 'readwrite');
 
       transaction.objectStore(TEACHER_RECORDINGS_STORE).delete(id);
-      await waitForTransaction(transaction);
+      await waitForIndexedDBTransaction(transaction);
     } catch {
       // deleting drafts is best-effort in this browser-only POC
     }
@@ -447,7 +393,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const transaction = db.transaction(LEARNER_DELTAS_STORE, 'readwrite');
 
       transaction.objectStore(LEARNER_DELTAS_STORE).put(delta);
-      await waitForTransaction(transaction);
+      await waitForIndexedDBTransaction(transaction);
 
       return true;
     } catch {
@@ -494,7 +440,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const transaction = db.transaction(MEDIA_ASSETS_STORE, 'readwrite');
 
       transaction.objectStore(MEDIA_ASSETS_STORE).put(asset);
-      await waitForTransaction(transaction);
+      await waitForIndexedDBTransaction(transaction);
 
       return true;
     } catch {
@@ -513,7 +459,7 @@ export class IndexedDBInteractiveTimelineStorage implements InteractiveTimelineS
       const transaction = db.transaction(MEDIA_ASSETS_STORE, 'readwrite');
 
       transaction.objectStore(MEDIA_ASSETS_STORE).delete(id);
-      await waitForTransaction(transaction);
+      await waitForIndexedDBTransaction(transaction);
     } catch {
       // deleting media is best-effort in this browser-only POC
     }

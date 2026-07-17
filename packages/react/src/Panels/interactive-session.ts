@@ -2,6 +2,7 @@ export type InteractiveExperienceScreen =
   | 'teacher-dashboard'
   | 'teacher-materials'
   | 'teacher-recording'
+  | 'teacher-exercise-authoring'
   | 'teacher-review'
   | 'learner-library'
   | 'learner-player';
@@ -16,6 +17,7 @@ export type InteractiveExperienceAction =
   | { type: 'SHOW_TEACHER_DASHBOARD' }
   | { type: 'PREPARE_MATERIALS' }
   | { type: 'START_RECORDING' }
+  | { type: 'AUTHOR_EXERCISE' }
   | { type: 'REVIEW_RECORDING'; recordingId?: string }
   | { type: 'SHOW_LEARNER_LIBRARY' }
   | { type: 'SELECT_LEARNER_RECORDING'; recordingId: string }
@@ -39,6 +41,9 @@ export function interactiveExperienceReducer(
     }
     case 'START_RECORDING': {
       return { ...state, screen: 'teacher-recording' };
+    }
+    case 'AUTHOR_EXERCISE': {
+      return { ...state, screen: 'teacher-exercise-authoring' };
     }
     case 'REVIEW_RECORDING': {
       return {
@@ -70,5 +75,11 @@ export function interactiveExperienceReducer(
 }
 
 export function isImmersiveInteractiveScreen(screen: InteractiveExperienceScreen) {
-  return screen === 'teacher-materials' || screen === 'teacher-recording' || screen === 'teacher-review' || screen === 'learner-player';
+  return (
+    screen === 'teacher-materials' ||
+    screen === 'teacher-recording' ||
+    screen === 'teacher-exercise-authoring' ||
+    screen === 'teacher-review' ||
+    screen === 'learner-player'
+  );
 }

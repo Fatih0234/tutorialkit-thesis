@@ -8,6 +8,12 @@ The POC implements only the interactivity layer:
 
 - teacher editor/file actions are recorded into a structured timeline;
 - teachers can optionally attach microphone narration or webcam media to the same timeline;
+- teachers prepare exercises in Teacher Studio, then pause timeline and media capture only to select and attach a verified current-lesson exercise;
+- teachers can prepare local exercise drafts with starter, reference, read-only, and UI-private validation files;
+- WebContainer exercise validation distinguishes passed, failed, and broken checks, requires learner modules to be dynamically imported inside individual checks, and gates publication readiness;
+- lecture publication creates immutable exercise versions and learner-safe delivery records;
+- learner playback stops at exact exercise timestamp-and-sequence boundaries, keeps the frozen teacher workspace visible behind an explicit exercise-checkpoint interstitial, and uses covered workspace swaps when entering or leaving Exercise Mode;
+- exercise attempts reuse local-first branches, autosaved working trees, checkpoints, forks, and remote synchronization; an automatic crossing does not create an attempt until the learner starts, resumes, or skips;
 - teachers can see local drafts, then save, load, discard, delete, and preview local recording drafts;
 - signed-in teacher/both users can publish recordings and media to local backend/dev storage;
 - teacher recordings and media carry teacher owner fields;
@@ -28,9 +34,15 @@ Important invariants:
 - **Paths are normalized.** Internal paths use leading-slash form, for example `/example.js`.
 - **Programmatic playback/restore is guarded.** Playback-applied file changes should not be recorded as new teacher or learner edits.
 - **Media is an attachment, not a replacement.** Milestone H still records narration/camera media alongside the structured timeline; it does not replace TutorialKit replay with an opaque screen recording.
+- **Exercise authoring is outside active recording.** Teacher Studio owns creation and validation. The paused recording surface is a selection-only chooser; exercise points are recording metadata anchored by timestamp and event sequence.
+- **Exercise versions are separate and immutable.** Mutable local drafts become immutable versions; reference solutions and private validation files are never part of the normal learner workspace.
+- **Exercise transitions do not expose partial workspaces.** Interception leaves teacher files intact. Starter, attempt, and restored teacher files are installed only while an opaque transition cover is active, using explicit exercise synchronization origins.
+- **Learner mistakes are failed checks, not broken infrastructure.** Private validation dynamically imports learner modules inside `check.run()`, so missing exports and syntax/runtime errors are captured by the check runner. Learners see a terminal-style but sanitized result panel; raw private diagnostics remain teacher-only.
+- **Exercise resources replace lecture presentation without mutating it.** Exercise explanations are learner-safe immutable version content shown in the workspace Explanation panel. Terminal remains live, while the presentation toolbar and layer derive a temporary Preview-only resource layout. Leaving Exercise Mode restores the untouched lesson explanation and teacher presentation layout.
 - **One playback clock source.** When media is loaded, `HTMLMediaElement.currentTime * 1000` drives timeline replay. When no media is loaded, `TimelinePlaybackClock` remains the fallback.
 - **Full-file learner events first.** The POC does not compute text patches, merge hunks, or run automatic merges.
-- **Local drafts stay local.** IndexedDB remains the local draft/offline adapter.
+- **Local recording drafts stay local.** IndexedDB remains the local recording-draft/offline adapter.
+- **Exercise drafts are local-first.** IndexedDB remains authoritative and available offline; teacher-owned exercise drafts synchronize remotely on a best-effort basis so the library can be restored in a new browser profile.
 - **Published recordings use remote storage.** Published/demo data is written through `RemoteInteractiveTimelineStorage` to `/api/interactive/*` endpoints backed by `.interactive-data/`. Publishing/import/fixtures require a demo teacher/both session; whole-publication deletion additionally requires matching teacher ownership.
 - **Export packages are thesis-demo artifacts.** The package format is JSON-first for thesis portability. It is not a stable public API and does not replace the structured replay or storage adapter contracts.
 
@@ -538,11 +550,13 @@ The default database is:
 interactive-timeline-poc
 ```
 
-Current object stores:
+Current object stores are created through one shared versioned schema upgrade:
 
 - `teacherRecordings`, keyed by `TeacherRecording.id`;
 - `learnerDeltas`, keyed by `LearnerDelta.id`;
-- `mediaAssets`, keyed by `RecordingMediaAsset.id`, including Blob data and indexed by `recordingId`.
+- `mediaAssets`, keyed by `RecordingMediaAsset.id`, including Blob data and indexed by `recordingId`;
+- learner branch, event, commit, and working-tree stores;
+- `exerciseDrafts`, `exerciseVersions`, `exerciseCatalog`, and `exerciseAttempts`.
 
 The IndexedDB adapter is browser-only guarded and falls back to the localStorage adapter when IndexedDB is unavailable. A migration marker allows at most one import of an unpublished legacy localStorage recording when IndexedDB has no drafts; published playback mirrors are never migrated as drafts. Deleting a matching draft clears its mirror. Media persistence requires IndexedDB; when IndexedDB is unavailable, recording can continue as timeline-only and media save/load reports an error/unavailable state instead of crashing.
 
@@ -582,6 +596,16 @@ The dev backend is intentionally small and file-based. It is not a production da
 The backend/dev server exposes:
 
 ```text
+GET  /api/interactive/exercise-drafts
+GET/PUT/DELETE /api/interactive/exercise-drafts/:id
+GET  /api/interactive/exercises
+GET/PUT /api/interactive/exercises/:id
+GET  /api/interactive/exercises/:id/versions
+GET/PUT /api/interactive/exercises/:id/versions/:version
+GET/PUT /api/interactive/exercise-attempts[/:id]
+GET  /api/interactive/exercise-delivery/:recordingId/:pointId
+GET  /api/interactive/exercise-delivery/:recordingId/:pointId/versions/:version
+GET  /api/interactive/exercise-delivery/:recordingId/:pointId/versions/:version/validation
 POST /api/interactive/teacher-recordings
 GET  /api/interactive/teacher-recordings
 GET  /api/interactive/teacher-recordings/:id
@@ -883,6 +907,9 @@ Known limitations are intentional for the POC:
 - no screen recording;
 - no transcript generation;
 - no analytics;
+- exercise behavior through immutable publication, learner Exercise Mode, attempts, checking, revisits, and active-version resolution is implemented; export/import, deterministic exercise demo data, and final compatibility integration remain in Phase 9;
+- UI-private exercise tests are hidden from normal learner surfaces but are not secure against deliberate browser/WebContainer inspection;
+- Pyodide exercise validation is not included in the first exercise version;
 - teacher-created files are replayed, but file remove/rename capture is not exposed by the current integrated file-tree UI;
 - deterministic timeline seeking is exposed, but production speed, drift correction, captions, and advanced media controls are not;
 - editor selection is stored opaquely and not restored as a first-class feature;

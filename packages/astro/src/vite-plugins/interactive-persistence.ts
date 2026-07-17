@@ -21,6 +21,15 @@ import {
   materializeTeacherStateAtPosition,
   materializeLearnerBranch,
   simpleHashFiles,
+  getExerciseCompleteness,
+  getExerciseContentHash,
+  normalizeExerciseContent,
+  toLearnerExerciseContent,
+  type ExerciseAttempt,
+  type ExerciseCatalogEntry,
+  type ExercisePoint,
+  type ExerciseDraft,
+  type ExerciseVersion,
   type LearnerBranchAggregate,
   type InteractiveSession,
   type InteractiveUser,
@@ -120,6 +129,7 @@ interface TeacherRecording {
     deckStates?: Record<string, { slideIndex: number; revealedStep: number }>;
     frontmostBySide?: { left?: string; right?: string };
   };
+  exercisePoints?: ExercisePoint[];
   mediaAssets?: RecordingMediaAssetMetadata[];
   createdByUserId?: string;
   ownerUserId?: string;
@@ -194,6 +204,10 @@ export function getDataPaths() {
     teacherRecordings: path.join(root, 'teacher-recordings'),
     learnerDeltas: path.join(root, 'learner-deltas'),
     learnerBranches: path.join(root, 'learner-branches'),
+    exerciseDrafts: path.join(root, 'exercise-drafts'),
+    exerciseVersions: path.join(root, 'exercise-versions'),
+    exerciseCatalog: path.join(root, 'exercise-catalog'),
+    exerciseAttempts: path.join(root, 'exercise-attempts'),
     mediaAssets: path.join(root, 'media-assets'),
     sessions: path.join(root, 'sessions'),
   };
@@ -525,6 +539,42 @@ function normalizePresentationResources(value: unknown): TeacherRecording['prese
   });
 }
 
+function normalizeExercisePoint(value: unknown): ExercisePoint {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Exercise point must be an object.');
+  }
+
+  const point = value as Partial<ExercisePoint>;
+
+  if (
+    point.schemaVersion !== 1 ||
+    typeof point.id !== 'string' ||
+    typeof point.exerciseId !== 'string' ||
+    !Number.isFinite(point.teacherTimestampMs) ||
+    !Number.isInteger(point.lastAppliedTeacherEventSeq) ||
+    typeof point.createdAt !== 'string'
+  ) {
+    throw new Error('Exercise point is malformed.');
+  }
+
+  if (
+    point.exerciseVersionAtPublication !== undefined &&
+    (!Number.isInteger(point.exerciseVersionAtPublication) || point.exerciseVersionAtPublication < 1)
+  ) {
+    throw new Error('Exercise point publication version is invalid.');
+  }
+
+  return {
+    schemaVersion: 1,
+    id: assertSafeId(point.id, 'exercise point id'),
+    exerciseId: assertSafeId(point.exerciseId, 'exercise id'),
+    teacherTimestampMs: Math.max(0, Math.round(point.teacherTimestampMs!)),
+    lastAppliedTeacherEventSeq: Math.max(-1, point.lastAppliedTeacherEventSeq!),
+    exerciseVersionAtPublication: point.exerciseVersionAtPublication,
+    createdAt: point.createdAt,
+  };
+}
+
 function normalizeTeacherRecording(value: unknown): TeacherRecording {
   const input =
     value && typeof value === 'object' && 'teacherRecording' in value ? (value as any).teacherRecording : value;
@@ -567,6 +617,27 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
   const whiteboardIds = new Set(
     presentationResources?.filter((resource) => resource.kind === 'whiteboard').map((resource) => resource.id),
   );
+  const exercisePoints = candidate.exercisePoints?.map(normalizeExercisePoint);
+  const exercisePointIds = new Set<string>();
+
+  for (const point of exercisePoints ?? []) {
+    if (exercisePointIds.has(point.id)) {
+      throw new Error('Exercise point ids must be unique.');
+    }
+
+    exercisePointIds.add(point.id);
+
+    if (point.teacherTimestampMs > candidate.durationMs) {
+      throw new Error('Exercise point is outside the recording duration.');
+    }
+
+    if (
+      point.lastAppliedTeacherEventSeq >= 0 &&
+      !events.some((event) => event.seq === point.lastAppliedTeacherEventSeq)
+    ) {
+      throw new Error('Exercise point references an unknown teacher event sequence.');
+    }
+  }
 
   for (const event of events) {
     if (
@@ -587,6 +658,7 @@ function normalizeTeacherRecording(value: unknown): TeacherRecording {
     baseFiles: normalizeFiles(candidate.baseFiles),
     events,
     presentationResources,
+    exercisePoints,
     mediaAssets: candidate.mediaAssets?.map((asset) => normalizeMediaMetadata(asset, recordingId)),
     createdByUserId: candidate.createdByUserId
       ? assertSafeId(candidate.createdByUserId, 'createdBy user id')
@@ -771,6 +843,27 @@ function normalizeLearnerBranchAggregate(value: unknown, ownerUserId: string): L
     };
   });
 
+  const context = branch.context;
+  const normalizedContext = context
+    ? {
+        kind: 'exercise' as const,
+        attemptId: assertSafeId(context.attemptId, 'exercise attempt id'),
+        exercisePointId: assertSafeId(context.exercisePointId, 'exercise point id'),
+        exerciseId: assertSafeId(context.exerciseId, 'exercise id'),
+        exerciseVersion: context.exerciseVersion,
+        starterFilesHash: context.starterFilesHash,
+      }
+    : undefined;
+
+  if (
+    normalizedContext &&
+    (!Number.isInteger(normalizedContext.exerciseVersion) ||
+      normalizedContext.exerciseVersion < 1 ||
+      typeof normalizedContext.starterFilesHash !== 'string')
+  ) {
+    throw new Error('Exercise branch context is malformed.');
+  }
+
   const tree = aggregate.workingTree;
 
   if (!tree || tree.schemaVersion !== 1 || tree.branchId !== id || tree.latestEventSeq !== branch.headEventSeq) {
@@ -788,6 +881,7 @@ function normalizeLearnerBranchAggregate(value: unknown, ownerUserId: string): L
         ...origin,
         teacherRecordingId: assertSafeId(origin.teacherRecordingId, 'teacher recording id'),
       },
+      context: normalizedContext,
       parent: branch.parent
         ? {
             branchId: assertSafeId(branch.parent.branchId, 'parent learner branch id'),
@@ -880,6 +974,10 @@ async function ensureDataDirectories() {
     mkdir(dataPaths.teacherRecordings, { recursive: true }),
     mkdir(dataPaths.learnerDeltas, { recursive: true }),
     mkdir(dataPaths.learnerBranches, { recursive: true }),
+    mkdir(dataPaths.exerciseDrafts, { recursive: true }),
+    mkdir(dataPaths.exerciseVersions, { recursive: true }),
+    mkdir(dataPaths.exerciseCatalog, { recursive: true }),
+    mkdir(dataPaths.exerciseAttempts, { recursive: true }),
     mkdir(dataPaths.mediaAssets, { recursive: true }),
     mkdir(dataPaths.sessions, { recursive: true }),
   ]);
@@ -1399,6 +1497,373 @@ async function handleDevUsers(req: IncomingMessage, res: ServerResponse, routePa
   sendJson(res, { error: 'Not found.' }, 404);
 }
 
+function normalizeExerciseDraftInput(value: unknown, ownerUserId: string): ExerciseDraft {
+  const input = value && typeof value === 'object' && 'exerciseDraft' in value
+    ? (value as { exerciseDraft?: unknown }).exerciseDraft
+    : value;
+
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Expected exercise draft.');
+  }
+
+  const draft = input as Partial<ExerciseDraft>;
+
+  if (draft.schemaVersion !== 1 || typeof draft.exerciseId !== 'string' || !draft.content) {
+    throw new Error('Exercise draft is malformed.');
+  }
+
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    exerciseId: assertSafeId(draft.exerciseId, 'exercise id'),
+    ownerUserId,
+    lessonId: typeof draft.lessonId === 'string' ? draft.lessonId : undefined,
+    content: normalizeExerciseContent(draft.content),
+    verification: draft.verification ?? {},
+    createdAt: typeof draft.createdAt === 'string' ? draft.createdAt : now,
+    updatedAt: now,
+  };
+}
+
+function normalizeExerciseCatalogInput(value: unknown, ownerUserId: string): ExerciseCatalogEntry {
+  const input = value && typeof value === 'object' && 'exercise' in value
+    ? (value as { exercise?: unknown }).exercise
+    : value;
+
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Expected exercise catalog entry.');
+  }
+
+  const entry = input as Partial<ExerciseCatalogEntry>;
+
+  if (entry.schemaVersion !== 1 || typeof entry.exerciseId !== 'string' || typeof entry.title !== 'string') {
+    throw new Error('Exercise catalog entry is malformed.');
+  }
+
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    exerciseId: assertSafeId(entry.exerciseId, 'exercise id'),
+    ownerUserId,
+    title: entry.title.trim() || 'Untitled exercise',
+    activeVersion:
+      Number.isInteger(entry.activeVersion) && entry.activeVersion! > 0 ? entry.activeVersion : undefined,
+    createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : now,
+    updatedAt: now,
+  };
+}
+
+function normalizeExerciseVersionInput(value: unknown, ownerUserId: string): ExerciseVersion {
+  const input = value && typeof value === 'object' && 'exerciseVersion' in value
+    ? (value as { exerciseVersion?: unknown }).exerciseVersion
+    : value;
+
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Expected exercise version.');
+  }
+
+  const version = input as Partial<ExerciseVersion>;
+
+  if (
+    version.schemaVersion !== 1 ||
+    typeof version.exerciseId !== 'string' ||
+    !Number.isInteger(version.version) ||
+    version.version! < 1 ||
+    !version.content
+  ) {
+    throw new Error('Exercise version is malformed.');
+  }
+
+  const content = normalizeExerciseContent(version.content);
+  const completeness = getExerciseCompleteness(content);
+
+  if (!completeness.complete) {
+    throw new Error(`Exercise version is incomplete: ${completeness.reasons.join(' ')}`);
+  }
+
+  const contentHash = getExerciseContentHash(content);
+
+  if (version.contentHash !== contentHash) {
+    throw new Error('Exercise version content hash does not match.');
+  }
+
+  return {
+    schemaVersion: 1,
+    exerciseId: assertSafeId(version.exerciseId, 'exercise id'),
+    version: version.version!,
+    ownerUserId,
+    lessonId: typeof version.lessonId === 'string' ? version.lessonId : undefined,
+    content,
+    contentHash,
+    createdAt: typeof version.createdAt === 'string' ? version.createdAt : new Date().toISOString(),
+    publishedAt: typeof version.publishedAt === 'string' ? version.publishedAt : new Date().toISOString(),
+  };
+}
+
+function exerciseVersionFileId(exerciseId: string, version: number) {
+  return `${assertSafeId(exerciseId, 'exercise id')}-v${version}`;
+}
+
+async function handleExerciseDrafts(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  const user = await requireTeacherUser(req);
+  const dataPaths = await ensureDataDirectories();
+
+  if (req.method === 'GET' && routeParts.length === 1) {
+    const drafts = (await readAllJsonFiles<ExerciseDraft>(dataPaths.exerciseDrafts))
+      .filter((draft) => draft.ownerUserId === user.id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    sendJson(res, { exerciseDrafts: drafts });
+    return;
+  }
+
+  const id = assertSafeId(routeParts[1] ?? '', 'exercise id');
+  const filePath = getJsonFilePath(dataPaths.exerciseDrafts, id);
+  const existing = await readJsonFile<ExerciseDraft>(filePath);
+
+  if (existing && existing.ownerUserId !== user.id) {
+    throw createHttpError('Exercise draft belongs to another teacher.', 403);
+  }
+
+  if (req.method === 'GET' && routeParts.length === 2) {
+    sendJson(res, { exerciseDraft: existing ?? null }, existing ? 200 : 404);
+    return;
+  }
+
+  if (req.method === 'PUT' && routeParts.length === 2) {
+    const draft = normalizeExerciseDraftInput(await readJsonRequest(req), user.id);
+    if (draft.exerciseId !== id) {throw createHttpError('Exercise draft route id does not match.', 400);}
+    await writeJsonFile(filePath, draft);
+    sendJson(res, { exerciseDraft: draft }, existing ? 200 : 201);
+    return;
+  }
+
+  if (req.method === 'DELETE' && routeParts.length === 2) {
+    await rm(filePath, { force: true });
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
+async function handleExercises(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  const user = await requireTeacherUser(req);
+  const dataPaths = await ensureDataDirectories();
+
+  if (req.method === 'GET' && routeParts.length === 1) {
+    const entries = (await readAllJsonFiles<ExerciseCatalogEntry>(dataPaths.exerciseCatalog))
+      .filter((entry) => entry.ownerUserId === user.id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    sendJson(res, { exercises: entries });
+    return;
+  }
+
+  const exerciseId = assertSafeId(routeParts[1] ?? '', 'exercise id');
+  const catalogPath = getJsonFilePath(dataPaths.exerciseCatalog, exerciseId);
+  const catalog = await readJsonFile<ExerciseCatalogEntry>(catalogPath);
+
+  if (catalog && catalog.ownerUserId !== user.id) {
+    throw createHttpError('Exercise belongs to another teacher.', 403);
+  }
+
+  if (req.method === 'GET' && routeParts.length === 2) {
+    sendJson(res, { exercise: catalog ?? null }, catalog ? 200 : 404);
+    return;
+  }
+
+  if (req.method === 'PUT' && routeParts.length === 2) {
+    const entry = normalizeExerciseCatalogInput(await readJsonRequest(req), user.id);
+    if (entry.exerciseId !== exerciseId) {throw createHttpError('Exercise route id does not match.', 400);}
+    await writeJsonFile(catalogPath, entry);
+    sendJson(res, { exercise: entry }, catalog ? 200 : 201);
+    return;
+  }
+
+  if (routeParts[2] === 'versions' && req.method === 'GET' && routeParts.length === 3) {
+    const versions = (await readAllJsonFiles<ExerciseVersion>(dataPaths.exerciseVersions))
+      .filter((version) => version.exerciseId === exerciseId && version.ownerUserId === user.id)
+      .sort((a, b) => a.version - b.version);
+    sendJson(res, { exerciseVersions: versions });
+    return;
+  }
+
+  if (routeParts[2] === 'versions' && routeParts.length === 4) {
+    const versionNumber = Number(routeParts[3]);
+    if (!Number.isInteger(versionNumber) || versionNumber < 1) {throw createHttpError('Invalid exercise version.', 400);}
+    const filePath = getJsonFilePath(dataPaths.exerciseVersions, exerciseVersionFileId(exerciseId, versionNumber));
+    const existing = await readJsonFile<ExerciseVersion>(filePath);
+
+    if (existing && existing.ownerUserId !== user.id) {
+      throw createHttpError('Exercise version belongs to another teacher.', 403);
+    }
+
+    if (req.method === 'GET') {
+      sendJson(res, { exerciseVersion: existing ?? null }, existing ? 200 : 404);
+      return;
+    }
+
+    if (req.method === 'PUT') {
+      const version = normalizeExerciseVersionInput(await readJsonRequest(req), user.id);
+      if (version.exerciseId !== exerciseId || version.version !== versionNumber) {
+        throw createHttpError('Exercise version route does not match payload.', 400);
+      }
+      if (existing && hashStableJson(existing) !== hashStableJson(version)) {
+        throw createHttpError('Published exercise versions are immutable.', 409);
+      }
+      if (!existing) {await writeJsonFile(filePath, version);}
+      sendJson(res, { exerciseVersion: existing ?? version }, existing ? 200 : 201);
+      return;
+    }
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
+async function handleExerciseDelivery(req: IncomingMessage, res: ServerResponse, routeParts: string[]) {
+  await requireLearnerUser(req);
+
+  if (req.method !== 'GET' || routeParts.length < 3) {
+    sendJson(res, { error: 'Not found.' }, 404);
+    return;
+  }
+
+  const recordingId = assertSafeId(routeParts[1] ?? '', 'teacher recording id');
+  const pointId = assertSafeId(routeParts[2] ?? '', 'exercise point id');
+  const dataPaths = await ensureDataDirectories();
+  const recording = await readJsonFile<TeacherRecording>(getJsonFilePath(dataPaths.teacherRecordings, recordingId));
+  const point = recording?.exercisePoints?.find((candidate) => candidate.id === pointId);
+
+  if (!recording || !point) {
+    throw createHttpError('Published exercise point was not found.', 404);
+  }
+
+  const catalog = await readJsonFile<ExerciseCatalogEntry>(getJsonFilePath(dataPaths.exerciseCatalog, point.exerciseId));
+  const requestedVersion =
+    routeParts[3] === 'versions' ? Number(routeParts[4]) : catalog?.activeVersion ?? point.exerciseVersionAtPublication;
+
+  if (!Number.isInteger(requestedVersion) || requestedVersion! < 1) {
+    throw createHttpError('Published exercise version is unavailable.', 409);
+  }
+
+  const version = await readJsonFile<ExerciseVersion>(
+    getJsonFilePath(dataPaths.exerciseVersions, exerciseVersionFileId(point.exerciseId, requestedVersion!)),
+  );
+
+  if (!version) {
+    throw createHttpError('Published exercise version was not found.', 404);
+  }
+
+  if (routeParts.length === 3 || (routeParts.length === 5 && routeParts[3] === 'versions')) {
+    sendJson(res, {
+      recordingId,
+      exercisePointId: pointId,
+      exercise: toLearnerExerciseContent(version),
+    });
+    return;
+  }
+
+  if (routeParts.length === 6 && routeParts[3] === 'versions' && routeParts[5] === 'validation') {
+    sendJson(res, {
+      recordingId,
+      exercisePointId: pointId,
+      exerciseId: version.exerciseId,
+      version: version.version,
+      privateValidationFiles: version.content.privateValidationFiles,
+      validation: version.content.validation,
+    });
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
+async function handleExerciseAttempts(req: IncomingMessage, res: ServerResponse, url: URL, routeParts: string[]) {
+  const user = req.method === 'GET' ? await getAuthenticatedUser(req) : await requireLearnerUser(req);
+  if (!user || !canLearn(user)) {
+    sendJson(res, routeParts.length === 1 ? { exerciseAttempts: [] } : { exerciseAttempt: null }, routeParts.length === 1 ? 200 : 404);
+    return;
+  }
+
+  const dataPaths = await ensureDataDirectories();
+
+  if (req.method === 'GET' && routeParts.length === 1) {
+    const recordingId = url.searchParams.get('teacherRecordingId');
+    const pointId = url.searchParams.get('exercisePointId');
+    const attempts = (await readAllJsonFiles<ExerciseAttempt>(dataPaths.exerciseAttempts))
+      .filter((attempt) => attempt.userId === user.id)
+      .filter((attempt) => !recordingId || attempt.teacherRecordingId === recordingId)
+      .filter((attempt) => !pointId || attempt.exercisePointId === pointId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    sendJson(res, { exerciseAttempts: attempts });
+    return;
+  }
+
+  const id = assertSafeId(routeParts[1] ?? '', 'exercise attempt id');
+  const filePath = getJsonFilePath(dataPaths.exerciseAttempts, id);
+  const existing = await readJsonFile<ExerciseAttempt>(filePath);
+
+  if (req.method === 'GET' && routeParts.length === 2) {
+    sendJson(res, { exerciseAttempt: existing?.userId === user.id ? existing : null }, existing?.userId === user.id ? 200 : 404);
+    return;
+  }
+
+  if (req.method === 'PUT' && routeParts.length === 2) {
+    const body = await readJsonRequest(req) as { exerciseAttempt?: ExerciseAttempt };
+    const attempt = body?.exerciseAttempt;
+    if (!attempt || attempt.schemaVersion !== 1 || attempt.id !== id) {throw createHttpError('Exercise attempt is malformed.', 400);}
+    if (existing && existing.userId !== user.id) {throw createHttpError('Exercise attempt belongs to another learner.', 403);}
+
+    const recording = await readJsonFile<TeacherRecording>(
+      getJsonFilePath(dataPaths.teacherRecordings, assertSafeId(attempt.teacherRecordingId, 'teacher recording id')),
+    );
+    const point = recording?.exercisePoints?.find((candidate) => candidate.id === attempt.exercisePointId);
+    const version = point
+      ? await readJsonFile<ExerciseVersion>(
+          getJsonFilePath(
+            dataPaths.exerciseVersions,
+            exerciseVersionFileId(point.exerciseId, attempt.exerciseVersion),
+          ),
+        )
+      : undefined;
+
+    if (!recording || !point || !version || point.exerciseId !== attempt.exerciseId) {
+      throw createHttpError('Exercise attempt does not reference a published exercise version.', 400);
+    }
+    if (recording.version !== attempt.teacherRecordingVersion) {
+      throw createHttpError('Exercise attempt recording version does not match.', 400);
+    }
+    if (attempt.status === 'passed' && !attempt.lastPassedFilesHash) {
+      throw createHttpError('Passed exercise attempts require a checked workspace hash.', 400);
+    }
+    if (
+      existing &&
+      (existing.exercisePointId !== attempt.exercisePointId ||
+        existing.exerciseId !== attempt.exerciseId ||
+        existing.exerciseVersion !== attempt.exerciseVersion ||
+        existing.rootBranchId !== attempt.rootBranchId)
+    ) {
+      throw createHttpError('Exercise attempt identity is immutable.', 409);
+    }
+
+    const normalized: ExerciseAttempt = {
+      ...attempt,
+      id,
+      userId: user.id,
+      exerciseId: assertSafeId(attempt.exerciseId, 'exercise id'),
+      exercisePointId: assertSafeId(attempt.exercisePointId, 'exercise point id'),
+      teacherRecordingId: assertSafeId(attempt.teacherRecordingId, 'teacher recording id'),
+      rootBranchId: assertSafeId(attempt.rootBranchId, 'root branch id'),
+      activeBranchId: assertSafeId(attempt.activeBranchId, 'active branch id'),
+      updatedAt: new Date().toISOString(),
+    };
+    await writeJsonFile(filePath, normalized);
+    sendJson(res, { exerciseAttempt: normalized }, existing ? 200 : 201);
+    return;
+  }
+
+  sendJson(res, { error: 'Not found.' }, 404);
+}
+
 async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse, url: URL, routeParts: string[]) {
   const dataPaths = await ensureDataDirectories();
 
@@ -1489,6 +1954,24 @@ async function handleTeacherRecordings(req: IncomingMessage, res: ServerResponse
     const existingRecordingRaw = await readJsonFile<TeacherRecording>(filePath);
     const existingRecording = existingRecordingRaw ? withTeacherOwnershipDefaults(existingRecordingRaw) : undefined;
     const recording = withPublishedTeacherOwnership(inputRecording, user, existingRecording);
+
+    for (const point of recording.exercisePoints ?? []) {
+      if (!point.exerciseVersionAtPublication) {
+        throw createHttpError('Published exercise points require an immutable exercise version.', 400);
+      }
+      const version = await readJsonFile<ExerciseVersion>(
+        getJsonFilePath(
+          dataPaths.exerciseVersions,
+          exerciseVersionFileId(point.exerciseId, point.exerciseVersionAtPublication),
+        ),
+      );
+      if (!version || version.exerciseId !== point.exerciseId || version.ownerUserId !== user.id) {
+        throw createHttpError('Published recording references an unavailable exercise version.', 400);
+      }
+      if (version.lessonId && version.lessonId !== recording.lessonId) {
+        throw createHttpError('Published recording references an exercise from a different lesson.', 400);
+      }
+    }
 
     if (existingRecording) {
       if (existingRecording.ownerUserId !== user.id) {
@@ -1633,12 +2116,40 @@ async function getLearnerTeacherOriginFiles(
   return files;
 }
 
+async function getLearnerWorkspaceOriginFiles(
+  aggregate: LearnerBranchAggregate,
+  dataPaths: ReturnType<typeof getDataPaths>,
+) {
+  const teacherFiles = await getLearnerTeacherOriginFiles(aggregate, dataPaths);
+  const context = aggregate.branch.context;
+
+  if (!context) {
+    return teacherFiles;
+  }
+
+  const version = await readJsonFile<ExerciseVersion>(
+    getJsonFilePath(dataPaths.exerciseVersions, exerciseVersionFileId(context.exerciseId, context.exerciseVersion)),
+  );
+
+  if (!version) {
+    throw createHttpError('Linked exercise version was not found.', 400);
+  }
+
+  const starterFiles = normalizeFiles(version.content.starterFiles);
+
+  if (simpleHashFiles(starterFiles) !== context.starterFilesHash) {
+    throw createHttpError('Exercise branch starter hash does not match its version.', 409);
+  }
+
+  return starterFiles;
+}
+
 async function validateLearnerAggregateMaterialization(
   aggregate: LearnerBranchAggregate,
   dataPaths: ReturnType<typeof getDataPaths>,
   userId: string,
 ) {
-  let baseFiles = await getLearnerTeacherOriginFiles(aggregate, dataPaths);
+  let baseFiles = await getLearnerWorkspaceOriginFiles(aggregate, dataPaths);
 
   if (aggregate.branch.parent) {
     const parent = await readJsonFile<LearnerBranchAggregate>(
@@ -1651,7 +2162,7 @@ async function validateLearnerAggregateMaterialization(
 
     const parentBase = parent.branch.parent
       ? await resolveStoredLearnerBase(parent, dataPaths, userId)
-      : await getLearnerTeacherOriginFiles(parent, dataPaths);
+      : await getLearnerWorkspaceOriginFiles(parent, dataPaths);
     baseFiles = materializeLearnerBranch(parentBase, parent.events, aggregate.branch.parent.eventSeq);
   }
 
@@ -1676,7 +2187,7 @@ async function resolveStoredLearnerBase(
   userId: string,
 ): Promise<FilesSnapshot> {
   if (!aggregate.branch.parent) {
-    return getLearnerTeacherOriginFiles(aggregate, dataPaths);
+    return getLearnerWorkspaceOriginFiles(aggregate, dataPaths);
   }
 
   const parent = await readJsonFile<LearnerBranchAggregate>(
@@ -1723,6 +2234,9 @@ async function handleLearnerBranches(req: IncomingMessage, res: ServerResponse, 
     const lessonId = url.searchParams.get('lessonId');
     const recordingId = url.searchParams.get('teacherRecordingId');
     const recordingVersion = url.searchParams.get('teacherRecordingVersion');
+    const contextKind = url.searchParams.get('contextKind');
+    const exercisePointId = url.searchParams.get('exercisePointId');
+    const attemptId = url.searchParams.get('attemptId');
     const filtered = aggregates
       .filter((aggregate) => aggregate.branch.userId === user.id)
       .filter((aggregate) => !lessonId || aggregate.branch.lessonId === lessonId)
@@ -1731,6 +2245,9 @@ async function handleLearnerBranches(req: IncomingMessage, res: ServerResponse, 
         (aggregate) =>
           !recordingVersion || aggregate.branch.origin.teacherRecordingVersion === Number(recordingVersion),
       )
+      .filter((aggregate) => !contextKind || (aggregate.branch.context?.kind ?? 'lecture') === contextKind)
+      .filter((aggregate) => !exercisePointId || aggregate.branch.context?.exercisePointId === exercisePointId)
+      .filter((aggregate) => !attemptId || aggregate.branch.context?.attemptId === attemptId)
       .sort((a, b) => b.branch.updatedAt.localeCompare(a.branch.updatedAt));
     sendJson(res, { learnerBranches: filtered });
 
@@ -2077,6 +2594,26 @@ export async function handleInteractivePersistenceRequest(req: IncomingMessage, 
 
     if (routeParts[0] === 'demo') {
       await handleDemo(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'exercise-drafts') {
+      await handleExerciseDrafts(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'exercises') {
+      await handleExercises(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'exercise-delivery') {
+      await handleExerciseDelivery(req, res, routeParts);
+      return;
+    }
+
+    if (routeParts[0] === 'exercise-attempts') {
+      await handleExerciseAttempts(req, res, url, routeParts);
       return;
     }
 

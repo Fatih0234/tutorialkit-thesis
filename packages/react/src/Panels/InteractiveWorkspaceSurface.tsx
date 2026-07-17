@@ -9,6 +9,8 @@ interface InteractiveWorkspaceSurfaceProps {
   presentationToolbar?: ReactNode;
   aiControl?: ReactNode;
   explanationHtml: string;
+  explanationText?: string;
+  explanationTitle?: string;
   explanationOpen: boolean;
   terminalOpen: boolean;
   terminalAvailable: boolean;
@@ -27,6 +29,8 @@ export function InteractiveWorkspaceSurface({
   presentationToolbar,
   aiControl,
   explanationHtml,
+  explanationText,
+  explanationTitle = 'Explanation',
   explanationOpen,
   terminalOpen,
   terminalAvailable,
@@ -101,18 +105,24 @@ export function InteractiveWorkspaceSurface({
           onResize={(size) => size > 0 && onExplanationSizeChange(size)}
           className={explanationOpen ? 'min-w-0 bg-tk-elements-panel-backgroundColor' : 'hidden'}
         >
-          <aside aria-label="Lesson explanation" className="flex h-full min-w-0 flex-col border-r border-tk-elements-app-borderColor">
+          <aside aria-label={explanationTitle} className="flex h-full min-w-0 flex-col border-r border-tk-elements-app-borderColor">
             <div className="panel-header shrink-0 border-b border-tk-elements-app-borderColor">
               <div className="panel-title">
                 <span className="panel-icon i-ph-book-open-text" aria-hidden="true" />
-                <span className="text-sm">Explanation</span>
+                <span className="text-sm">{explanationTitle}</span>
               </div>
               <InteractiveButton variant="ghost" icon="i-ph-x" onClick={() => onExplanationOpenChange(false)} className="ml-auto px-2">
                 <span className="sr-only">Close explanation</span>
               </InteractiveButton>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {explanationHtml ? (
+              {explanationText !== undefined ? (
+                explanationText ? (
+                  <div className="whitespace-pre-wrap text-sm leading-6 text-tk-elements-content-textColor">{explanationText}</div>
+                ) : (
+                  <p className="text-sm text-tk-text-secondary">No exercise explanation is available.</p>
+                )
+              ) : explanationHtml ? (
                 <div className="markdown-content text-tk-elements-content-textColor" dangerouslySetInnerHTML={{ __html: explanationHtml }} />
               ) : (
                 <p className="text-sm text-tk-text-secondary">No lesson explanation is available.</p>

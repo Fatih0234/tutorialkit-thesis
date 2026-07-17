@@ -1,5 +1,6 @@
 import { simpleHashFiles } from '../learner-delta.js';
 import { normalizeFiles, normalizePath } from '../path.js';
+import type { ExerciseBranchContext } from '../exercises/types.js';
 import type { FilesSnapshot } from '../types.js';
 import type {
   LearnerBranch,
@@ -18,6 +19,7 @@ export interface CreateBranchOptions {
   origin: LearnerOrigin;
   initialFiles: FilesSnapshot;
   selectedFile?: string;
+  context?: ExerciseBranchContext;
   parent?: LearnerBranchParent;
   now?: string;
 }
@@ -34,6 +36,7 @@ export function createLearnerBranch(options: CreateBranchOptions): {
     userId: options.userId,
     lessonId: options.lessonId,
     origin: { ...options.origin },
+    context: options.context ? { ...options.context } : undefined,
     parent: options.parent ? { ...options.parent } : undefined,
     headEventSeq: 0,
     createdAt: now,
@@ -146,6 +149,7 @@ export function forkLearnerBranch(options: ForkBranchOptions) {
     userId: options.parentBranch.userId,
     lessonId: options.parentBranch.lessonId,
     origin: options.parentBranch.origin,
+    context: options.parentBranch.context,
     parent: {
       branchId: options.parentBranch.id,
       eventSeq: options.parentEventSeq,

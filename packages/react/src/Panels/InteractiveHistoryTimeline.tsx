@@ -63,6 +63,47 @@ export function InteractiveHistoryTimeline({ model, isLearner }: Props) {
             <div className="h-full rounded-full bg-blue-500" style={{ width: `${playedPercent}%` }} />
           </div>
 
+          {model.exercisePoints.map((point) => {
+            const status = model.exercisePointStatuses[point.id] ?? 'not-started';
+            return isLearner ? (
+              <button
+                key={point.id}
+                type="button"
+                aria-label={`Open exercise at ${point.teacherTimestampMs} milliseconds`}
+                title={`Open exercise · ${status}`}
+                onClick={() => model.onOpenExercisePoint(point.id)}
+                className={classNames(
+                  'absolute top-0 z-30 grid h-8 w-8 -translate-x-1/2 cursor-pointer place-items-center rounded-full text-lg transition hover:scale-125 hover:bg-amber-400/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300',
+                  status === 'passed'
+                    ? 'text-emerald-700'
+                    : status === 'skipped'
+                      ? 'text-slate-600'
+                      : status === 'active'
+                        ? 'text-orange-600'
+                        : 'text-emerald-600',
+                )}
+                style={{ left: `${positionPercent(point.teacherTimestampMs, durationMs)}%` }}
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-tk-background-primary shadow" aria-hidden="true">
+                  <span className="i-ph-student-fill" />
+                </span>
+              </button>
+            ) : (
+              <span
+                key={point.id}
+                role="img"
+                aria-label={`Exercise point at ${point.teacherTimestampMs} milliseconds`}
+                title="Exercise point"
+                className="absolute top-0 z-30 grid h-8 w-8 -translate-x-1/2 place-items-center text-lg text-amber-300"
+                style={{ left: `${positionPercent(point.teacherTimestampMs, durationMs)}%` }}
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-tk-background-primary shadow" aria-hidden="true">
+                  <span className="i-ph-student-fill" />
+                </span>
+              </span>
+            );
+          })}
+
           {isLearner
             ? groups.map((group) => (
                 <LessonHistoryMarker
